@@ -6,13 +6,16 @@ import { BottomNav, type Tab } from './src/components/BottomNav';
 import { currentPlayer, lobbies, notifications, ratingTasks } from './src/data/mock';
 import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { LobbyDetailsScreen } from './src/screens/LobbyDetailsScreen';
 import { LobbiesScreen } from './src/screens/LobbiesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { colors, radius, spacing } from './src/theme';
+import type { Lobby } from './src/types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [selectedFilter, setSelectedFilter] = useState('Nearby');
+  const [selectedLobby, setSelectedLobby] = useState<Lobby | null>(null);
   const pendingRatings = ratingTasks.filter(
     (task) => task.playerId === currentPlayer.id && task.status === 'open',
   );
@@ -34,6 +37,16 @@ export default function App() {
     return lobbies;
   }, [selectedFilter]);
 
+  function handleTabChange(tab: Tab) {
+    setActiveTab(tab);
+    setSelectedLobby(null);
+  }
+
+  function handleOpenLobby(lobby: Lobby) {
+    setSelectedLobby(lobby);
+    setActiveTab('lobbies');
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
@@ -50,17 +63,25 @@ export default function App() {
               onOpenLobbies={() => setActiveTab('lobbies')}
             />
           )}
-          {activeTab === 'lobbies' && (
+          {activeTab === 'lobbies' && selectedLobby ? (
+            <LobbyDetailsScreen
+              lobby={selectedLobby}
+              currentPlayer={currentPlayer}
+              onBack={() => setSelectedLobby(null)}
+            />
+          ) : null}
+          {activeTab === 'lobbies' && !selectedLobby && (
             <LobbiesScreen
               lobbies={filteredLobbies}
               selectedFilter={selectedFilter}
               setSelectedFilter={setSelectedFilter}
+              onOpenLobby={handleOpenLobby}
             />
           )}
           {activeTab === 'create' && <CreateLobbyScreen />}
           {activeTab === 'profile' && <ProfileScreen player={currentPlayer} />}
         </ScrollView>
-        <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+        <BottomNav activeTab={activeTab} onChange={handleTabChange} />
       </View>
     </SafeAreaView>
   );

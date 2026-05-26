@@ -8,11 +8,17 @@ type LobbiesScreenProps = {
   lobbies: Lobby[];
   selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
+  onOpenLobby: (lobby: Lobby) => void;
 };
 
 const filters = ['Nearby', 'Has spots', 'Requests', 'B-League'];
 
-export function LobbiesScreen({ lobbies, selectedFilter, setSelectedFilter }: LobbiesScreenProps) {
+export function LobbiesScreen({
+  lobbies,
+  selectedFilter,
+  setSelectedFilter,
+  onOpenLobby,
+}: LobbiesScreenProps) {
   return (
     <View style={styles.screen}>
       <Text style={styles.screenTitle}>Lobbies</Text>
@@ -38,7 +44,7 @@ export function LobbiesScreen({ lobbies, selectedFilter, setSelectedFilter }: Lo
         ))}
       </ScrollView>
       {lobbies.map((lobby) => (
-        <LobbyCard key={lobby.id} lobby={lobby} />
+        <LobbyCard key={lobby.id} lobby={lobby} onPress={onOpenLobby} />
       ))}
     </View>
   );

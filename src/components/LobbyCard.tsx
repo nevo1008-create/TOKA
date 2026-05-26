@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { players } from '../data/mock';
 import { colors, radius, spacing } from '../theme';
@@ -8,16 +8,16 @@ import { Avatar } from './Avatar';
 type LobbyCardProps = {
   lobby: Lobby;
   featured?: boolean;
+  onPress?: (lobby: Lobby) => void;
 };
 
-export function LobbyCard({ lobby, featured = false }: LobbyCardProps) {
+export function LobbyCard({ lobby, featured = false, onPress }: LobbyCardProps) {
   const activeParticipants = lobby.participants.filter(isActiveParticipant);
   const waitlistCount = lobby.participants.filter((participant) => participant.role === 'waitlist').length;
   const pendingRequests = lobby.joinRequests.filter((request) => request.status === 'pending').length;
   const statusLabel = getStatusLabel(lobby);
-
-  return (
-    <View style={[styles.card, featured && styles.featuredCard]}>
+  const cardContent = (
+    <>
       <View style={styles.cardTopRow}>
         <View style={styles.statusPill}>
           <Text style={styles.statusText}>{statusLabel}</Text>
@@ -26,12 +26,12 @@ export function LobbyCard({ lobby, featured = false }: LobbyCardProps) {
       </View>
       <Text style={styles.cardTitle}>{lobby.title}</Text>
       <Text style={styles.cardMeta}>
-        {lobby.location.name} · {getRankRuleLabel(lobby)} · {getGenderRuleLabel(lobby)}
+        {lobby.location.name} - {getRankRuleLabel(lobby)} - {getGenderRuleLabel(lobby)}
       </Text>
       <Text style={styles.cardNote}>{lobby.note}</Text>
       <View style={styles.metaGrid}>
         <Pill label={`${activeParticipants.length}/${lobby.maxPlayers} active`} />
-        <Pill label={`${waitlistCount} waitlist`} />
+        <Pill label={`${waitlistCount} queue`} />
         <Pill label={`${pendingRequests} requests`} />
       </View>
       <View style={styles.cardBottomRow}>
@@ -44,10 +44,29 @@ export function LobbyCard({ lobby, featured = false }: LobbyCardProps) {
         </View>
         <View style={styles.channelBox}>
           <Text style={styles.channelText}>{lobby.chatChannels.length} channels</Text>
-          <Text style={styles.channelLabel}>all + active players</Text>
+          <Text style={styles.channelLabel}>all + joined</Text>
         </View>
       </View>
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={[styles.card, featured && styles.featuredCard]}>{cardContent}</View>;
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${lobby.title}`}
+      onPress={() => onPress(lobby)}
+      style={({ pressed }) => [
+        styles.card,
+        featured && styles.featuredCard,
+        pressed && styles.pressedCard,
+      ]}
+    >
+      {cardContent}
+    </Pressable>
   );
 }
 
@@ -110,6 +129,9 @@ const styles = StyleSheet.create({
   },
   featuredCard: {
     borderColor: colors.primary,
+  },
+  pressedCard: {
+    opacity: 0.86,
   },
   cardTopRow: {
     alignItems: 'center',
