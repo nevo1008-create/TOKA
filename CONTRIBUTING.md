@@ -1,4 +1,4 @@
-# Contributing To TOKA
+# Contributing To TOCA
 
 This guide explains how Nevo and collaborators should work together without stepping on each other's code.
 
@@ -7,8 +7,8 @@ This guide explains how Nevo and collaborators should work together without step
 Clone the repository:
 
 ```powershell
-git clone https://github.com/nevo1008-create/TOKA.git
-cd TOKA
+git clone https://github.com/nevo1008-create/TOCA.git
+cd TOCA
 npm install
 ```
 

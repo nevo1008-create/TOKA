@@ -1,14 +1,14 @@
-# TOKA Architecture
+# TOCA Architecture
 
-This document describes the shared project language and structure for TOKA.
+This document describes the shared project language and structure for TOCA.
 
 ## Product Summary
 
-TOKA is a mobile app for footvolley players in Israel.
-Players create and join one-time match lobbies based on level, area, and availability.
-After matches, players rate each other so playing levels become more accurate over time.
+TOCA is a mobile app for footvolley players in Israel.
+Players create and join one-time match lobbies based on level, gender rules, area, and availability.
+After matches, players rate each other so playing levels and TOCA points become more accurate over time.
 
-The app is Hebrew-first and RTL-first.
+The MVP app UI is English-first and LTR. Hebrew and RTL support are planned later, and user-generated free text may contain Hebrew.
 
 ## Current Stage
 
@@ -80,7 +80,7 @@ Future fields:
 
 - `avatarUrl`
 - `levelStatus`
-- `tokaPointsTotal`
+- `tocaPointsTotal`
 - `isAdmin`
 
 ### Player Level
@@ -88,10 +88,10 @@ Future fields:
 The level scale is:
 
 ```text
-A-, A, A+, B-, B, B+, C-, C, C+, D-, D, D+, E-, E, E+
+A-, A, A+, B-, B, B+, C-, C, C+, D-, D, D+, E-, E, E+, League
 ```
 
-`A-` is the lowest level. `E+` is the highest level.
+`A-` is the lowest level. `League` is the highest level and behaves like every other rank.
 
 Professional level should only be affected by level rating votes, not by attendance or friendliness.
 
@@ -125,14 +125,14 @@ Future statuses:
 - `in_progress`
 - `rating_open`
 - `completed`
-- `cancelled`
+- `closed`
 
 ### Participant Roles
 
-Future participant roles:
+Participant roles:
 
-- `host`
-- `player`
+- `admin`
+- `joined`
 - `substitute`
 - `waitlist`
 
@@ -173,7 +173,7 @@ Shows:
 
 - Player level
 - Games played
-- TOKA points
+- TOCA points
 - Preferred foot
 - Area
 - Future history and friends
@@ -202,11 +202,11 @@ Questions:
    - `no`
 
 Level votes affect only professional level.
-Punctuality and play-again answers affect TOKA points and trust signals.
+Punctuality and play-again answers affect TOCA points and trust signals.
 
-## TOKA Points
+## TOCA Points
 
-TOKA points are a community and activity score, separate from playing level.
+TOCA points are a community and activity score, separate from playing level in MVP. Long term, TOCA points become part of the broader ranking system together with behavior and skill rank.
 
 Possible point events:
 
@@ -233,7 +233,7 @@ Expected future tables:
 - `match_messages`
 - `match_ratings`
 - `rating_tasks`
-- `toka_points_events`
+- `toca_points_events`
 - `friendships`
 - `notifications`
 - `admin_actions`
@@ -258,12 +258,12 @@ Examples:
 - `SectionTitle`
 - `BottomNav`
 
-## RTL And Hebrew
+## Language Direction
 
-- UI copy should be Hebrew.
-- Layout should be designed for RTL first.
-- Use right-aligned text where natural.
-- Prefer `row-reverse` for horizontal UI rows that should read RTL.
+- MVP UI copy should be English.
+- MVP layout should use natural LTR flow.
+- Hebrew/RTL support should remain possible later.
+- Player names, lobby notes, and free-text location descriptions may contain Hebrew.
 
 ## Development Principles
 

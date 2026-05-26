@@ -1,12 +1,14 @@
-# TOKA Agent Guide
+# TOCA Agent Guide
 
-This file is the shared working contract for any AI coding agent working on TOKA.
+This file is the shared working contract for any AI coding agent working on TOCA.
 Read it before changing code.
 
 ## Product Context
 
-TOKA is a Hebrew-first, RTL, mobile-first React Native app built with Expo.
-The product connects footvolley players in Israel through match lobbies, level-based joining, waitlists, chat, post-match ratings, and TOKA points.
+TOCA is an English-first MVP, mobile-first React Native app built with Expo.
+The product connects footvolley players in Israel through match lobbies, level/gender-based joining, admin-approved exception requests, waitlists, substitutes, two lobby chat channels, post-match ratings, friends/invites, and TOCA points.
+
+Hebrew and RTL support are planned later. Architecture should not block bilingual support, but current MVP UI copy should be English. User-generated free text such as player names, lobby notes, and location descriptions may contain Hebrew.
 
 The MVP currently uses mock data. Supabase will be connected later, so code should be written as if the data can become real without rewriting the UI.
 
@@ -16,7 +18,8 @@ The MVP currently uses mock data. Supabase will be connected later, so code shou
 - React Native
 - TypeScript
 - Supabase later
-- Hebrew UI, RTL-first
+- English UI first
+- Hebrew and RTL later
 
 ## Non-Negotiable Rules
 
@@ -24,7 +27,7 @@ The MVP currently uses mock data. Supabase will be connected later, so code shou
 - Do not invent duplicate domain types. Use or extend `src/types.ts`.
 - Do not hardcode random colors, spacing, or radii. Use `src/theme.ts`.
 - Do not put new large features directly into `App.tsx`. Extract screens, components, and feature modules.
-- Keep UI copy in Hebrew unless a brand or technical term should stay in English.
+- Keep MVP UI copy in English unless the text is user-generated free text.
 - Keep the app mobile-first. Web support is only for quick local review.
 - Run TypeScript before finishing work:
 
@@ -77,9 +80,10 @@ Use these words consistently:
 - `Lobby` or `Match`: a one-time game room. Current UI uses `Lobby`.
 - `Host`: the player who created and manages a lobby.
 - `Waitlist`: players waiting before the match starts.
+- `Queue`: same product concept as waitlist; prefer `Waitlist` in UI.
 - `Substitute`: approved player who arrives and participates in rotations.
-- `PlayerLevel`: one of `A-` through `E+`.
-- `TOKA points`: community/activity score, separate from playing level.
+- `PlayerLevel`: one of `A-` through `League`.
+- `TOCA points`: community/activity score, separate from playing level in MVP.
 
 ## Data And Types
 
@@ -89,13 +93,13 @@ Use these words consistently:
 - Keep level values aligned with:
 
 ```text
-A-, A, A+, B-, B, B+, C-, C, C+, D-, D, D+, E-, E, E+
+A-, A, A+, B-, B, B+, C-, C, C+, D-, D, D+, E-, E, E+, League
 ```
 
 ## UI Rules
 
-- Hebrew text should be right-aligned where natural.
-- Keep layouts RTL-aware with `row-reverse` where needed.
+- English MVP text should use natural LTR layout.
+- Keep future Hebrew/RTL support in mind; avoid assumptions that make RTL hard later.
 - Use compact, practical mobile UI. This is an app, not a landing page.
 - Avoid nested cards and decorative UI that does not serve a workflow.
 - Buttons and controls should have stable dimensions and not shift layout.
