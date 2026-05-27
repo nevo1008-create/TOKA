@@ -4,11 +4,11 @@ import { colors, radius, spacing } from '../theme';
 
 export type Tab = 'home' | 'lobbies' | 'create' | 'profile';
 
-const tabs: Array<{ id: Tab; label: string }> = [
-  { id: 'home', label: 'Home' },
-  { id: 'lobbies', label: 'Lobbies' },
-  { id: 'create', label: 'Create' },
-  { id: 'profile', label: 'Profile' },
+const tabs: Array<{ id: Tab; label: string; icon: string }> = [
+  { id: 'home', label: 'Home', icon: 'H' },
+  { id: 'lobbies', label: 'Lobbies', icon: 'L' },
+  { id: 'create', label: 'Create', icon: '+' },
+  { id: 'profile', label: 'Profile', icon: 'P' },
 ];
 
 type BottomNavProps = {
@@ -43,7 +43,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
                   isCreate && styles.createNavIconText,
                 ]}
               >
-                {isCreate ? '+' : tab.label.slice(0, 1)}
+                {tab.icon}
               </Text>
             </View>
             <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>{tab.label}</Text>
@@ -59,13 +59,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: 22,
     borderWidth: 1,
     bottom: spacing.lg,
     flexDirection: 'row',
     gap: spacing.sm,
     left: spacing.lg,
-    padding: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     position: 'absolute',
     right: spacing.lg,
   },
@@ -75,40 +76,42 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   createNavItem: {
-    transform: [{ translateY: -10 }],
+    transform: [{ translateY: -8 }],
   },
   navIcon: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: 'transparent',
     borderRadius: radius.round,
-    height: 38,
+    height: 40,
     justifyContent: 'center',
-    width: 38,
+    width: 40,
   },
   navIconActive: {
-    backgroundColor: colors.ink,
+    backgroundColor: 'transparent',
   },
   createNavIcon: {
-    backgroundColor: colors.accent,
+    backgroundColor: '#62C85B',
+    borderColor: colors.surface,
+    borderWidth: 3,
     height: 54,
     width: 54,
   },
   navIconText: {
-    color: colors.muted,
+    color: colors.ink,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   navIconTextActive: {
-    color: colors.surface,
+    color: colors.primaryDark,
   },
   createNavIconText: {
-    color: colors.ink,
-    fontSize: 28,
+    color: colors.surface,
+    fontSize: 30,
   },
   navLabel: {
     color: colors.muted,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   navLabelActive: {
     color: colors.ink,

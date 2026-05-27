@@ -1,5 +1,5 @@
+import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '../components/Avatar';
 import { players } from '../data/mock';
@@ -14,7 +14,15 @@ type LobbyDetailsScreenProps = {
 
 type ChatTab = 'all' | 'joined';
 
-export function LobbyDetailsScreen({ lobby, currentPlayer, onBack }: LobbyDetailsScreenProps) {
+type DetailTile = {
+  label: string;
+  value: string;
+};
+
+const heroImageUrl =
+  'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=600&q=80';
+
+export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenProps) {
   const [selectedChatTab, setSelectedChatTab] = useState<ChatTab>('all');
   const currentParticipant = lobby.participants.find(
     (participant) =>
@@ -31,13 +39,14 @@ export function LobbyDetailsScreen({ lobby, currentPlayer, onBack }: LobbyDetail
   );
   const activeCount = activeParticipants.length;
   const admin = players.find((player) => player.id === lobby.adminId);
-  const criteria = useMemo(
+  const isJoined = Boolean(currentParticipant && currentParticipant.role !== 'waitlist');
+  const criteria = useMemo<DetailTile[]>(
     () => [
       { label: 'Location', value: lobby.location.name },
       { label: 'Time', value: lobby.startsAt },
       { label: 'Rank', value: getRankRuleLabel(lobby) },
       { label: 'Gender', value: getGenderRuleLabel(lobby) },
-      { label: 'Players', value: `${activeCount}/${lobby.maxPlayers}` },
+      { label: 'Players', value: `${activeCount} / ${lobby.maxPlayers}` },
       { label: 'Access', value: getAccessLabel(lobby) },
       { label: 'Equipment', value: getEquipmentLabel(lobby) },
       { label: 'Status', value: getStatusLabel(lobby) },
@@ -55,43 +64,62 @@ export function LobbyDetailsScreen({ lobby, currentPlayer, onBack }: LobbyDetail
 
   return (
     <View style={styles.screen}>
-      <View style={styles.topBar}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back to lobbies"
-          onPress={onBack}
-          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.iconButtonText}>{'<'}</Text>
-        </Pressable>
-        <View style={styles.titleBlock}>
-          <Text style={styles.screenTitle}>{lobby.title}</Text>
-          <Text style={styles.adminLine}>
-            Admin: {admin?.name ?? 'Room creator'}
-          </Text>
+      <View style={styles.heroCard}>
+        <ImageBackground
+          imageStyle={styles.heroImage}
+          source={{ uri: heroImageUrl }}
+          style={styles.heroPhoto}
+        />
+        <View style={styles.heroContent}>
+          <Text style={styles.heroTitle}>{lobby.title}</Text>
+          <View style={styles.adminRow}>
+            {admin ? <Avatar player={admin} size={34} /> : null}
+            <Text style={styles.adminText}>Admin: {admin?.name ?? 'Room creator'}</Text>
+          </View>
+          <View style={styles.statusBadge}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusBadgeText}>{getStatusLabel(lobby)}</Text>
+          </View>
+          <View style={styles.heroActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={isJoined ? 'Joined lobby' : 'Join lobby'}
+              style={({ pressed }) => [
+                styles.primaryAction,
+                isJoined && styles.primaryActionJoined,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.primaryActionText}>
+                {isJoined ? 'Joined' : 'Join Lobby'}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Share lobby"
+              style={({ pressed }) => [styles.shareAction, pressed && styles.pressed]}
+            >
+              <Text style={styles.shareActionText}>Share</Text>
+            </Pressable>
+          </View>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Share lobby"
-          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.iconButtonText}>...</Text>
-        </Pressable>
       </View>
 
-      <View style={styles.criteriaGrid}>
+      <View style={styles.detailsGrid}>
         {criteria.map((item) => (
-          <View key={item.label} style={styles.criteriaCard}>
-            <Text style={styles.criteriaLabel}>{item.label}</Text>
-            <Text style={styles.criteriaValue}>{item.value}</Text>
-          </View>
+          <InfoTile key={item.label} tile={item} activeCount={activeCount} maxPlayers={lobby.maxPlayers} />
         ))}
       </View>
 
       {lobby.locationDescription ? (
-        <View style={styles.noteBox}>
-          <Text style={styles.noteLabel}>Meeting note</Text>
-          <Text style={styles.noteText}>{lobby.locationDescription}</Text>
+        <View style={styles.meetingNote}>
+          <View style={styles.noteIcon}>
+            <View style={styles.noteIconMark} />
+          </View>
+          <View style={styles.noteCopy}>
+            <Text style={styles.noteTitle}>MEETING NOTE</Text>
+            <Text style={styles.noteText}>{lobby.locationDescription}</Text>
+          </View>
         </View>
       ) : null}
 
@@ -99,13 +127,19 @@ export function LobbyDetailsScreen({ lobby, currentPlayer, onBack }: LobbyDetail
         title="Players in Lobby"
         lobby={lobby}
         participants={activeParticipants}
+        variant="active"
       />
-      <ParticipantSection title="Queue" lobby={lobby} participants={queuedParticipants} />
+      <ParticipantSection
+        title="Queue"
+        lobby={lobby}
+        participants={queuedParticipants}
+        variant="queue"
+      />
 
       <View style={styles.chatPanel}>
         <View style={styles.chatTabs}>
           <ChatTabButton
-            label="All lobby"
+            label="All Lobby"
             active={selectedChatTab === 'all'}
             locked={!canViewAllChat}
             onPress={() => setSelectedChatTab('all')}
@@ -118,20 +152,66 @@ export function LobbyDetailsScreen({ lobby, currentPlayer, onBack }: LobbyDetail
           />
         </View>
         <View style={styles.chatEmptyState}>
-          <Text style={styles.chatTitle}>
-            {isJoinedTabLocked || isAllTabLocked
-              ? 'Chat locked'
-              : selectedChannel?.title ?? 'Lobby chat'}
-          </Text>
-          <Text style={styles.chatText}>
-            {isJoinedTabLocked
-              ? 'Only the admin, joined players, and substitutes can view this channel.'
-              : isAllTabLocked
-                ? 'Approved lobby players can view this channel.'
-                : 'No messages yet. Coordination will appear here once chat is connected.'}
-          </Text>
+          <View style={styles.chatBubbleIcon}>
+            <View style={styles.chatBubbleRing} />
+          </View>
+          <View style={styles.chatCopy}>
+            <Text style={styles.chatTitle}>
+              {isJoinedTabLocked || isAllTabLocked
+                ? 'Chat locked'
+                : selectedChannel?.title ?? 'No messages yet.'}
+            </Text>
+            <Text style={styles.chatText}>
+              {isJoinedTabLocked
+                ? 'Only the admin, joined players, and substitutes can view this channel.'
+                : isAllTabLocked
+                  ? 'Approved lobby players can view this channel.'
+                  : 'Coordination will appear here once chat is connected.'}
+            </Text>
+          </View>
         </View>
       </View>
+    </View>
+  );
+}
+
+function InfoTile({
+  tile,
+  activeCount,
+  maxPlayers,
+}: {
+  tile: DetailTile;
+  activeCount: number;
+  maxPlayers: number;
+}) {
+  return (
+    <View style={styles.infoTile}>
+      <View style={styles.tileHeader}>
+        <View style={styles.tileDot} />
+        <Text style={styles.tileLabel}>{tile.label}</Text>
+      </View>
+      <Text style={styles.tileValue}>{tile.value}</Text>
+      {tile.label === 'Players' ? (
+        <View style={styles.playerDots}>
+          {Array.from({ length: maxPlayers }).map((_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.playerDot,
+                index < activeCount ? styles.playerDotFilled : styles.playerDotEmpty,
+              ]}
+            />
+          ))}
+        </View>
+      ) : null}
+      {tile.label === 'Rank' ? (
+        <View style={styles.rankBars}>
+          <View style={[styles.rankBar, styles.rankBarSoft]} />
+          <View style={[styles.rankBar, styles.rankBarMid]} />
+          <View style={[styles.rankBar, styles.rankBarHot]} />
+          <View style={[styles.rankBar, styles.rankBarEmpty]} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -140,25 +220,34 @@ function ParticipantSection({
   title,
   lobby,
   participants,
+  variant,
 }: {
   title: string;
   lobby: Lobby;
   participants: LobbyParticipant[];
+  variant: 'active' | 'queue';
 }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {participants.length > 0 ? (
-        participants.map((participant) => (
-          <ParticipantRow
-            key={`${participant.playerId}-${participant.role}`}
-            lobby={lobby}
-            participant={participant}
-          />
-        ))
-      ) : (
-        <Text style={styles.emptySectionText}>No players here yet.</Text>
-      )}
+      <View style={styles.sectionHeadingRow}>
+        <Text style={styles.sectionTitle}>
+          {title} <Text style={styles.sectionCount}>({participants.length})</Text>
+        </Text>
+        {variant === 'active' ? <Text style={styles.addPlayerText}>Add player</Text> : null}
+      </View>
+      <View style={styles.playerList}>
+        {participants.length > 0 ? (
+          participants.map((participant) => (
+            <ParticipantRow
+              key={`${participant.playerId}-${participant.role}`}
+              lobby={lobby}
+              participant={participant}
+            />
+          ))
+        ) : (
+          <Text style={styles.emptySectionText}>No players here yet.</Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -180,29 +269,28 @@ function ParticipantRow({
 
   return (
     <View style={styles.playerRow}>
-      <Avatar player={player} size={48} />
+      <Avatar player={player} size={50} />
       <View style={styles.playerCopy}>
         <View style={styles.playerNameRow}>
           <Text style={styles.playerName}>{player.name}</Text>
-          {isAdmin ? <Text style={styles.roleBadge}>Admin</Text> : null}
-          {participant.role === 'substitute' ? (
-            <Text style={styles.roleBadge}>Sub</Text>
-          ) : null}
+          {isAdmin ? <Text style={styles.adminBadge}>Admin</Text> : null}
+          {participant.role === 'substitute' ? <Text style={styles.subBadge}>Sub</Text> : null}
         </View>
         <Text style={styles.playerMeta}>Rank: {player.level}</Text>
       </View>
       <View style={styles.equipmentRow}>
-        <EquipmentBadge active={participant.bringsCourtMarks} label="Marks" />
-        <EquipmentBadge active={participant.bringsBall} label="Ball" />
+        {participant.bringsCourtMarks ? <EquipmentBadge label="Marks" tone="green" /> : null}
+        {participant.bringsBall ? <EquipmentBadge label="Ball" tone="blue" /> : null}
       </View>
+      <Text style={styles.rowMore}>•••</Text>
     </View>
   );
 }
 
-function EquipmentBadge({ active, label }: { active: boolean; label: string }) {
+function EquipmentBadge({ label, tone }: { label: string; tone: 'green' | 'blue' }) {
   return (
-    <View style={[styles.equipmentBadge, !active && styles.equipmentBadgeMuted]}>
-      <Text style={[styles.equipmentText, !active && styles.equipmentTextMuted]}>
+    <View style={[styles.equipmentBadge, tone === 'blue' && styles.equipmentBadgeBlue]}>
+      <Text style={[styles.equipmentText, tone === 'blue' && styles.equipmentTextBlue]}>
         {label}
       </Text>
     </View>
@@ -228,6 +316,7 @@ function ChatTabButton({
       style={({ pressed }) => [
         styles.chatTab,
         active && styles.chatTabActive,
+        locked && styles.chatTabLocked,
         pressed && styles.pressed,
       ]}
     >
@@ -314,103 +403,274 @@ function getStatusLabel(lobby: Lobby) {
 
 const styles = StyleSheet.create({
   screen: {
-    gap: spacing.lg,
-  },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
     gap: spacing.md,
   },
-  iconButton: {
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 24,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+    shadowColor: '#1B2430',
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+  },
+  heroPhoto: {
+    borderRadius: 18,
+    height: 142,
+    overflow: 'hidden',
+    width: 118,
+  },
+  heroImage: {
+    borderRadius: 18,
+  },
+  heroContent: {
+    flex: 1,
+    gap: 7,
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  heroTitle: {
+    color: colors.ink,
+    fontSize: 23,
+    fontWeight: '800',
+    lineHeight: 28,
+  },
+  adminRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  adminText: {
+    color: colors.muted,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  statusBadge: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#DDF2D2',
+    borderRadius: radius.round,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  statusDot: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.round,
+    height: 8,
+    width: 8,
+  },
+  statusBadgeText: {
+    color: colors.primaryDark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  primaryAction: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  primaryActionJoined: {
+    backgroundColor: colors.primaryDark,
+  },
+  primaryActionText: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  shareAction: {
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.round,
+    borderRadius: radius.md,
     borderWidth: 1,
-    height: 40,
     justifyContent: 'center',
-    width: 40,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
   },
-  iconButtonText: {
+  shareActionText: {
     color: colors.ink,
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  titleBlock: {
+  detailsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  infoTile: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: spacing.sm,
+    minHeight: 100,
+    padding: spacing.md,
+    width: '48.7%',
+  },
+  tileHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  tileDot: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.round,
+    height: 7,
+    opacity: 0.75,
+    width: 7,
+  },
+  tileLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  tileValue: {
+    color: colors.ink,
+    fontSize: 17,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  playerDots: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: 'auto',
+  },
+  playerDot: {
+    borderRadius: radius.round,
+    height: 13,
+    width: 13,
+  },
+  playerDotFilled: {
+    backgroundColor: colors.ink,
+  },
+  playerDotEmpty: {
+    backgroundColor: colors.border,
+  },
+  rankBars: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: 'auto',
+  },
+  rankBar: {
+    borderRadius: radius.round,
+    height: 8,
+    width: 12,
+  },
+  rankBarSoft: {
+    backgroundColor: '#CAEAB9',
+  },
+  rankBarMid: {
+    backgroundColor: '#ADC953',
+  },
+  rankBarHot: {
+    backgroundColor: colors.accent,
+  },
+  rankBarEmpty: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  meetingNote: {
+    alignItems: 'center',
+    backgroundColor: '#FFF4D8',
+    borderColor: '#EBCB83',
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  noteIcon: {
+    alignItems: 'center',
+    backgroundColor: '#F3DFA8',
+    borderRadius: radius.round,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  noteIconMark: {
+    backgroundColor: '#9B6F20',
+    borderRadius: radius.round,
+    height: 14,
+    opacity: 0.75,
+    width: 14,
+  },
+  noteCopy: {
     flex: 1,
     gap: spacing.xs,
   },
-  screenTitle: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: '900',
-    lineHeight: 30,
-  },
-  adminLine: {
-    color: colors.muted,
-    fontSize: 13,
+  noteTitle: {
+    color: '#6D5120',
+    fontSize: 11,
     fontWeight: '700',
-  },
-  criteriaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  criteriaCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    minHeight: 96,
-    padding: spacing.lg,
-    width: '47.8%',
-  },
-  criteriaLabel: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  criteriaValue: {
-    color: colors.ink,
-    fontSize: 20,
-    fontWeight: '900',
-    lineHeight: 25,
-  },
-  noteBox: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    gap: spacing.xs,
-    padding: spacing.lg,
-  },
-  noteLabel: {
-    color: colors.primaryDark,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   noteText: {
     color: colors.ink,
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 20,
   },
   section: {
-    gap: spacing.md,
+    gap: spacing.sm,
+  },
+  sectionHeadingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   sectionTitle: {
     color: colors.ink,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '800',
+  },
+  sectionCount: {
+    color: '#A4854E',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  addPlayerText: {
+    color: colors.primaryDark,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  playerList: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   playerRow: {
     alignItems: 'center',
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    minHeight: 56,
+    minHeight: 72,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   playerCopy: {
     flex: 1,
     gap: spacing.xs,
+    minWidth: 0,
   },
   playerNameRow: {
     alignItems: 'center',
@@ -421,106 +681,143 @@ const styles = StyleSheet.create({
   playerName: {
     color: colors.ink,
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '800',
   },
-  roleBadge: {
-    backgroundColor: colors.surfaceMuted,
+  adminBadge: {
+    backgroundColor: '#ECD08C',
     borderRadius: radius.round,
-    color: colors.primaryDark,
+    color: colors.ink,
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
     overflow: 'hidden',
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  subBadge: {
+    backgroundColor: '#DCECF4',
+    borderRadius: radius.round,
+    color: colors.ocean,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
   playerMeta: {
     color: colors.muted,
     fontSize: 13,
+    fontWeight: '500',
   },
   equipmentRow: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
   },
   equipmentBadge: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.sm,
+    backgroundColor: '#E6F4E8',
+    borderRadius: radius.round,
     minWidth: 54,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  equipmentBadgeMuted: {
-    opacity: 0.38,
+  equipmentBadgeBlue: {
+    backgroundColor: '#E5F0FB',
   },
   equipmentText: {
     color: colors.primaryDark,
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
   },
-  equipmentTextMuted: {
-    color: colors.muted,
+  equipmentTextBlue: {
+    color: colors.ocean,
+  },
+  rowMore: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   emptySectionText: {
     color: colors.muted,
     fontSize: 13,
+    padding: spacing.lg,
   },
   chatPanel: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: 20,
     borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.lg,
+    gap: spacing.sm,
+    padding: spacing.sm,
   },
   chatTabs: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.round,
     flexDirection: 'row',
-    padding: spacing.xs,
+    gap: spacing.sm,
   },
   chatTab: {
     alignItems: 'center',
-    borderRadius: radius.round,
+    borderRadius: radius.md,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 40,
+    minHeight: 48,
     paddingHorizontal: spacing.sm,
   },
   chatTabActive: {
     backgroundColor: colors.ink,
   },
+  chatTabLocked: {
+    opacity: 0.72,
+  },
   chatTabText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '900',
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '700',
   },
   chatTabTextActive: {
     color: colors.surface,
   },
   chatEmptyState: {
     alignItems: 'center',
-    backgroundColor: colors.background,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: 16,
     borderWidth: 1,
-    gap: spacing.sm,
-    minHeight: 132,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing.lg,
+    minHeight: 126,
     padding: spacing.lg,
+  },
+  chatBubbleIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EEEAE1',
+    borderRadius: radius.round,
+    height: 58,
+    justifyContent: 'center',
+    width: 58,
+  },
+  chatBubbleRing: {
+    borderColor: colors.ink,
+    borderRadius: radius.round,
+    borderWidth: 2,
+    height: 26,
+    opacity: 0.82,
+    width: 26,
+  },
+  chatCopy: {
+    flex: 1,
+    gap: spacing.sm,
   },
   chatTitle: {
     color: colors.ink,
-    fontSize: 17,
-    fontWeight: '900',
-    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '800',
   },
   chatText: {
     color: colors.muted,
     fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
+    lineHeight: 20,
   },
   pressed: {
-    opacity: 0.76,
+    opacity: 0.72,
   },
 });

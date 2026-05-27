@@ -115,10 +115,10 @@ export const lobbies: Lobby[] = [
     note: 'Fast but friendly match. Looking for one more active player.',
     adminId: 'p1',
     participants: [
-      { playerId: 'p1', role: 'admin', status: 'approved', bringsBall: true, bringsCourtMarks: false },
+      { playerId: 'p1', role: 'admin', status: 'approved', bringsBall: true, bringsCourtMarks: true },
       { playerId: 'p2', role: 'joined', status: 'approved', bringsBall: false, bringsCourtMarks: true },
-      { playerId: 'p4', role: 'joined', status: 'approved', bringsBall: false, bringsCourtMarks: false },
-      { playerId: 'p5', role: 'waitlist', status: 'approved', bringsBall: false, bringsCourtMarks: true },
+      { playerId: 'p4', role: 'joined', status: 'approved', bringsBall: true, bringsCourtMarks: true },
+      { playerId: 'p5', role: 'waitlist', status: 'approved', bringsBall: true, bringsCourtMarks: true },
     ],
     joinRequests: [],
     chatChannels: [
