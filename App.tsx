@@ -49,7 +49,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <View style={styles.appShell}>
         <Header
           showBack={activeTab === 'lobbies' && Boolean(selectedLobby)}
@@ -109,7 +109,7 @@ function Header({
           onPress={onBack}
           style={({ pressed }) => [styles.headerCircleButton, pressed && styles.pressed]}
         >
-          <Text style={styles.headerCircleText}>‹</Text>
+          <Text style={styles.headerCircleText}>{'<'}</Text>
         </Pressable>
       ) : null}
       <View style={styles.brandMark}>
@@ -121,7 +121,7 @@ function Header({
       </View>
       <View style={styles.headerActions}>
         <View style={styles.notificationButton}>
-          <Text style={styles.notificationIcon}>⌂</Text>
+          <Text style={styles.notificationIcon}>B</Text>
           {unreadCount > 0 ? (
             <View style={styles.notificationBubble}>
               <Text style={styles.notificationBubbleText}>{unreadCount}</Text>
@@ -129,7 +129,7 @@ function Header({
           ) : null}
         </View>
         <View style={styles.headerCircleButton}>
-          <Text style={styles.moreText}>•••</Text>
+          <Text style={styles.moreText}>...</Text>
         </View>
       </View>
     </View>
@@ -139,27 +139,28 @@ function Header({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#07101D',
   },
   appShell: {
     alignSelf: 'center',
     flex: 1,
-    backgroundColor: colors.background,
-    maxWidth: 480,
+    backgroundColor: '#07101D',
+    maxWidth: 430,
     width: '100%',
   },
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    gap: 10,
+    minHeight: 88,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    paddingTop: 22,
   },
   headerCircleButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.07)',
     borderRadius: radius.round,
     borderWidth: 1,
     height: 46,
@@ -167,37 +168,40 @@ const styles = StyleSheet.create({
     width: 46,
   },
   headerCircleText: {
-    color: colors.ink,
-    fontSize: 34,
+    color: '#F5F7FA',
+    fontSize: 26,
     fontWeight: '500',
-    lineHeight: 36,
+    lineHeight: 28,
   },
   brandMark: {
     alignItems: 'center',
-    backgroundColor: colors.ink,
+    backgroundColor: '#101A2B',
+    borderColor: 'rgba(125,255,107,0.32)',
     borderRadius: radius.round,
-    height: 48,
+    borderWidth: 1,
+    height: 56,
     justifyContent: 'center',
-    width: 48,
+    width: 56,
   },
   brandBall: {
-    color: colors.accent,
-    fontSize: 20,
-    fontWeight: '800',
+    color: '#FFC857',
+    fontSize: 27,
+    fontWeight: '700',
   },
   headerCopy: {
     flex: 1,
   },
   brand: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: '800',
+    color: '#F5F7FA',
+    fontSize: 21,
+    fontWeight: '700',
     letterSpacing: 0,
   },
   subtleText: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
+    color: '#A7B0C0',
+    fontSize: 13,
+    fontWeight: '400',
+    lineHeight: 19,
   },
   headerActions: {
     alignItems: 'center',
@@ -206,22 +210,22 @@ const styles = StyleSheet.create({
   },
   notificationButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: radius.round,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.07)',
     borderWidth: 1,
     height: 46,
     justifyContent: 'center',
     width: 46,
   },
   notificationIcon: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: '700',
+    color: '#F5F7FA',
+    fontSize: 21,
+    fontWeight: '500',
   },
   notificationBubble: {
     alignItems: 'center',
-    backgroundColor: colors.accent,
+    backgroundColor: '#7DFF6B',
     borderRadius: radius.round,
     height: 20,
     justifyContent: 'center',
@@ -231,19 +235,19 @@ const styles = StyleSheet.create({
     width: 20,
   },
   notificationBubbleText: {
-    color: colors.ink,
+    color: '#07101D',
     fontSize: 11,
     fontWeight: '700',
   },
   moreText: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 1,
+    color: '#F5F7FA',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   content: {
-    paddingBottom: 132,
-    paddingHorizontal: spacing.lg,
+    paddingBottom: 140,
+    paddingHorizontal: 20,
   },
   pressed: {
     opacity: 0.72,

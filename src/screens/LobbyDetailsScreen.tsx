@@ -1,7 +1,6 @@
 import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useMemo, useState } from 'react';
 
-import { Avatar } from '../components/Avatar';
 import { players } from '../data/mock';
 import { colors, radius, spacing } from '../theme';
 import type { ChatChannelType, Lobby, LobbyParticipant, Player } from '../types';
@@ -14,13 +13,8 @@ type LobbyDetailsScreenProps = {
 
 type ChatTab = 'all' | 'joined';
 
-type DetailTile = {
-  label: string;
-  value: string;
-};
-
 const heroImageUrl =
-  'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=600&q=80';
+  'https://images.unsplash.com/photo-1519046904884-53103b34b206?auto=format&fit=crop&w=600&q=80';
 
 export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenProps) {
   const [selectedChatTab, setSelectedChatTab] = useState<ChatTab>('all');
@@ -40,16 +34,12 @@ export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenP
   const activeCount = activeParticipants.length;
   const admin = players.find((player) => player.id === lobby.adminId);
   const isJoined = Boolean(currentParticipant && currentParticipant.role !== 'waitlist');
-  const criteria = useMemo<DetailTile[]>(
+  const primaryFacts = useMemo(
     () => [
-      { label: 'Location', value: lobby.location.name },
       { label: 'Time', value: lobby.startsAt },
       { label: 'Rank', value: getRankRuleLabel(lobby) },
-      { label: 'Gender', value: getGenderRuleLabel(lobby) },
-      { label: 'Players', value: `${activeCount} / ${lobby.maxPlayers}` },
-      { label: 'Access', value: getAccessLabel(lobby) },
+      { label: 'Players', value: `${activeCount}/${lobby.maxPlayers}` },
       { label: 'Equipment', value: getEquipmentLabel(lobby) },
-      { label: 'Status', value: getStatusLabel(lobby) },
     ],
     [activeCount, lobby],
   );
@@ -73,12 +63,20 @@ export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenP
         <View style={styles.heroContent}>
           <Text style={styles.heroTitle}>{lobby.title}</Text>
           <View style={styles.adminRow}>
-            {admin ? <Avatar player={admin} size={34} /> : null}
+            {admin ? <PlayerAvatar player={admin} isAdmin={false} size={34} /> : null}
             <Text style={styles.adminText}>Admin: {admin?.name ?? 'Room creator'}</Text>
           </View>
-          <View style={styles.statusBadge}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusBadgeText}>{getStatusLabel(lobby)}</Text>
+          <View style={styles.heroMetaChips}>
+            <View style={styles.statusBadge}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusBadgeText}>{getStatusLabel(lobby)}</Text>
+            </View>
+            <View style={styles.heroChip}>
+              <Text style={styles.heroChipText}>{getGenderRuleLabel(lobby)}</Text>
+            </View>
+            <View style={styles.heroChip}>
+              <Text style={styles.heroChipText}>{getAccessLabel(lobby)}</Text>
+            </View>
           </View>
           <View style={styles.heroActions}>
             <Pressable
@@ -105,11 +103,12 @@ export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenP
         </View>
       </View>
 
-      <View style={styles.detailsGrid}>
-        {criteria.map((item) => (
-          <InfoTile key={item.label} tile={item} activeCount={activeCount} maxPlayers={lobby.maxPlayers} />
-        ))}
-      </View>
+      <GameFactsPanel
+        activeCount={activeCount}
+        locationName={lobby.location.name}
+        maxPlayers={lobby.maxPlayers}
+        primaryFacts={primaryFacts}
+      />
 
       {lobby.locationDescription ? (
         <View style={styles.meetingNote}>
@@ -166,7 +165,7 @@ export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenP
                 ? 'Only the admin, joined players, and substitutes can view this channel.'
                 : isAllTabLocked
                   ? 'Approved lobby players can view this channel.'
-                  : 'Coordination will appear here once chat is connected.'}
+                  : 'No messages yet. Coordination will appear here once chat is connected.'}
             </Text>
           </View>
         </View>
@@ -175,43 +174,51 @@ export function LobbyDetailsScreen({ lobby, currentPlayer }: LobbyDetailsScreenP
   );
 }
 
-function InfoTile({
-  tile,
+function GameFactsPanel({
   activeCount,
+  locationName,
   maxPlayers,
+  primaryFacts,
 }: {
-  tile: DetailTile;
   activeCount: number;
+  locationName: string;
   maxPlayers: number;
+  primaryFacts: Array<{ label: string; value: string }>;
 }) {
   return (
-    <View style={styles.infoTile}>
-      <View style={styles.tileHeader}>
-        <View style={styles.tileDot} />
-        <Text style={styles.tileLabel}>{tile.label}</Text>
+    <View style={styles.factsPanel}>
+      <View style={styles.locationRow}>
+        <View style={styles.locationCopy}>
+          <Text style={styles.factLabel}>Location</Text>
+          <Text style={styles.locationValue} numberOfLines={1}>
+            {locationName}
+          </Text>
+        </View>
       </View>
-      <Text style={styles.tileValue}>{tile.value}</Text>
-      {tile.label === 'Players' ? (
-        <View style={styles.playerDots}>
-          {Array.from({ length: maxPlayers }).map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.playerDot,
-                index < activeCount ? styles.playerDotFilled : styles.playerDotEmpty,
-              ]}
-            />
-          ))}
-        </View>
-      ) : null}
-      {tile.label === 'Rank' ? (
-        <View style={styles.rankBars}>
-          <View style={[styles.rankBar, styles.rankBarSoft]} />
-          <View style={[styles.rankBar, styles.rankBarMid]} />
-          <View style={[styles.rankBar, styles.rankBarHot]} />
-          <View style={[styles.rankBar, styles.rankBarEmpty]} />
-        </View>
-      ) : null}
+      <View style={styles.primaryFactsRow}>
+        {primaryFacts.map((fact, index) => (
+          <View key={fact.label} style={styles.primaryFact}>
+            <Text style={styles.factLabel}>{fact.label}</Text>
+            <Text style={styles.factValue} numberOfLines={1}>
+              {fact.value}
+            </Text>
+            {fact.label === 'Players' ? (
+              <View style={styles.playerDots}>
+                {Array.from({ length: maxPlayers }).map((_, dotIndex) => (
+                  <View
+                    key={dotIndex}
+                    style={[
+                      styles.playerDot,
+                      dotIndex < activeCount ? styles.playerDotFilled : styles.playerDotEmpty,
+                    ]}
+                  />
+                ))}
+              </View>
+            ) : null}
+            {index > 0 ? <View style={styles.factDivider} /> : null}
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -233,15 +240,21 @@ function ParticipantSection({
         <Text style={styles.sectionTitle}>
           {title} <Text style={styles.sectionCount}>({participants.length})</Text>
         </Text>
-        {variant === 'active' ? <Text style={styles.addPlayerText}>Add player</Text> : null}
+        {variant === 'active' ? (
+          <View style={styles.addPlayerAction}>
+            <Text style={styles.addPlayerText}>Add player</Text>
+            <Text style={styles.addPlayerIcon}>+</Text>
+          </View>
+        ) : null}
       </View>
-      <View style={styles.playerList}>
+      <View style={[styles.playerList, variant === 'queue' && styles.queueList]}>
         {participants.length > 0 ? (
           participants.map((participant) => (
             <ParticipantRow
               key={`${participant.playerId}-${participant.role}`}
               lobby={lobby}
               participant={participant}
+              variant={variant}
             />
           ))
         ) : (
@@ -255,9 +268,11 @@ function ParticipantSection({
 function ParticipantRow({
   lobby,
   participant,
+  variant,
 }: {
   lobby: Lobby;
   participant: LobbyParticipant;
+  variant: 'active' | 'queue';
 }) {
   const player = players.find((candidate) => candidate.id === participant.playerId);
 
@@ -268,8 +283,8 @@ function ParticipantRow({
   const isAdmin = player.id === lobby.adminId;
 
   return (
-    <View style={styles.playerRow}>
-      <Avatar player={player} size={50} />
+    <View style={[styles.playerRow, variant === 'queue' && styles.queueRow]}>
+      <PlayerAvatar player={player} isAdmin={isAdmin} size={52} />
       <View style={styles.playerCopy}>
         <View style={styles.playerNameRow}>
           <Text style={styles.playerName}>{player.name}</Text>
@@ -287,6 +302,31 @@ function ParticipantRow({
   );
 }
 
+function PlayerAvatar({
+  player,
+  isAdmin,
+  size,
+}: {
+  player: Player;
+  isAdmin: boolean;
+  size: number;
+}) {
+  return (
+    <View
+      style={[
+        styles.playerAvatar,
+        getAvatarStyle(player.id),
+        { borderRadius: size / 2, height: size, width: size },
+      ]}
+    >
+      <Text style={[styles.playerAvatarText, { fontSize: size * 0.34 }]}>
+        {player.initials}
+      </Text>
+      {isAdmin ? <View style={styles.onlineDot} /> : null}
+    </View>
+  );
+}
+
 function EquipmentBadge({ label, tone }: { label: string; tone: 'green' | 'blue' }) {
   return (
     <View style={[styles.equipmentBadge, tone === 'blue' && styles.equipmentBadgeBlue]}>
@@ -295,6 +335,22 @@ function EquipmentBadge({ label, tone }: { label: string; tone: 'green' | 'blue'
       </Text>
     </View>
   );
+}
+
+function getAvatarStyle(playerId: string) {
+  if (playerId === 'p2') {
+    return styles.avatarGreen;
+  }
+
+  if (playerId === 'p4') {
+    return styles.avatarCoral;
+  }
+
+  if (playerId === 'p5') {
+    return styles.avatarLavender;
+  }
+
+  return styles.avatarGold;
 }
 
 function ChatTabButton({
@@ -406,38 +462,39 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   heroCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
+    backgroundColor: '#0E1829',
+    borderColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 26,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
-    shadowColor: '#1B2430',
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
+    gap: 14,
+    minHeight: 188,
+    padding: 12,
+    shadowColor: '#000000',
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
   },
   heroPhoto: {
-    borderRadius: 18,
-    height: 142,
+    borderRadius: 21,
+    height: 164,
     overflow: 'hidden',
-    width: 118,
+    width: 128,
   },
   heroImage: {
-    borderRadius: 18,
+    borderRadius: 21,
   },
   heroContent: {
     flex: 1,
-    gap: 7,
+    gap: 11,
     justifyContent: 'center',
     minWidth: 0,
   },
   heroTitle: {
-    color: colors.ink,
-    fontSize: 23,
+    color: '#F5F7FA',
+    fontSize: 26,
     fontWeight: '800',
-    lineHeight: 28,
+    lineHeight: 30,
   },
   adminRow: {
     alignItems: 'center',
@@ -445,20 +502,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   adminText: {
-    color: colors.muted,
+    color: '#F5F7FA',
     flexShrink: 1,
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '400',
+    lineHeight: 21,
   },
   statusBadge: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#DDF2D2',
+    backgroundColor: 'rgba(125,255,107,0.12)',
     borderRadius: radius.round,
     flexDirection: 'row',
     gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    minHeight: 31,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
   },
   statusDot: {
     backgroundColor: colors.primary,
@@ -467,125 +526,140 @@ const styles = StyleSheet.create({
     width: 8,
   },
   statusBadgeText: {
-    color: colors.primaryDark,
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#7DFF6B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  heroMetaChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  heroChip: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: radius.round,
+    minHeight: 31,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  heroChipText: {
+    color: '#F5F7FA',
+    fontSize: 13,
+    fontWeight: '500',
   },
   heroActions: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.xs,
+    marginTop: 3,
   },
   primaryAction: {
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
+    backgroundColor: '#7DFF6B',
+    borderRadius: 16,
     flex: 1,
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: 54,
     paddingHorizontal: spacing.md,
   },
   primaryActionJoined: {
-    backgroundColor: colors.primaryDark,
+    backgroundColor: '#55D85A',
   },
   primaryActionText: {
-    color: colors.surface,
-    fontSize: 14,
+    color: '#07101D',
+    fontSize: 16,
     fontWeight: '700',
   },
   shareAction: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 16,
     borderWidth: 1,
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: 54,
     paddingHorizontal: spacing.md,
+    width: 96,
   },
   shareActionText: {
-    color: colors.ink,
-    fontSize: 13,
+    color: '#F5F7FA',
+    fontSize: 15,
     fontWeight: '600',
   },
-  detailsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  infoTile: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 20,
+  factsPanel: {
+    backgroundColor: '#0E1829',
+    borderColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 22,
     borderWidth: 1,
-    gap: spacing.sm,
-    minHeight: 100,
-    padding: spacing.md,
-    width: '48.7%',
+    gap: 13,
+    marginTop: 2,
+    padding: 15,
+    shadowColor: '#000000',
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
   },
-  tileHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
+  locationRow: {
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+    borderBottomWidth: 1,
+    paddingBottom: 13,
   },
-  tileDot: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.round,
-    height: 7,
-    opacity: 0.75,
-    width: 7,
+  locationCopy: {
+    gap: spacing.xs,
   },
-  tileLabel: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  tileValue: {
-    color: colors.ink,
-    fontSize: 17,
+  locationValue: {
+    color: '#F5F7FA',
+    fontSize: 20,
     fontWeight: '700',
-    lineHeight: 22,
+    lineHeight: 25,
+  },
+  primaryFactsRow: {
+    flexDirection: 'row',
+  },
+  primaryFact: {
+    flex: 1,
+    gap: spacing.xs,
+    minHeight: 45,
+    paddingLeft: 11,
+    paddingRight: 7,
+  },
+  factLabel: {
+    color: '#A7B0C0',
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 16,
+  },
+  factValue: {
+    color: '#F5F7FA',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  factDivider: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    width: 1,
   },
   playerDots: {
     flexDirection: 'row',
     gap: spacing.xs,
-    marginTop: 'auto',
   },
   playerDot: {
     borderRadius: radius.round,
-    height: 13,
-    width: 13,
+    height: 7,
+    width: 7,
   },
   playerDotFilled: {
-    backgroundColor: colors.ink,
+    backgroundColor: '#F5F7FA',
   },
   playerDotEmpty: {
-    backgroundColor: colors.border,
-  },
-  rankBars: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: 'auto',
-  },
-  rankBar: {
-    borderRadius: radius.round,
-    height: 8,
-    width: 12,
-  },
-  rankBarSoft: {
-    backgroundColor: '#CAEAB9',
-  },
-  rankBarMid: {
-    backgroundColor: '#ADC953',
-  },
-  rankBarHot: {
-    backgroundColor: colors.accent,
-  },
-  rankBarEmpty: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   meetingNote: {
     alignItems: 'center',
@@ -628,7 +702,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   section: {
-    gap: spacing.sm,
+    gap: spacing.md,
+    marginTop: spacing.sm,
   },
   sectionHeadingRow: {
     alignItems: 'center',
@@ -636,36 +711,54 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sectionTitle: {
-    color: colors.ink,
-    fontSize: 18,
-    fontWeight: '800',
+    color: '#F5F7FA',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 28,
   },
   sectionCount: {
-    color: '#A4854E',
-    fontSize: 16,
+    color: '#FFC857',
+    fontSize: 20,
     fontWeight: '700',
   },
+  addPlayerAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
   addPlayerText: {
-    color: colors.primaryDark,
-    fontSize: 13,
+    color: '#7DFF6B',
+    fontSize: 14,
     fontWeight: '600',
   },
+  addPlayerIcon: {
+    color: '#7DFF6B',
+    fontSize: 20,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
   playerList: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 20,
+    backgroundColor: '#0E1829',
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 24,
     borderWidth: 1,
     overflow: 'hidden',
   },
+  queueList: {
+    opacity: 0.86,
+  },
   playerRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    minHeight: 72,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    minHeight: 86,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  queueRow: {
+    minHeight: 84,
   },
   playerCopy: {
     flex: 1,
@@ -679,143 +772,182 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   playerName: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: '800',
+    color: '#F5F7FA',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 23,
   },
   adminBadge: {
-    backgroundColor: '#ECD08C',
+    backgroundColor: 'rgba(255,200,87,0.18)',
     borderRadius: radius.round,
-    color: colors.ink,
-    fontSize: 11,
+    color: '#FFC857',
+    fontSize: 12,
     fontWeight: '700',
     overflow: 'hidden',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   subBadge: {
-    backgroundColor: '#DCECF4',
+    backgroundColor: 'rgba(79,209,255,0.10)',
     borderRadius: radius.round,
-    color: colors.ocean,
-    fontSize: 11,
+    color: '#4FD1FF',
+    fontSize: 12,
     fontWeight: '700',
     overflow: 'hidden',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
   playerMeta: {
-    color: colors.muted,
-    fontSize: 13,
+    color: '#A7B0C0',
+    fontSize: 14,
     fontWeight: '500',
+    lineHeight: 20,
   },
   equipmentRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   equipmentBadge: {
     alignItems: 'center',
-    backgroundColor: '#E6F4E8',
+    backgroundColor: 'rgba(125,255,107,0.10)',
     borderRadius: radius.round,
-    minWidth: 54,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    height: 28,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   equipmentBadgeBlue: {
-    backgroundColor: '#E5F0FB',
+    backgroundColor: 'rgba(79,209,255,0.10)',
   },
   equipmentText: {
-    color: colors.primaryDark,
-    fontSize: 11,
-    fontWeight: '700',
+    color: '#7DFF6B',
+    fontSize: 13,
+    fontWeight: '600',
   },
   equipmentTextBlue: {
-    color: colors.ocean,
+    color: '#4FD1FF',
   },
   rowMore: {
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+    color: '#A7B0C0',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 1.5,
   },
   emptySectionText: {
-    color: colors.muted,
+    color: '#A7B0C0',
     fontSize: 13,
     padding: spacing.lg,
   },
+  playerAvatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  playerAvatarText: {
+    color: '#07101D',
+    fontWeight: '700',
+  },
+  avatarGold: {
+    backgroundColor: '#F1D58B',
+  },
+  avatarGreen: {
+    backgroundColor: '#A9E7C1',
+  },
+  avatarCoral: {
+    backgroundColor: '#FFA89A',
+  },
+  avatarLavender: {
+    backgroundColor: '#B9B6FF',
+  },
+  onlineDot: {
+    backgroundColor: '#7DFF6B',
+    borderColor: '#0E1829',
+    borderRadius: radius.round,
+    borderWidth: 2,
+    bottom: 0,
+    height: 14,
+    position: 'absolute',
+    right: 0,
+    width: 14,
+  },
   chatPanel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 20,
+    backgroundColor: '#0E1829',
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 24,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.sm,
+    gap: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.lg,
   },
   chatTabs: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
     flexDirection: 'row',
-    gap: spacing.sm,
+    height: 48,
+    padding: spacing.xs,
   },
   chatTab: {
     alignItems: 'center',
-    borderRadius: radius.md,
+    borderRadius: 12,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 48,
     paddingHorizontal: spacing.sm,
   },
   chatTabActive: {
-    backgroundColor: colors.ink,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
   chatTabLocked: {
     opacity: 0.72,
   },
   chatTabText: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '700',
+    color: '#A7B0C0',
+    fontSize: 15,
+    fontWeight: '600',
   },
   chatTabTextActive: {
-    color: colors.surface,
+    color: '#F5F7FA',
   },
   chatEmptyState: {
     alignItems: 'center',
-    borderColor: colors.border,
-    borderRadius: 16,
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 18,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.lg,
-    minHeight: 126,
-    padding: spacing.lg,
+    minHeight: 112,
+    padding: 18,
   },
   chatBubbleIcon: {
     alignItems: 'center',
-    backgroundColor: '#EEEAE1',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
     borderRadius: radius.round,
-    height: 58,
+    height: 54,
     justifyContent: 'center',
-    width: 58,
+    width: 54,
   },
   chatBubbleRing: {
-    borderColor: colors.ink,
+    borderColor: '#F5F7FA',
     borderRadius: radius.round,
     borderWidth: 2,
-    height: 26,
-    opacity: 0.82,
-    width: 26,
+    height: 24,
+    opacity: 0.8,
+    width: 24,
   },
   chatCopy: {
     flex: 1,
     gap: spacing.sm,
   },
   chatTitle: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: '800',
+    color: '#F5F7FA',
+    fontSize: 18,
+    fontWeight: '700',
   },
   chatText: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 20,
+    color: '#A7B0C0',
+    fontSize: 14,
+    lineHeight: 21,
   },
   pressed: {
     opacity: 0.72,
