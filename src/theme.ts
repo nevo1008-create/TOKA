@@ -10,6 +10,16 @@ export const colors = {
   accent: '#F2B441',
   danger: '#C9514A',
   sand: '#E7D7B8',
+  darkBackground: '#0D150B',
+  darkSurface: '#151E13',
+  darkSurfaceLow: '#081007',
+  darkSurfaceHigh: '#242C21',
+  darkBorder: '#2E372B',
+  darkText: '#DCE6D4',
+  darkMuted: '#BCCBB4',
+  darkOverlay: 'rgba(0, 0, 0, 0.64)',
+  neon: '#45E348',
+  transparent: 'transparent',
 };
 
 export const spacing = {
