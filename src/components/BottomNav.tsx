@@ -1,15 +1,20 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing } from '../theme';
+import { AppText } from './AppText';
 
 export type Tab = 'home' | 'games' | 'create' | 'community' | 'profile';
 
-const tabs: Array<{ id: Tab; label: string }> = [
-  { id: 'home', label: 'Home' },
-  { id: 'games', label: 'Games' },
-  { id: 'create', label: 'Create' },
-  { id: 'community', label: 'Community' },
-  { id: 'profile', label: 'Profile' },
+type IconName = keyof typeof Ionicons.glyphMap;
+
+const tabs: Array<{ activeIcon: IconName; icon: IconName; id: Tab; label: string }> = [
+  { activeIcon: 'home-outline', icon: 'home-outline', id: 'home', label: 'Home' },
+  { activeIcon: 'calendar-outline', icon: 'calendar-outline', id: 'games', label: 'Games' },
+  { activeIcon: 'football-outline', icon: 'football-outline', id: 'create', label: 'Create' },
+  { activeIcon: 'people-outline', icon: 'people-outline', id: 'community', label: 'Community' },
+  { activeIcon: 'person-outline', icon: 'person-outline', id: 'profile', label: 'Profile' },
 ];
 
 type BottomNavProps = {
@@ -20,10 +25,11 @@ type BottomNavProps = {
 
 export function BottomNav({ activeTab, onChange, isDark = false }: BottomNavProps) {
   return (
-    <View style={[styles.bottomNav, isDark && styles.bottomNavDark]}>
+    <BlurView intensity={isDark ? 48 : 20} tint={isDark ? 'dark' : 'light'} style={[styles.bottomNav, isDark && styles.bottomNavDark]}>
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         const isCreate = tab.id === 'create';
+        const iconColor = isActive ? colors.accentLime : isCreate ? colors.darkText : colors.darkMuted;
 
         return (
           <Pressable
@@ -34,29 +40,23 @@ export function BottomNav({ activeTab, onChange, isDark = false }: BottomNavProp
             <View
               style={[
                 styles.navIcon,
-                isDark && styles.navIconDark,
-                isActive && styles.navIconActive,
-                isActive && isDark && styles.navIconActiveDark,
                 isCreate && styles.createNavIcon,
               ]}
             >
-              <Text
-                style={[
-                  styles.navIconText,
-                  isDark && styles.navIconTextDark,
-                  isActive && styles.navIconTextActive,
-                  isActive && isDark && styles.navIconTextActiveDark,
-                  isCreate && styles.createNavIconText,
-                ]}
-              >
-                {isCreate ? '+' : tab.label.slice(0, 1)}
-              </Text>
+              <Ionicons color={iconColor} name={isActive ? tab.activeIcon : tab.icon} size={isCreate ? 33 : 21} />
             </View>
-            <Text style={[styles.navLabel, isDark && styles.navLabelDark, isActive && styles.navLabelActive, isActive && isDark && styles.navLabelActiveDark]}>{tab.label}</Text>
+            <AppText
+              style={styles.navLabel}
+              tone={isActive ? 'accent' : 'muted'}
+              variant="caption"
+              weight={isActive ? '800' : '600'}
+            >
+              {tab.label}
+            </AppText>
           </Pressable>
         );
       })}
-    </View>
+    </BlurView>
   );
 }
 
@@ -65,87 +65,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: 24,
     borderWidth: 1,
-    bottom: spacing.lg,
+    bottom: 6,
     flexDirection: 'row',
-    gap: spacing.sm,
-    left: spacing.lg,
-    padding: spacing.sm,
+    gap: spacing.xs,
+    left: spacing.xl2,
+    padding: spacing.xs,
     position: 'absolute',
-    right: spacing.lg,
+    right: spacing.xl2,
   },
   bottomNavDark: {
-    backgroundColor: colors.darkSurface,
+    backgroundColor: 'rgba(6, 20, 10, 0.86)',
     borderColor: colors.darkBorder,
-    borderRadius: 0,
-    bottom: 0,
-    left: 0,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.sm,
-    right: 0,
+    borderRadius: 24,
+    bottom: 6,
+    left: spacing.xl2,
+    paddingBottom: 6,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
+    right: spacing.xl2,
   },
   navItem: {
     alignItems: 'center',
     flex: 1,
-    gap: spacing.xs,
+    gap: spacing.xxs,
+    minHeight: 51,
   },
   createNavItem: {
-    transform: [{ translateY: -10 }],
+    transform: [{ translateY: -5 }],
   },
   navIcon: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.round,
-    height: 38,
+    height: 34,
     justifyContent: 'center',
-    width: 38,
-  },
-  navIconDark: {
-    backgroundColor: colors.darkSurfaceHigh,
-  },
-  navIconActive: {
-    backgroundColor: colors.ink,
-  },
-  navIconActiveDark: {
-    backgroundColor: colors.neon,
+    width: 34,
   },
   createNavIcon: {
-    backgroundColor: colors.neon,
-    height: 54,
-    width: 54,
-  },
-  navIconText: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  navIconTextDark: {
-    color: colors.darkMuted,
-  },
-  navIconTextActive: {
-    color: colors.surface,
-  },
-  navIconTextActiveDark: {
-    color: colors.ink,
-  },
-  createNavIconText: {
-    color: colors.ink,
-    fontSize: 28,
+    height: 44,
+    width: 44,
   },
   navLabel: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  navLabelDark: {
-    color: colors.darkMuted,
-  },
-  navLabelActive: {
-    color: colors.ink,
-  },
-  navLabelActiveDark: {
-    color: colors.neon,
+    maxWidth: 68,
   },
 });

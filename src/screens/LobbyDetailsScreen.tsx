@@ -1,11 +1,13 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppHeader } from '../components/AppHeader';
+import { AppText } from '../components/AppText';
 import { Avatar } from '../components/Avatar';
+import { HomeHeader } from '../components/home/HomeHeader';
 import { currentPlayer, notifications, players } from '../data/mock';
 import { colors, radius, spacing } from '../theme';
 import type { GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player } from '../types';
-import { getLobbyImageUrl } from './GamesScreen';
 
 type LobbyDetailsScreenProps = {
   lobby: Lobby;
@@ -17,86 +19,130 @@ export function LobbyDetailsScreen({ lobby, lobbyIndex, onBack }: LobbyDetailsSc
   const admin = players.find((player) => player.id === lobby.adminId);
   const activeParticipants = lobby.participants.filter(isActiveParticipant);
   const waitlistedParticipants = lobby.participants.filter((participant) => participant.role === 'waitlist');
-  const statusLabel = getStatusLabel(lobby);
+  const currentParticipant = lobby.participants.find((participant) => participant.playerId === currentPlayer.id);
+  const playerCount = `${activeParticipants.length} / ${lobby.maxPlayers}`;
 
   return (
     <View style={styles.screen}>
-      <AppHeader notificationCount={notifications.length} onBack={onBack} player={currentPlayer} />
+      <LinearGradient
+        colors={['rgba(76, 255, 90, 0.09)', colors.darkBackground, colors.darkBackground]}
+        locations={[0, 0.34, 1]}
+        style={styles.backgroundGlow}
+      />
+      <HomeHeader notificationCount={notifications.length} onBack={onBack} player={currentPlayer} />
 
       <View style={styles.content}>
-        <View style={styles.eventCard}>
-          <View style={styles.eventTop}>
-            <Image source={{ uri: getLobbyImageUrl(lobbyIndex) }} style={styles.heroImage} />
-            <View style={styles.eventCopy}>
-              <Text style={styles.lobbyTitle} numberOfLines={2}>
-                {lobby.title}
-              </Text>
-              {admin ? (
-                <View style={styles.adminRow}>
-                  <Avatar player={admin} size={28} />
-                  <Text style={styles.adminText}>
-                    Admin: <Text style={styles.adminName}>{admin.name}</Text>
-                  </Text>
-                </View>
-              ) : null}
-              <View style={styles.statusRow}>
-                <Pill label={statusLabel} tone="primary" />
-                <Pill label={getGenderLabel(lobby.genderRule)} />
-                <Pill label={getVisibilityLabel(lobby.visibility)} />
-              </View>
-            </View>
-          </View>
+        <RoomHeroCard
+          admin={admin}
+          currentParticipant={currentParticipant}
+          lobby={lobby}
+          lobbyIndex={lobbyIndex}
+          playerCount={playerCount}
+        />
 
-          <View style={styles.actionRow}>
-            <Pressable style={styles.joinButton}>
-              <Text style={styles.joinButtonText}>{getPrimaryAction(lobby)}</Text>
-            </Pressable>
-            <Pressable style={styles.shareButton}>
-              <Text style={styles.shareButtonText}>S</Text>
-            </Pressable>
-          </View>
+        <View style={styles.infoStrip}>
+          <InfoCell icon="calendar-outline" label="Starts" value={formatStartTime(lobby.startsAt)} />
+          <InfoCell icon="cellular" iconColor={colors.accentLime} label="Level" value={getRankLabel(lobby)} />
+          <InfoCell icon="people-outline" label="Players" value={playerCount} />
+          <InfoCell icon="people-circle-outline" iconColor={colors.accentSea} label="Gender" value={getGenderLabel(lobby.genderRule)} />
         </View>
 
-        <View style={styles.detailsRow}>
-          <DetailCell label="Location" value={lobby.location.name} />
-          <DetailCell label="Time" value={lobby.startsAt} />
-          <DetailCell label="Rank" value={getRankLabel(lobby)} />
-          <DetailCell label="Players" value={`${activeParticipants.length} / ${lobby.maxPlayers}`} isLast />
-        </View>
+        <LobbyChatCard lobby={lobby} />
 
         <ParticipantsSection
-          actionLabel="Add player"
+          actionLabel="Invite"
           count={activeParticipants.length}
           participants={activeParticipants}
-          title="Players in Lobby"
+          title="Players"
         />
 
-        <ParticipantsSection
-          count={waitlistedParticipants.length}
-          participants={waitlistedParticipants}
-          title="Waitlist"
-        />
+        {waitlistedParticipants.length > 0 ? (
+          <ParticipantsSection
+            count={waitlistedParticipants.length}
+            participants={waitlistedParticipants}
+            title="Waitlist"
+          />
+        ) : null}
 
-        <View style={styles.chatCard}>
-          <View style={styles.chatTabs}>
-            <Pressable style={[styles.chatTab, styles.chatTabActive]}>
-              <Text style={[styles.chatTabText, styles.chatTabTextActive]}>All Lobby</Text>
-            </Pressable>
-            <Pressable style={styles.chatTab}>
-              <Text style={styles.chatTabText}>Joined</Text>
-            </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function RoomHeroCard({
+  admin,
+  currentParticipant,
+  lobby,
+  lobbyIndex,
+  playerCount,
+}: {
+  admin?: Player;
+  currentParticipant?: LobbyParticipant;
+  lobby: Lobby;
+  lobbyIndex: number;
+  playerCount: string;
+}) {
+  const isJoined = currentParticipant && isActiveParticipant(currentParticipant);
+  const primaryLabel = isJoined ? 'Joined' : getPrimaryAction(lobby);
+
+  return (
+    <View style={styles.heroCard}>
+      <BeachVisual seed={lobbyIndex} />
+      <LinearGradient
+        colors={[colors.darkBackgroundRaised, 'rgba(6, 20, 10, 0.94)', 'rgba(6, 20, 10, 0.18)']}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={styles.heroOverlay}
+      />
+
+      <View style={styles.heroContent}>
+        <View style={styles.heroPills}>
+          <StatusPill label={getStatusLabel(lobby)} tone="lime" />
+          <StatusPill icon="time-outline" label={lobby.startsAt} tone="gold" />
+        </View>
+
+        <View style={styles.titleBlock}>
+          <AppText numberOfLines={2} style={styles.lobbyTitle} variant="display" weight="800">
+            {lobby.title}
+          </AppText>
+          <View style={styles.locationRow}>
+            <Ionicons color={colors.accentSea} name="location" size={18} />
+            <AppText numberOfLines={1} tone="muted" variant="titleSmall" weight="600">
+              {lobby.location.name}, {lobby.location.city}
+            </AppText>
           </View>
-          <View style={styles.chatEmpty}>
-            <View style={styles.chatIcon}>
-              <Text style={styles.chatIconText}>C</Text>
-            </View>
-            <View style={styles.chatCopy}>
-              <Text style={styles.chatTitle}>All lobby</Text>
-              <Text style={styles.chatText}>
-                No messages yet. Coordination will appear here once chat is connected.
-              </Text>
+        </View>
+
+        {admin ? (
+          <View style={styles.adminRow}>
+            <Avatar player={admin} size={32} />
+            <View style={styles.adminCopy}>
+              <AppText tone="subtle" variant="caption" weight="600">
+                Hosted by
+              </AppText>
+              <AppText numberOfLines={1} variant="bodySmall" weight="800">
+                {admin.name}
+              </AppText>
             </View>
           </View>
+        ) : null}
+
+        {lobby.note ? (
+          <AppText numberOfLines={2} style={styles.noteText} tone="muted" variant="bodySmall" weight="500">
+            {lobby.note}
+          </AppText>
+        ) : null}
+
+        <View style={styles.actions}>
+          <Pressable accessibilityRole="button" style={[styles.primaryButton, isJoined && styles.joinedButton]}>
+            <AppText align="center" tone={isJoined ? 'muted' : 'inverse'} variant="body" weight="800">
+              {primaryLabel}
+            </AppText>
+            <Ionicons color={isJoined ? colors.darkMuted : colors.ink} name={isJoined ? 'checkmark' : 'chevron-forward'} size={17} />
+          </Pressable>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton}>
+            <Ionicons color={colors.accentLime} name="share-social-outline" size={18} />
+          </Pressable>
         </View>
       </View>
     </View>
@@ -115,14 +161,22 @@ function ParticipantsSection({
   title: string;
 }) {
   return (
-    <View style={styles.participantsSection}>
+    <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          {title} <Text style={styles.sectionCount}>({count})</Text>
-        </Text>
+        <View style={styles.sectionTitleRow}>
+          <AppText style={styles.sectionTitle} variant="heading" weight="800">
+            {title}
+          </AppText>
+          <AppText tone="subtle" variant="label" weight="600">
+            {count}
+          </AppText>
+        </View>
         {actionLabel ? (
-          <Pressable>
-            <Text style={styles.sectionAction}>{actionLabel} +</Text>
+          <Pressable accessibilityRole="button" style={styles.sectionAction}>
+            <Ionicons color={colors.accentLime} name="person-add-outline" size={15} />
+            <AppText tone="accent" variant="label" weight="800">
+              {actionLabel}
+            </AppText>
           </Pressable>
         ) : null}
       </View>
@@ -145,51 +199,181 @@ function ParticipantRow({ participant, player }: { participant: LobbyParticipant
     <View style={styles.participantRow}>
       <View style={styles.playerInfo}>
         <View style={styles.avatarWrap}>
-          <Avatar player={player} size={48} />
+          <Avatar player={player} size={42} />
           {participant.role === 'admin' ? <View style={styles.onlineDot} /> : null}
         </View>
         <View style={styles.playerText}>
           <View style={styles.playerNameRow}>
-            <Text style={styles.playerName}>{player.name}</Text>
-            {participant.role === 'admin' ? <Text style={styles.adminBadge}>Admin</Text> : null}
-            {participant.role === 'substitute' ? <Text style={styles.adminBadge}>Sub</Text> : null}
+            <AppText numberOfLines={1} style={styles.playerName} variant="body" weight="800">
+              {player.name}
+            </AppText>
+            <RolePill role={participant.role} />
           </View>
-          <Text style={styles.playerRank}>Rank: {player.level}</Text>
+          <AppText tone="subtle" variant="caption" weight="600">
+            {player.level} level - {player.area}
+          </AppText>
         </View>
       </View>
+
       <View style={styles.equipmentRow}>
-        {participant.bringsCourtMarks ? <EquipmentPill label="Marks" /> : null}
-        {participant.bringsBall ? <EquipmentPill label="Ball" /> : null}
-        <Text style={styles.moreText}>...</Text>
+        <EquipmentIcon active={participant.bringsBall} icon="football-outline" />
+        <EquipmentIcon active={participant.bringsCourtMarks} icon="flag-outline" />
+        <Ionicons color={colors.darkMuted} name="ellipsis-horizontal" size={17} />
       </View>
     </View>
   );
 }
 
-function DetailCell({ isLast = false, label, value }: { isLast?: boolean; label: string; value: string }) {
+function LobbyChatCard({ lobby }: { lobby: Lobby }) {
+  const unreadCount = lobby.chatChannels.reduce((total, channel) => total + channel.unreadCount, 0);
+
   return (
-    <View style={[styles.detailCell, isLast && styles.detailCellLast]}>
-      <Text style={styles.detailValue} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={styles.detailLabel}>{label}</Text>
+    <View style={styles.chatCard}>
+      <View style={styles.chatHeader}>
+        <View style={styles.chatTitleRow}>
+          <View style={styles.chatIcon}>
+            <Ionicons color={colors.accentSea} name="chatbubbles-outline" size={18} />
+          </View>
+          <View style={styles.chatCopy}>
+            <AppText style={styles.chatTitle} variant="titleSmall" weight="800">
+              Room chat
+            </AppText>
+            <AppText tone="subtle" variant="label" weight="600">
+              {unreadCount > 0 ? `${unreadCount} unread updates` : 'Coordination and updates'}
+            </AppText>
+          </View>
+        </View>
+        <Pressable accessibilityRole="button" style={styles.openChatButton}>
+          <AppText tone="accent" variant="label" weight="800">
+            Open chat
+          </AppText>
+          <Ionicons color={colors.accentLime} name="chevron-forward" size={14} />
+        </Pressable>
+      </View>
+
+      <View style={styles.channelStack}>
+        {lobby.chatChannels.map((channel) => (
+          <View key={channel.id} style={styles.channelRow}>
+            <View style={styles.channelCopy}>
+              <AppText variant="bodySmall" weight="800">
+                {channel.title}
+              </AppText>
+              <AppText tone="subtle" variant="caption" weight="600">
+                {channel.type === 'all' ? 'Everyone in the room' : 'Admin and active players'}
+              </AppText>
+            </View>
+            {channel.unreadCount > 0 ? (
+              <View style={styles.unreadPill}>
+                <AppText align="center" tone="inverse" variant="caption" weight="800">
+                  {channel.unreadCount}
+                </AppText>
+              </View>
+            ) : (
+              <Ionicons color={colors.darkMuted} name="chevron-forward" size={16} />
+            )}
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
 
-function Pill({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'primary' }) {
+function InfoCell({
+  icon,
+  iconColor = colors.darkMuted,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
+  label: string;
+  value: string;
+}) {
   return (
-    <View style={[styles.pill, tone === 'primary' && styles.primaryPill]}>
-      {tone === 'primary' ? <View style={styles.pillDot} /> : null}
-      <Text style={[styles.pillText, tone === 'primary' && styles.primaryPillText]}>{label}</Text>
+    <View style={styles.infoCell}>
+      <View style={styles.infoValueRow}>
+        <Ionicons color={iconColor} name={icon} size={17} />
+        <AppText numberOfLines={1} style={styles.infoValue} variant="bodySmall" weight="800">
+          {value}
+        </AppText>
+      </View>
+      <AppText style={styles.infoLabel} tone="muted" variant="caption" weight="600">
+        {label}
+      </AppText>
     </View>
   );
 }
 
-function EquipmentPill({ label }: { label: string }) {
+function StatusPill({
+  icon,
+  label,
+  tone = 'neutral',
+}: {
+  icon?: keyof typeof Ionicons.glyphMap;
+  label: string;
+  tone?: 'gold' | 'lime' | 'neutral';
+}) {
+  const isLime = tone === 'lime';
+  const isGold = tone === 'gold';
+
   return (
-    <View style={styles.equipmentPill}>
-      <Text style={styles.equipmentText}>{label}</Text>
+    <View style={[styles.pill, isLime && styles.limePill, isGold && styles.goldPill]}>
+      {icon ? (
+        <Ionicons
+          color={isGold ? colors.accent : isLime ? colors.accentLime : colors.darkMuted}
+          name={icon}
+          size={13}
+        />
+      ) : null}
+      <AppText tone={isGold ? 'warning' : isLime ? 'accent' : 'muted'} variant="caption" weight="800">
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+function RolePill({ role }: { role: LobbyParticipant['role'] }) {
+  if (role === 'joined' || role === 'waitlist') {
+    return null;
+  }
+
+  const isAdmin = role === 'admin';
+
+  return (
+    <View style={[styles.rolePill, isAdmin ? styles.rolePillLime : styles.rolePillGold]}>
+      <AppText tone={isAdmin ? 'accent' : 'warning'} variant="caption" weight="800">
+        {role === 'substitute' ? 'Sub' : 'Admin'}
+      </AppText>
+    </View>
+  );
+}
+
+function EquipmentIcon({ active, icon }: { active: boolean; icon: keyof typeof Ionicons.glyphMap }) {
+  return (
+    <View style={[styles.equipmentIcon, active && styles.equipmentIconActive]}>
+      <Ionicons color={active ? colors.accentLime : colors.darkSubtle} name={icon} size={14} />
+    </View>
+  );
+}
+
+function BeachVisual({ seed }: { seed: number }) {
+  const gradient = seed % 2 === 0
+    ? ['#173E24', '#27644A', '#D99A00']
+    : ['#0B2730', '#218678', '#FFD78E'];
+
+  return (
+    <View style={styles.visual}>
+      <LinearGradient
+        colors={gradient as [string, string, string]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.sunGlow} />
+      <View style={styles.netLine} />
+      <View style={[styles.palmLine, styles.palmOne]} />
+      <View style={[styles.palmLine, styles.palmTwo]} />
+      <LinearGradient colors={[colors.accentGold, colors.accentGoldDark]} style={styles.ball} />
     </View>
   );
 }
@@ -198,9 +382,18 @@ function isActiveParticipant(participant: LobbyParticipant) {
   return participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute';
 }
 
+function formatStartTime(startsAt: string) {
+  const parts = startsAt.split(' ');
+  return parts.length > 1 ? parts.slice(1).join(' ') : startsAt;
+}
+
 function getStatusLabel(lobby: Lobby) {
   if (lobby.status === 'full') {
     return 'Full';
+  }
+
+  if (lobby.status === 'rating_open') {
+    return 'Rating open';
   }
 
   if (lobby.visibility === 'approval_required') {
@@ -248,310 +441,126 @@ function getRankLabel(lobby: Lobby) {
 
 function getPrimaryAction(lobby: Lobby) {
   if (lobby.status === 'full') {
-    return lobby.waitlistEnabled ? 'Join Waitlist' : 'View Details';
+    return lobby.waitlistEnabled ? 'Join waitlist' : 'View details';
   }
 
   if (lobby.visibility !== 'public') {
-    return 'Request Access';
+    return 'Request access';
   }
 
-  return 'Join Lobby';
+  return 'Join game';
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: colors.darkBackground,
-    flex: 1,
-    minHeight: '100%',
-  },
-  topBar: {
-    alignItems: 'center',
-    backgroundColor: colors.darkBackground,
-    borderBottomColor: colors.darkBorder,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  iconButton: {
-    alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
-    borderRadius: radius.round,
-    height: 40,
-    justifyContent: 'center',
-    position: 'relative',
-    width: 40,
-  },
-  iconButtonText: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  logoMark: {
-    alignItems: 'center',
-    backgroundColor: colors.ink,
-    borderColor: colors.neon,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  logoText: {
-    color: colors.accent,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  topActions: {
+  actions: {
     flexDirection: 'row',
     gap: spacing.sm,
+    marginTop: spacing.xs,
   },
-  notificationCount: {
-    alignItems: 'center',
-    backgroundColor: colors.neon,
-    borderColor: colors.darkBackground,
-    borderRadius: radius.round,
-    borderWidth: 2,
-    height: 18,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: -1,
-    top: -1,
-    width: 18,
-    zIndex: 1,
-  },
-  notificationCountText: {
-    color: colors.darkBackground,
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  content: {
-    gap: spacing.xl,
-    padding: spacing.lg,
-  },
-  eventCard: {
-    backgroundColor: colors.darkSurface,
-    borderColor: colors.darkBorder,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing.lg,
-    padding: spacing.lg,
-  },
-  eventTop: {
-    flexDirection: 'row',
-    gap: spacing.lg,
-  },
-  heroImage: {
-    borderRadius: radius.md,
-    height: 128,
-    width: 128,
-  },
-  eventCopy: {
+  adminCopy: {
     flex: 1,
-    justifyContent: 'center',
     minWidth: 0,
-  },
-  lobbyTitle: {
-    color: colors.darkText,
-    fontSize: 24,
-    fontWeight: '900',
-    lineHeight: 29,
   },
   adminRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  adminText: {
-    color: colors.darkMuted,
-    fontSize: 12,
-  },
-  adminName: {
-    color: colors.neon,
-    fontWeight: '900',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-  },
-  pill: {
-    alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  primaryPill: {
-    backgroundColor: colors.darkBackground,
-    borderColor: colors.neon,
-  },
-  pillDot: {
-    backgroundColor: colors.neon,
-    borderRadius: radius.round,
-    height: 6,
-    width: 6,
-  },
-  pillText: {
-    color: colors.darkMuted,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  primaryPillText: {
-    color: colors.neon,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  joinButton: {
-    alignItems: 'center',
-    backgroundColor: colors.neon,
-    borderRadius: radius.md,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 52,
-  },
-  joinButtonText: {
-    color: colors.darkBackground,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  shareButton: {
-    alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    justifyContent: 'center',
-    width: 56,
-  },
-  shareButtonText: {
-    color: colors.darkText,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  detailsRow: {
-    borderBottomColor: colors.darkBorder,
-    borderBottomWidth: 1,
-    borderTopColor: colors.darkBorder,
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    paddingVertical: spacing.lg,
-  },
-  detailCell: {
-    borderRightColor: colors.darkBorder,
-    borderRightWidth: 1,
-    flex: 1,
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xs,
-  },
-  detailCellLast: {
-    borderRightWidth: 0,
-  },
-  detailValue: {
-    color: colors.darkText,
-    fontSize: 13,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  detailLabel: {
-    color: colors.darkMuted,
-    fontSize: 10,
-    fontWeight: '900',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-  },
-  participantsSection: {
-    gap: spacing.lg,
-  },
-  sectionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  sectionCount: {
-    color: colors.neon,
-  },
-  sectionAction: {
-    color: colors.neon,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  participantList: {
-    gap: spacing.lg,
-  },
-  participantRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  playerInfo: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    minWidth: 0,
   },
   avatarWrap: {
     position: 'relative',
   },
-  onlineDot: {
-    backgroundColor: colors.neon,
-    borderColor: colors.darkBackground,
-    borderRadius: radius.round,
-    borderWidth: 2,
-    bottom: 0,
-    height: 14,
+  backgroundGlow: {
+    height: 360,
+    left: 0,
     position: 'absolute',
     right: 0,
-    width: 14,
+    top: 0,
   },
-  playerText: {
+  ball: {
+    borderColor: colors.ink,
+    borderRadius: radius.round,
+    borderWidth: 2,
+    height: 24,
+    position: 'absolute',
+    right: 78,
+    top: 64,
+    width: 24,
+  },
+  channelCopy: {
     flex: 1,
     minWidth: 0,
   },
-  playerNameRow: {
+  channelRow: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(246, 247, 237, 0.035)',
+    borderColor: 'rgba(246, 247, 237, 0.08)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 58,
+    paddingHorizontal: spacing.md,
+  },
+  channelStack: {
+    gap: spacing.sm,
+  },
+  chatCard: {
+    backgroundColor: 'rgba(11, 29, 16, 0.62)',
+    borderColor: colors.darkBorder,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  chatHeader: {
     alignItems: 'center',
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.sm,
+    justifyContent: 'space-between',
   },
-  playerName: {
-    color: colors.darkText,
-    fontSize: 15,
-    fontWeight: '900',
+  chatCopy: {
+    flex: 1,
+    minWidth: 0,
   },
-  adminBadge: {
-    borderColor: colors.neon,
-    borderRadius: radius.sm,
+  chatIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(39, 210, 196, 0.08)',
+    borderColor: 'rgba(39, 210, 196, 0.26)',
+    borderRadius: radius.round,
     borderWidth: 1,
-    color: colors.neon,
-    fontSize: 8,
-    fontWeight: '900',
-    overflow: 'hidden',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    textTransform: 'uppercase',
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
   },
-  playerRank: {
-    color: colors.darkMuted,
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 2,
+  chatTitle: {
+    color: '#ECEDE6',
+  },
+  chatTitleRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  content: {
+    gap: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.xl2,
+    paddingTop: spacing.md,
+  },
+  equipmentIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(246, 247, 237, 0.05)',
+    borderColor: 'rgba(246, 247, 237, 0.10)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  equipmentIconActive: {
+    backgroundColor: 'rgba(76, 255, 90, 0.10)',
+    borderColor: colors.neonMuted,
   },
   equipmentRow: {
     alignItems: 'center',
@@ -559,88 +568,275 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     gap: spacing.xs,
   },
-  equipmentPill: {
-    backgroundColor: colors.darkBackground,
-    borderColor: colors.neon,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+  goldPill: {
+    backgroundColor: 'rgba(255, 200, 61, 0.10)',
+    borderColor: 'rgba(255, 200, 61, 0.28)',
   },
-  equipmentText: {
-    color: colors.neon,
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  moreText: {
-    color: colors.darkMuted,
-    fontSize: 16,
-    fontWeight: '900',
-    paddingHorizontal: spacing.xs,
-  },
-  chatCard: {
+  heroCard: {
     backgroundColor: colors.darkSurface,
     borderColor: colors.darkBorder,
-    borderRadius: radius.lg,
+    borderRadius: 26,
     borderWidth: 1,
+    minHeight: 266,
     overflow: 'hidden',
+    position: 'relative',
   },
-  chatTabs: {
-    borderBottomColor: colors.darkBorder,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
+  heroContent: {
+    gap: 8,
+    padding: 13,
+    zIndex: 2,
   },
-  chatTab: {
+  heroOverlay: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 1,
+  },
+  heroPills: {
     alignItems: 'center',
-    borderBottomColor: colors.transparent,
-    borderBottomWidth: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  infoCell: {
     flex: 1,
-    paddingVertical: spacing.lg,
+    gap: 3,
+    minWidth: 0,
   },
-  chatTabActive: {
-    borderBottomColor: colors.neon,
+  infoLabel: {
+    color: 'rgba(215, 217, 208, 0.78)',
+    fontSize: 9,
+    lineHeight: 12,
   },
-  chatTabText: {
-    color: colors.darkMuted,
-    fontSize: 14,
-    fontWeight: '900',
+  infoStrip: {
+    backgroundColor: 'rgba(11, 29, 16, 0.52)',
+    borderColor: colors.darkBorder,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: spacing.sm,
   },
-  chatTabTextActive: {
-    color: colors.neon,
+  infoValue: {
+    color: 'rgba(243, 244, 238, 0.9)',
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
-  chatEmpty: {
+  infoValueRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.lg,
-    padding: spacing.xl,
+    gap: 4,
   },
-  chatIcon: {
+  limePill: {
+    backgroundColor: 'rgba(76, 255, 90, 0.10)',
+    borderColor: colors.neonMuted,
+  },
+  lobbyTitle: {
+    fontSize: 26,
+    lineHeight: 31,
+    maxWidth: 278,
+  },
+  locationRow: {
     alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    maxWidth: 300,
+  },
+  netLine: {
+    backgroundColor: 'rgba(246, 247, 237, 0.26)',
+    bottom: 98,
+    height: 2,
+    left: 14,
+    position: 'absolute',
+    right: 8,
+    transform: [{ rotate: '-7deg' }],
+  },
+  noteText: {
+    color: 'rgba(215, 217, 208, 0.82)',
+    fontSize: 12,
+    lineHeight: 17,
+    maxWidth: 286,
+  },
+  onlineDot: {
+    backgroundColor: colors.accentLime,
+    borderColor: colors.darkBackground,
+    borderRadius: radius.round,
+    borderWidth: 2,
+    bottom: 0,
+    height: 13,
+    position: 'absolute',
+    right: 0,
+    width: 13,
+  },
+  openChatButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 255, 90, 0.08)',
+    borderColor: colors.neonMuted,
     borderRadius: radius.round,
     borderWidth: 1,
-    height: 48,
+    flexDirection: 'row',
+    gap: 2,
+    minHeight: 30,
+    paddingHorizontal: spacing.sm,
+  },
+  palmLine: {
+    backgroundColor: 'rgba(3, 16, 8, 0.64)',
+    borderRadius: radius.round,
+    position: 'absolute',
+    width: 7,
+  },
+  palmOne: {
+    height: 92,
+    right: 16,
+    top: 22,
+    transform: [{ rotate: '18deg' }],
+  },
+  palmTwo: {
+    height: 60,
+    right: 35,
+    top: 30,
+    transform: [{ rotate: '-42deg' }],
+  },
+  participantList: {
+    gap: spacing.sm,
+  },
+  participantRow: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(11, 29, 16, 0.58)',
+    borderColor: colors.darkBorder,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 70,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  pill: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(246, 247, 237, 0.045)',
+    borderColor: 'rgba(246, 247, 237, 0.10)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    minHeight: 26,
+    paddingHorizontal: spacing.sm,
+  },
+  playerInfo: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  playerName: {
+    color: '#ECEDE6',
+    flexShrink: 1,
+  },
+  playerNameRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  playerText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  primaryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.accentLime,
+    borderRadius: radius.md,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 42,
+  },
+  joinedButton: {
+    backgroundColor: 'rgba(246, 247, 237, 0.08)',
+    borderColor: 'rgba(246, 247, 237, 0.12)',
+    borderWidth: 1,
+  },
+  rolePill: {
+    borderRadius: radius.round,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  rolePillGold: {
+    backgroundColor: 'rgba(255, 200, 61, 0.10)',
+    borderColor: 'rgba(255, 200, 61, 0.28)',
+  },
+  rolePillLime: {
+    backgroundColor: 'rgba(76, 255, 90, 0.10)',
+    borderColor: colors.neonMuted,
+  },
+  screen: {
+    backgroundColor: colors.darkBackground,
+    minHeight: '100%',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(11, 29, 16, 0.58)',
+    borderColor: colors.neonMuted,
+    borderRadius: radius.md,
+    borderWidth: 1,
     justifyContent: 'center',
     width: 48,
   },
-  chatIconText: {
-    color: colors.darkMuted,
-    fontSize: 16,
-    fontWeight: '900',
+  section: {
+    gap: spacing.sm,
   },
-  chatCopy: {
-    flex: 1,
+  sectionAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 40,
+    paddingLeft: spacing.md,
   },
-  chatTitle: {
-    color: colors.darkText,
-    fontSize: 14,
-    fontWeight: '900',
+  sectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  chatText: {
-    color: colors.darkMuted,
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: spacing.xs,
+  sectionTitle: {
+    fontSize: 23,
+    lineHeight: 28,
+  },
+  sectionTitleRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  sunGlow: {
+    backgroundColor: 'rgba(255, 200, 61, 0.55)',
+    borderRadius: radius.round,
+    height: 44,
+    position: 'absolute',
+    right: 42,
+    top: 122,
+    width: 44,
+  },
+  titleBlock: {
+    gap: spacing.xs,
+  },
+  unreadPill: {
+    alignItems: 'center',
+    backgroundColor: colors.accentLime,
+    borderRadius: radius.round,
+    height: 25,
+    justifyContent: 'center',
+    minWidth: 25,
+  },
+  visual: {
+    bottom: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: '54%',
   },
 });

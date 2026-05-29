@@ -1,8 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing } from '../theme';
 import type { Player } from '../types';
+import { AppText } from './AppText';
 import { Avatar } from './Avatar';
+import { IconButton } from './IconButton';
 
 const defaultSubtitle = 'Footvolley games by level, place, and trust';
 
@@ -22,32 +25,27 @@ export function AppHeader({
   return (
     <View style={styles.header}>
       {onBack ? (
-        <Pressable onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </Pressable>
+        <IconButton icon="chevron-back" onPress={onBack} size={42} variant="ghost" />
       ) : null}
 
       <View style={styles.brandRow}>
-        <View style={styles.logoMark}>
-          <Text style={styles.logoText}>T</Text>
-        </View>
+        <LinearGradient colors={[colors.darkSurfaceHigh, colors.ink]} style={styles.logoMark}>
+          <AppText tone="warning" variant="titleSmall" weight="900">
+            T
+          </AppText>
+        </LinearGradient>
         <View style={styles.brandCopy}>
-          <Text style={styles.brandTitle}>TOCA</Text>
-          <Text style={styles.brandSubtitle} numberOfLines={2}>
+          <AppText variant="title" weight="900">
+            TOCA
+          </AppText>
+          <AppText numberOfLines={2} tone="muted" variant="label">
             {subtitle}
-          </Text>
+          </AppText>
         </View>
       </View>
 
       <View style={styles.headerActions}>
-        <Pressable style={styles.headerIcon}>
-          <Text style={styles.headerIconText}>!</Text>
-          {notificationCount > 0 ? (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>{notificationCount}</Text>
-            </View>
-          ) : null}
-        </Pressable>
+        <IconButton badgeCount={notificationCount} icon="notifications-outline" size={42} />
         <Avatar player={player} size={42} />
       </View>
     </View>
@@ -57,28 +55,13 @@ export function AppHeader({
 const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
-    backgroundColor: colors.darkBackground,
+    backgroundColor: colors.transparent,
     flexDirection: 'row',
     gap: spacing.md,
     justifyContent: 'space-between',
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.lg,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.xl,
-  },
-  backButton: {
-    alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  backButtonText: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
   },
   brandRow: {
     alignItems: 'center',
@@ -89,7 +72,6 @@ const styles = StyleSheet.create({
   },
   logoMark: {
     alignItems: 'center',
-    backgroundColor: colors.ink,
     borderColor: colors.neon,
     borderRadius: radius.round,
     borderWidth: 1,
@@ -97,59 +79,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 44,
   },
-  logoText: {
-    color: colors.accent,
-    fontSize: 18,
-    fontWeight: '900',
-  },
   brandCopy: {
     flex: 1,
     minWidth: 0,
   },
-  brandTitle: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  brandSubtitle: {
-    color: colors.darkMuted,
-    fontSize: 12,
-    lineHeight: 18,
-  },
   headerActions: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
-  },
-  headerIcon: {
-    alignItems: 'center',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    height: 42,
-    justifyContent: 'center',
-    position: 'relative',
-    width: 42,
-  },
-  headerIconText: {
-    color: colors.darkMuted,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  notificationBadge: {
-    alignItems: 'center',
-    backgroundColor: colors.neon,
-    borderRadius: radius.round,
-    height: 18,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: -3,
-    top: -5,
-    width: 18,
-  },
-  notificationBadgeText: {
-    color: colors.ink,
-    fontSize: 10,
-    fontWeight: '900',
+    gap: spacing.sm,
   },
 });

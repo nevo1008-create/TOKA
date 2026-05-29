@@ -1,10 +1,13 @@
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { AppHeader } from '../components/AppHeader';
-import { Avatar } from '../components/Avatar';
-import { currentPlayer, notifications, players } from '../data/mock';
+import { AppText } from '../components/AppText';
+import { HomeHeader } from '../components/home/HomeHeader';
+import { currentPlayer, notifications } from '../data/mock';
 import { colors, radius, spacing } from '../theme';
-import type { GenderRule, Lobby, LobbyParticipant } from '../types';
+import type { Lobby } from '../types';
 
 type GamesScreenProps = {
   lobbies: Lobby[];
@@ -14,529 +17,1046 @@ type GamesScreenProps = {
   setSelectedFilter: (filter: string) => void;
 };
 
-const filters = [
-  { id: 'All Games', icon: 'G' },
-  { id: 'Nearby', icon: 'N' },
-  { id: 'Level', icon: 'L', suffix: 'v' },
-  { id: 'Time', icon: 'T', suffix: 'v' },
+type FilterId = 'All Games' | 'Location' | 'Level' | 'Gender';
+
+type GameListItem = {
+  audience: string;
+  avatars: string[];
+  badgeLabel?: string;
+  badgeTone?: 'goldSoft' | 'lime';
+  distance: string;
+  gradient: readonly [string, string, string];
+  level: string;
+  lobbyIndex: number;
+  location: string;
+  metaTag?: string;
+  players: string;
+  spotsLeft: string;
+  startsAt: string;
+  title: string;
+};
+
+const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffix?: boolean }> = [
+  { id: 'All Games', icon: 'football-outline' },
+  { id: 'Location', icon: 'navigate-outline' },
+  { id: 'Level', icon: 'options-outline', suffix: true },
+  { id: 'Gender', icon: 'male-female-outline', suffix: true },
 ];
 
-const gameImages = [
-  'https://images.unsplash.com/photo-1547347298-4074fc3086f0?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1613918431703-aa50889e3be8?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=360&q=80',
+const gameSections = ['Search Games', 'My Games'] as const;
+type GameSection = (typeof gameSections)[number];
+
+const gameCards: GameListItem[] = [
+  {
+    audience: 'Everyone',
+    avatars: ['NV', 'OM', 'MY'],
+    badgeLabel: 'Admin',
+    badgeTone: 'lime',
+    distance: '2.4 km',
+    gradient: ['#173E24', '#27644A', '#D99A00'],
+    level: 'B-C+',
+    lobbyIndex: 0,
+    location: 'Gordon Beach, Tel Aviv',
+    players: '3 / 4 players',
+    spotsLeft: '1 spot left',
+    startsAt: 'Fri 16:30',
+    title: 'Friday at Gordon',
+  },
+  {
+    audience: 'Everyone',
+    avatars: ['DN', 'NV', 'OM'],
+    distance: '18.1 km',
+    gradient: ['#11321D', '#315A3A', '#F2D38A'],
+    level: 'A+',
+    lobbyIndex: 1,
+    location: 'Poleg Beach, Netanya',
+    players: '3 / 6 players',
+    spotsLeft: '3 spots left',
+    startsAt: 'Sat 08:00',
+    title: 'League morning',
+  },
+  {
+    audience: 'Women',
+    avatars: ['MY'],
+    distance: '49.5 km',
+    gradient: ['#0B2730', '#218678', '#FFD78E'],
+    level: 'C-D',
+    lobbyIndex: 2,
+    location: 'Aqueduct Beach, Caesarea',
+    metaTag: 'Women',
+    players: '1 / 6 players',
+    spotsLeft: '5 spots left',
+    startsAt: 'Sun 19:00',
+    title: 'Women evening',
+  },
+  {
+    audience: 'Everyone',
+    avatars: ['NV', 'OM', 'LB', '+1'],
+    badgeLabel: 'Joined',
+    badgeTone: 'lime',
+    distance: '3.1 km',
+    gradient: ['#112C1A', '#244F32', '#27D2C4'],
+    level: 'B',
+    lobbyIndex: 0,
+    location: 'Hilton Beach, Tel Aviv',
+    players: '3 / 6 players',
+    spotsLeft: '2 spots left',
+    startsAt: 'Sun 07:30',
+    title: 'Sunrise challenge',
+  },
+  {
+    audience: 'Everyone',
+    avatars: ['OM', 'MY', 'ES', '+2'],
+    distance: '12.7 km',
+    gradient: ['#0C2414', '#2B5A34', '#FFC83D'],
+    level: 'B+',
+    lobbyIndex: 1,
+    location: 'Herzliya Beach, Herzliya',
+    players: '5 / 8 players',
+    spotsLeft: '4 spots left',
+    startsAt: 'Mon 18:00',
+    title: 'Monday night',
+  },
 ];
 
 export function getLobbyImageUrl(index: number) {
-  return gameImages[index % gameImages.length];
+  return `gradient-placeholder-${index}`;
 }
 
 export function GamesScreen({
   lobbies,
-  onBack,
   onOpenLobby,
   selectedFilter,
   setSelectedFilter,
 }: GamesScreenProps) {
+  const [activeSection, setActiveSection] = useState<GameSection>('Search Games');
+
   return (
     <View style={styles.screen}>
-      <AppHeader notificationCount={notifications.length} player={currentPlayer} />
+      <LinearGradient
+        colors={['rgba(76, 255, 90, 0.09)', colors.darkBackground, colors.darkBackground]}
+        locations={[0, 0.34, 1]}
+        style={styles.backgroundGlow}
+      />
+      <HomeHeader notificationCount={notifications.length} player={currentPlayer} />
 
-      <View style={styles.filtersSection}>
-        <View>
-          <Text style={styles.screenTitle}>Games</Text>
-          <Text style={styles.screenSubtitle}>Find a game and join players near you</Text>
-        </View>
-
-        <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>S</Text>
-          <TextInput
-            placeholder="Search for location or players..."
-            placeholderTextColor={colors.darkMuted}
-            style={styles.searchInput}
-          />
-        </View>
-
-        <ScrollView
-          horizontal
-          contentContainerStyle={styles.filterRow}
-          showsHorizontalScrollIndicator={false}
-        >
-          {filters.map((filter) => {
-            const isActive = selectedFilter === filter.id;
+      <View style={styles.content}>
+        <View style={styles.sectionTabs}>
+          {gameSections.map((section) => {
+            const isActive = activeSection === section;
 
             return (
               <Pressable
-                key={filter.id}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
-                onPress={() => setSelectedFilter(filter.id)}
+                accessibilityRole="button"
+                key={section}
+                onPress={() => setActiveSection(section)}
+                style={[styles.sectionTab, isActive && styles.sectionTabActive]}
               >
-                <Text style={[styles.filterIcon, isActive && styles.filterIconActive]}>{filter.icon}</Text>
-                <Text style={[styles.filterText, isActive && styles.filterTextActive]}>{filter.id}</Text>
-                {filter.suffix ? <Text style={styles.filterSuffix}>{filter.suffix}</Text> : null}
+                <AppText
+                  align="center"
+                  style={[styles.sectionTabText, isActive && styles.sectionTabTextActive]}
+                  tone={isActive ? 'accent' : 'muted'}
+                  variant="bodySmall"
+                  weight="800"
+                >
+                  {section}
+                </AppText>
               </Pressable>
             );
           })}
-          <Pressable style={styles.tuneButton}>
-            <Text style={styles.tuneText}>=</Text>
-          </Pressable>
-        </ScrollView>
-      </View>
-
-      <View style={styles.listSection}>
-        <View style={styles.listHeader}>
-          <View style={styles.listTitleRow}>
-            <Text style={styles.listTitle}>Open Games</Text>
-            <Text style={styles.availableCount}>{lobbies.length} games available</Text>
-          </View>
-          <Pressable style={styles.sortButton}>
-            <Text style={styles.sortText}>Sort by: Nearest v</Text>
-          </Pressable>
         </View>
 
-        <View style={styles.cardStack}>
-          {lobbies.map((lobby, index) => (
-            <GameCard
-              key={lobby.id}
-              imageUrl={getLobbyImageUrl(index)}
-              lobby={lobby}
-              onPress={() => onOpenLobby(lobby)}
-            />
-          ))}
-        </View>
+        {activeSection === 'Search Games' ? (
+          <SearchGamesView
+            lobbies={lobbies}
+            onOpenLobby={onOpenLobby}
+            selectedFilter={selectedFilter}
+            setSelectedFilter={setSelectedFilter}
+          />
+        ) : (
+          <MyGamesView lobbies={lobbies} onOpenLobby={onOpenLobby} />
+        )}
       </View>
     </View>
   );
 }
 
-function GameCard({
-  lobby,
-  imageUrl,
-  onPress,
+function SearchGamesView({
+  lobbies,
+  onOpenLobby,
+  selectedFilter,
+  setSelectedFilter,
 }: {
-  lobby: Lobby;
-  imageUrl: string;
-  onPress: () => void;
+  lobbies: Lobby[];
+  onOpenLobby: (lobby: Lobby) => void;
+  selectedFilter: string;
+  setSelectedFilter: (filter: string) => void;
 }) {
-  const activeParticipants = lobby.participants.filter(isActiveParticipant);
-  const visibleParticipants = activeParticipants.slice(0, 3);
-  const extraParticipants = Math.max(activeParticipants.length - visibleParticipants.length, 0);
-  const spotsLeft = Math.max(lobby.maxPlayers - activeParticipants.length, 0);
-
   return (
-    <Pressable style={styles.gameCard} onPress={onPress}>
-      <View style={styles.imageWrap}>
-        <Image source={{ uri: imageUrl }} style={styles.gameImage} />
-        <View style={styles.spotsBadge}>
-          <Text style={styles.spotsText}>
-            {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'} left` : 'Full'}
-          </Text>
+    <>
+      <View style={styles.searchBox}>
+        <Ionicons color={colors.darkSubtle} name="search" size={18} />
+        <TextInput
+          placeholder="Search by name or ID"
+          placeholderTextColor={colors.darkSubtle}
+          style={styles.searchInput}
+        />
+      </View>
+
+      <ScrollView
+        horizontal
+        contentContainerStyle={styles.filterRow}
+        showsHorizontalScrollIndicator={false}
+      >
+        {filters.map((filter) => {
+          const isActive = selectedFilter === filter.id || (selectedFilter === 'Nearby' && filter.id === 'Location');
+
+          return (
+            <Pressable
+              key={filter.id}
+              accessibilityRole="button"
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+              onPress={() => setSelectedFilter(filter.id)}
+            >
+              <Ionicons
+                color={isActive ? colors.accentLime : colors.darkSubtle}
+                name={filter.icon}
+                size={15}
+              />
+              <AppText
+                style={[styles.filterText, isActive && styles.filterTextActive]}
+                tone={isActive ? 'accent' : 'muted'}
+                variant="bodySmall"
+                weight="700"
+              >
+                {filter.id}
+              </AppText>
+              {filter.suffix ? (
+                <Ionicons color={colors.darkSubtle} name="chevron-down" size={13} />
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      <View style={styles.listHeader}>
+        <View style={styles.listTitleRow}>
+          <AppText style={styles.listTitle} variant="title" weight="800">
+            Open Games
+          </AppText>
+          <AppText tone="subtle" variant="label" weight="600">
+            8 games available
+          </AppText>
+        </View>
+        <Pressable accessibilityRole="button" style={styles.privateButton}>
+          <Ionicons color={colors.darkMuted} name="lock-closed-outline" size={12} />
+          <AppText tone="muted" variant="label" weight="700">
+            Show private
+          </AppText>
+        </Pressable>
+      </View>
+
+      <View style={styles.cardStack}>
+        {gameCards.map((game, index) => {
+          const lobby = lobbies[game.lobbyIndex % Math.max(lobbies.length, 1)];
+
+          return (
+            <GameCard
+              game={game}
+              key={`${game.title}-${index}`}
+              onPress={() => {
+                if (lobby) {
+                  onOpenLobby(lobby);
+                }
+              }}
+            />
+          );
+        })}
+      </View>
+    </>
+  );
+}
+
+function MyGamesView({ lobbies, onOpenLobby }: { lobbies: Lobby[]; onOpenLobby: (lobby: Lobby) => void }) {
+  return (
+    <View style={styles.myGamesContent}>
+      <GameHistorySection
+        countLabel="2 active"
+        games={[
+          { ...gameCards[0], actionLabel: 'Open room', imageBadgeLabel: 'Admin', statusLabel: 'Admin', statusTone: 'lime' },
+          { ...gameCards[3], actionLabel: 'Open room', imageBadgeLabel: 'Player', statusLabel: 'Waitlist', statusTone: 'gold' },
+        ]}
+        lobbies={lobbies}
+        onOpenLobby={onOpenLobby}
+        title="Joined Games"
+      />
+
+      <GameHistorySection
+        countLabel="7 finished"
+        games={[
+          { ...gameCards[1], actionLabel: 'Rate players', statusLabel: 'Rating open', statusTone: 'gold' },
+          { ...gameCards[2], actionLabel: 'View recap', statusLabel: 'Finished', statusTone: 'muted' },
+          { ...gameCards[4], actionLabel: 'View recap', statusLabel: 'Finished', statusTone: 'muted' },
+        ]}
+        lobbies={lobbies}
+        onOpenLobby={onOpenLobby}
+        title="Finished Games"
+      />
+    </View>
+  );
+}
+
+function GameHistorySection({
+  countLabel,
+  games,
+  lobbies,
+  onOpenLobby,
+  title,
+}: {
+  countLabel: string;
+  games: Array<GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' }>;
+  lobbies: Lobby[];
+  onOpenLobby: (lobby: Lobby) => void;
+  title: string;
+}) {
+  return (
+    <View style={styles.historySection}>
+      <View style={styles.listHeader}>
+        <View style={styles.listTitleRow}>
+          <AppText style={styles.listTitle} variant="title" weight="800">
+            {title}
+          </AppText>
+          <AppText tone="subtle" variant="label" weight="600">
+            {countLabel}
+          </AppText>
         </View>
       </View>
 
-      <View style={styles.cardBody}>
-        <View>
-          <View style={styles.timeRow}>
-            <View style={[styles.timeDot, lobby.status === 'full' && styles.timeDotMuted]} />
-            <Text style={styles.timeText}>{lobby.startsAt}</Text>
-          </View>
-          <Text style={styles.gameTitle} numberOfLines={1}>
-            {lobby.title}
-          </Text>
-          <Text style={styles.locationText} numberOfLines={1}>
-            {lobby.location.name}, {lobby.location.city}
-          </Text>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailText}>Outdoor</Text>
-            <Text style={styles.detailText}>{lobby.location.distanceKm ?? '0'} km</Text>
-            <Text style={styles.detailText}>{getGenderLabel(lobby.genderRule)}</Text>
-          </View>
-        </View>
+      <View style={styles.cardStack}>
+        {games.map((game, index) => {
+          const lobby = lobbies[game.lobbyIndex % Math.max(lobbies.length, 1)];
 
-        <View style={styles.playersRow}>
-          <View style={styles.avatarStack}>
-            {visibleParticipants.map((participant) => {
-              const player = players.find((candidate) => candidate.id === participant.playerId);
-
-              return player ? (
-                <View key={player.id} style={styles.stackedAvatar}>
-                  <Avatar player={player} size={28} />
-                </View>
-              ) : null;
-            })}
-            {extraParticipants > 0 ? (
-              <View style={styles.extraAvatar}>
-                <Text style={styles.extraAvatarText}>+{extraParticipants}</Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={styles.playersText}>
-            {activeParticipants.length} / {lobby.maxPlayers} players
-          </Text>
-        </View>
+          return (
+            <MyGameCard
+              game={game}
+              key={`${title}-${game.title}-${index}`}
+              onPress={() => {
+                if (lobby) {
+                  onOpenLobby(lobby);
+                }
+              }}
+            />
+          );
+        })}
       </View>
+    </View>
+  );
+}
 
-      <View style={styles.cardSide}>
-        <View style={styles.levelBox}>
-          <Text style={styles.levelText}>{getLevelLabel(lobby)}</Text>
-          <Text style={styles.levelCaption}>Level</Text>
+function GameCard({ game, onPress }: { game: GameListItem; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={styles.myGameCard}>
+      <BeachThumbnail badgeLabel={game.badgeLabel} badgeTone={game.badgeTone} game={game} />
+
+      <View style={styles.myCardBody}>
+        <View style={styles.timeRow}>
+          <View style={styles.liveDot} />
+          <AppText style={styles.timeText} tone="muted" variant="caption" weight="700">
+            {game.startsAt}
+          </AppText>
         </View>
-        <Text style={styles.chevron}>{'>'}</Text>
+
+        <AppText numberOfLines={1} style={styles.gameTitle} variant="title" weight="800">
+          {game.title}
+        </AppText>
+
+        <View style={styles.locationRow}>
+          <Ionicons color={colors.accentSea} name="location" size={13} />
+          <AppText numberOfLines={1} style={styles.locationText} tone="muted" variant="bodySmall" weight="500">
+            {game.location}
+          </AppText>
+        </View>
+
+        <View style={styles.myCardFooter}>
+          <View style={styles.myChipRow}>
+            <View style={styles.myLevelPill}>
+              <AppText tone="muted" variant="caption" weight="800">
+                {game.level}
+              </AppText>
+            </View>
+            <View style={styles.genderPill}>
+              <AppText tone="subtle" variant="caption" weight="800">
+                {game.audience}
+              </AppText>
+            </View>
+          </View>
+
+          <View style={styles.myActionStack}>
+            <View style={styles.myPlayersPill}>
+              <Ionicons color={colors.darkMuted} name="people-outline" size={12} />
+              <AppText style={styles.myPlayersText} tone="muted" variant="caption" weight="800">
+                {game.players}
+              </AppText>
+            </View>
+            <View style={styles.myCardAction}>
+              <AppText tone="accent" variant="caption" weight="800">
+                Open room
+              </AppText>
+              <Ionicons color={colors.accentLime} name="chevron-forward" size={14} />
+            </View>
+          </View>
+        </View>
       </View>
     </Pressable>
   );
 }
 
-function isActiveParticipant(participant: LobbyParticipant) {
-  return participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute';
+function LegacyGameCard({ game, onPress }: { game: GameListItem; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={styles.gameCard}>
+      <BeachThumbnail game={game} />
+
+      <View style={styles.cardBody}>
+        <View style={styles.timeRow}>
+          <View style={styles.liveDot} />
+          <AppText style={styles.timeText} tone="muted" variant="caption" weight="700">
+            {game.startsAt}
+          </AppText>
+        </View>
+
+        <AppText numberOfLines={1} style={styles.gameTitle} variant="title" weight="800">
+          {game.title}
+        </AppText>
+
+        <View style={styles.locationRow}>
+          <Ionicons color={colors.accentSea} name="location" size={13} />
+          <AppText numberOfLines={1} style={styles.locationText} tone="muted" variant="bodySmall" weight="500">
+            {game.location}
+          </AppText>
+        </View>
+
+        <AppText numberOfLines={1} style={styles.metaText} tone="subtle" variant="label" weight="600">
+          Outdoor · {game.distance}
+          {game.metaTag ? ` · ${game.metaTag}` : ''}
+        </AppText>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.avatarRow}>
+            {game.avatars.map((initial, index) => (
+              <View
+                key={`${game.title}-${initial}-${index}`}
+                style={[styles.smallAvatar, initial.startsWith('+') && styles.extraAvatar, index > 0 && styles.avatarOverlap]}
+              >
+                <AppText align="center" tone={initial.startsWith('+') ? 'primary' : 'inverse'} variant="caption" weight="800">
+                  {initial}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.playersPill}>
+            <Ionicons color={colors.darkMuted} name="people-outline" size={12} />
+            <AppText style={styles.playersText} tone="muted" variant="caption" weight="700">
+              {game.players}
+            </AppText>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.cardSide}>
+        <View style={styles.levelBadge}>
+          <AppText align="center" style={styles.levelText} tone="warning" variant="caption" weight="800">
+            {game.level}
+          </AppText>
+        </View>
+        <AppText style={styles.audienceText} tone="subtle" variant="caption" weight="600">
+          {game.audience}
+        </AppText>
+        <Ionicons color={colors.darkMuted} name="chevron-forward" size={19} />
+      </View>
+    </Pressable>
+  );
 }
 
-function getLevelLabel(lobby: Lobby) {
-  if (lobby.rankRuleType === 'any') {
-    return 'Any';
-  }
+function MyGameCard({
+  game,
+  onPress,
+}: {
+  game: GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
+  onPress: () => void;
+}) {
+  const actionIsOpenRoom = game.actionLabel === 'Open room';
 
-  if (lobby.rankRuleType === 'exact') {
-    return lobby.rankExact ?? 'Exact';
-  }
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={styles.myGameCard}>
+      <BeachThumbnail
+        badgeLabel={game.imageBadgeLabel ?? game.statusLabel}
+        badgeTone={game.statusTone === 'gold' ? 'goldSoft' : game.statusTone}
+        game={game}
+      />
 
-  return `${lobby.rankMin}-${lobby.rankMax}`;
+      <View style={styles.myCardBody}>
+        <View style={styles.myCardTopRow}>
+          <View style={styles.timeRow}>
+            <View style={[styles.liveDot, game.statusTone === 'muted' && styles.finishedDot]} />
+            <AppText style={styles.timeText} tone="muted" variant="caption" weight="700">
+              {game.startsAt}
+            </AppText>
+          </View>
+        </View>
+
+        <AppText numberOfLines={1} style={styles.gameTitle} variant="title" weight="800">
+          {game.title}
+        </AppText>
+
+        <View style={styles.locationRow}>
+          <Ionicons color={colors.accentSea} name="location" size={13} />
+          <AppText numberOfLines={1} style={styles.locationText} tone="muted" variant="bodySmall" weight="500">
+            {game.location}
+          </AppText>
+        </View>
+
+        <View style={styles.myCardFooter}>
+          <View style={styles.myChipRow}>
+            <View style={styles.myLevelPill}>
+              <AppText tone="muted" variant="caption" weight="800">
+                {game.level}
+              </AppText>
+            </View>
+            <View style={styles.genderPill}>
+              <AppText tone="subtle" variant="caption" weight="800">
+                {game.audience}
+              </AppText>
+            </View>
+          </View>
+          <View style={styles.myActionStack}>
+            <View style={styles.myPlayersPill}>
+              <Ionicons color={colors.darkMuted} name="people-outline" size={12} />
+              <AppText style={styles.myPlayersText} tone="muted" variant="caption" weight="800">
+                {game.players}
+              </AppText>
+            </View>
+            <View style={styles.myCardAction}>
+              <AppText tone={actionIsOpenRoom ? 'accent' : game.statusTone === 'muted' ? 'muted' : 'warning'} variant="caption" weight="800">
+                {game.actionLabel}
+              </AppText>
+              <Ionicons
+                color={actionIsOpenRoom ? colors.accentLime : game.statusTone === 'muted' ? colors.darkMuted : colors.accent}
+                name="chevron-forward"
+                size={14}
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
 }
 
-function getGenderLabel(genderRule: GenderRule) {
-  if (genderRule === 'everyone') {
-    return 'Everyone';
-  }
+function BeachThumbnail({
+  badgeLabel,
+  badgeTone = 'goldSoft',
+  game,
+}: {
+  badgeLabel?: string;
+  badgeTone?: 'gold' | 'goldSoft' | 'lime' | 'muted';
+  game: GameListItem;
+}) {
+  const visibleBadgeLabel = badgeLabel ?? game.spotsLeft;
+  const badgeStyle =
+    badgeTone === 'lime'
+      ? styles.spotsBadgeLime
+      : badgeTone === 'muted'
+        ? styles.spotsBadgeMuted
+        : badgeTone === 'goldSoft'
+          ? styles.spotsBadgeGoldSoft
+          : styles.spotsBadgeGold;
+  const badgeTextTone =
+    badgeTone === 'muted'
+      ? 'muted'
+      : badgeTone === 'lime'
+        ? 'accent'
+        : badgeTone === 'goldSoft'
+          ? 'warning'
+          : 'inverse';
 
-  return genderRule === 'male' ? 'Men' : 'Women';
+  return (
+    <LinearGradient
+      colors={game.gradient}
+      end={{ x: 1, y: 1 }}
+      start={{ x: 0, y: 0 }}
+      style={styles.thumbnail}
+    >
+      <LinearGradient
+        colors={['rgba(3, 16, 8, 0.08)', 'rgba(3, 16, 8, 0.70)']}
+        end={{ x: 0.6, y: 1 }}
+        start={{ x: 0.6, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.sunGlow} />
+      <View style={styles.netLine} />
+      <View style={[styles.palmLine, styles.palmLineLeft]} />
+      <View style={[styles.palmLine, styles.palmLineRight]} />
+      <View style={[styles.spotsBadge, badgeStyle]}>
+        <AppText style={styles.spotsText} tone={badgeTextTone} variant="caption" weight="800">
+          {visibleBadgeLabel}
+        </AppText>
+      </View>
+    </LinearGradient>
+  );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: colors.darkBackground,
-    flex: 1,
-    minHeight: '100%',
+  audienceText: {
+    maxWidth: 54,
   },
-  topBar: {
+  backgroundGlow: {
+    height: 360,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  avatarOverlap: {
+    marginLeft: -7,
+  },
+  avatarRow: {
     alignItems: 'center',
-    backgroundColor: colors.darkBackground,
-    borderBottomColor: colors.darkBorder,
-    borderBottomWidth: 1,
+    flexDirection: 'row',
+  },
+  cardBody: {
+    flex: 1,
+    justifyContent: 'space-between',
+    minWidth: 0,
+    paddingRight: spacing.xs,
+  },
+  cardFooter: {
+    alignItems: 'flex-end',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    minHeight: 42,
   },
-  iconButton: {
-    alignItems: 'center',
-    borderRadius: radius.round,
-    height: 40,
-    justifyContent: 'center',
-    position: 'relative',
-    width: 40,
+  cardSide: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    width: 42,
   },
-  iconButtonText: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
+  cardStack: {
+    gap: 7,
   },
-  logoMark: {
-    alignItems: 'center',
-    backgroundColor: colors.ink,
-    borderColor: colors.neon,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
+  content: {
+    gap: 11,
+    paddingHorizontal: spacing.xl2,
+    paddingTop: spacing.md,
   },
-  logoText: {
-    color: colors.accent,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  notificationDot: {
-    backgroundColor: colors.neon,
-    borderColor: colors.darkBackground,
-    borderRadius: radius.round,
-    borderWidth: 2,
-    height: 10,
-    position: 'absolute',
-    right: 9,
-    top: 8,
-    width: 10,
-  },
-  topActions: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  filtersSection: {
-    gap: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
-  },
-  screenTitle: {
-    color: colors.darkText,
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  screenSubtitle: {
-    color: colors.darkMuted,
-    fontSize: 14,
-    marginTop: spacing.xs,
-  },
-  searchBox: {
-    alignItems: 'center',
-    backgroundColor: colors.darkSurface,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  searchIcon: {
-    color: colors.darkMuted,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  searchInput: {
-    color: colors.darkText,
-    flex: 1,
-    fontSize: 14,
-    minHeight: 48,
-  },
-  filterRow: {
-    gap: spacing.sm,
-    paddingBottom: spacing.xs,
+  extraAvatar: {
+    backgroundColor: 'rgba(3, 16, 8, 0.62)',
+    borderColor: colors.darkBorder,
   },
   filterChip: {
     alignItems: 'center',
-    backgroundColor: colors.darkSurface,
+    backgroundColor: 'rgba(11, 29, 16, 0.66)',
     borderColor: colors.darkBorder,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.xs,
-    minHeight: 38,
-    paddingHorizontal: spacing.md,
+    gap: 3,
+    minHeight: 34,
+    paddingHorizontal: 7,
   },
   filterChipActive: {
-    backgroundColor: colors.darkBackground,
-    borderColor: colors.neon,
+    backgroundColor: 'rgba(76, 255, 90, 0.07)',
+    borderColor: colors.neonMuted,
   },
-  filterIcon: {
-    color: colors.darkMuted,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  filterIconActive: {
-    color: colors.neon,
+  filterRow: {
+    gap: 5,
+    minWidth: '100%',
   },
   filterText: {
-    color: colors.darkText,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  filterTextActive: {
-    color: colors.neon,
-  },
-  filterSuffix: {
     color: colors.darkMuted,
     fontSize: 12,
-    fontWeight: '900',
+    lineHeight: 16,
   },
-  tuneButton: {
-    alignItems: 'center',
-    backgroundColor: colors.darkSurface,
+  filterTextActive: {
+    color: colors.accentLime,
+  },
+  gameCard: {
+    backgroundColor: 'rgba(11, 29, 16, 0.74)',
     borderColor: colors.darkBorder,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    minHeight: 142,
+    overflow: 'hidden',
+    padding: 9,
+  },
+  gameTitle: {
+    color: '#ECEDE6',
+    fontSize: 17,
+    lineHeight: 21,
+  },
+  genderPill: {
+    backgroundColor: 'rgba(246, 247, 237, 0.035)',
+    borderColor: 'rgba(246, 247, 237, 0.08)',
     borderRadius: radius.round,
     borderWidth: 1,
-    height: 38,
-    justifyContent: 'center',
-    width: 40,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
-  tuneText: {
-    color: colors.darkMuted,
-    fontSize: 18,
-    fontWeight: '900',
+  finishedDot: {
+    backgroundColor: colors.darkSubtle,
   },
-  listSection: {
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
+  historySection: {
+    gap: spacing.sm,
+  },
+  levelBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 200, 61, 0.11)',
+    borderColor: 'rgba(255, 200, 61, 0.34)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    minWidth: 39,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  levelText: {
+    fontSize: 10,
+    lineHeight: 13,
   },
   listHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  listTitle: {
+    color: '#ECEDE6',
+    fontSize: 19,
+    lineHeight: 24,
+  },
   listTitleRow: {
     alignItems: 'baseline',
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  listTitle: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
+  liveDot: {
+    backgroundColor: colors.accentLime,
+    borderRadius: radius.round,
+    height: 7,
+    width: 7,
   },
-  availableCount: {
-    color: colors.darkMuted,
-    fontSize: 12,
-  },
-  sortButton: {
-    flexShrink: 0,
-  },
-  sortText: {
-    color: colors.darkMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  cardStack: {
-    gap: spacing.md,
-  },
-  gameCard: {
-    backgroundColor: colors.darkSurface,
-    borderColor: colors.darkBorder,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+  locationRow: {
+    alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 136,
-    overflow: 'hidden',
-    padding: spacing.md,
+    gap: 4,
+    marginTop: 2,
   },
-  imageWrap: {
-    borderRadius: radius.md,
-    height: 112,
-    overflow: 'hidden',
-    position: 'relative',
-    width: 112,
+  locationText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
-  gameImage: {
-    height: '100%',
-    width: '100%',
+  metaText: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
   },
-  spotsBadge: {
-    backgroundColor: colors.darkOverlay,
-    borderRadius: radius.sm,
-    left: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    position: 'absolute',
-    top: spacing.sm,
+  myCardAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
   },
-  spotsText: {
-    color: colors.darkText,
-    fontSize: 10,
-    fontWeight: '900',
+  myActionStack: {
+    alignItems: 'flex-end',
+    gap: 3,
   },
-  cardBody: {
+  myCardBody: {
     flex: 1,
     justifyContent: 'space-between',
     minWidth: 0,
   },
-  timeRow: {
+  myCardFooter: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 38,
+  },
+  myCardTopRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
+    justifyContent: 'space-between',
   },
-  timeDot: {
-    backgroundColor: colors.neon,
-    borderRadius: radius.round,
-    height: 8,
-    width: 8,
+  myChipRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
-  timeDotMuted: {
-    backgroundColor: colors.darkMuted,
+  myGameCard: {
+    backgroundColor: 'rgba(11, 29, 16, 0.70)',
+    borderColor: colors.darkBorder,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    minHeight: 122,
+    overflow: 'hidden',
+    padding: 9,
   },
-  timeText: {
-    color: colors.darkMuted,
+  myGamesContent: {
+    gap: spacing.md,
+  },
+  myMetaText: {
+    flex: 1,
     fontSize: 10,
-    fontWeight: '900',
+    lineHeight: 14,
   },
-  gameTitle: {
-    color: colors.darkText,
-    fontSize: 18,
-    fontWeight: '900',
-    lineHeight: 22,
+  myLevelPill: {
+    backgroundColor: 'rgba(246, 247, 237, 0.04)',
+    borderColor: 'rgba(246, 247, 237, 0.08)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
-  locationText: {
+  myPlayersPill: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(246, 247, 237, 0.06)',
+    borderColor: 'rgba(246, 247, 237, 0.12)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    minHeight: 22,
+    paddingHorizontal: 7,
+  },
+  myPlayersText: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  netLine: {
+    backgroundColor: 'rgba(246, 247, 237, 0.26)',
+    bottom: 35,
+    height: 2,
+    left: 12,
+    position: 'absolute',
+    right: 12,
+    transform: [{ rotate: '-7deg' }],
+  },
+  palmLine: {
+    backgroundColor: 'rgba(3, 16, 8, 0.62)',
+    borderRadius: radius.round,
+    position: 'absolute',
+    width: 3,
+  },
+  palmLineLeft: {
+    height: 44,
+    right: 24,
+    top: 14,
+    transform: [{ rotate: '14deg' }],
+  },
+  palmLineRight: {
+    height: 34,
+    right: 14,
+    top: 20,
+    transform: [{ rotate: '-12deg' }],
+  },
+  playersPill: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(246, 247, 237, 0.05)',
+    borderColor: 'rgba(246, 247, 237, 0.09)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    minHeight: 24,
+    paddingHorizontal: 7,
+  },
+  playersText: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  privateButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(11, 29, 16, 0.52)',
+    borderColor: 'rgba(246, 247, 237, 0.08)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    minHeight: 28,
+    paddingHorizontal: 8,
+  },
+  screen: {
+    backgroundColor: colors.darkBackground,
+    flex: 1,
+    minHeight: '100%',
+  },
+  sectionTab: {
+    alignItems: 'center',
+    borderRadius: radius.round,
+    justifyContent: 'center',
+    minHeight: 30,
+    paddingHorizontal: spacing.md,
+  },
+  sectionTabActive: {
+    backgroundColor: 'rgba(76, 255, 90, 0.08)',
+  },
+  sectionTabs: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(11, 29, 16, 0.48)',
+    borderColor: colors.darkBorder,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    padding: 3,
+  },
+  sectionTabText: {
     color: colors.darkMuted,
     fontSize: 12,
-    marginTop: spacing.xs,
+    lineHeight: 16,
   },
-  detailRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    marginTop: spacing.sm,
+  sectionTabTextActive: {
+    color: colors.accentLime,
   },
-  detailText: {
-    color: colors.darkMuted,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  playersRow: {
+  searchBox: {
     alignItems: 'center',
+    backgroundColor: 'rgba(11, 29, 16, 0.78)',
+    borderColor: colors.darkBorder,
+    borderRadius: 18,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    minHeight: 47,
+    paddingHorizontal: spacing.md,
   },
-  avatarStack: {
+  searchInput: {
+    color: colors.darkText,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 18,
+    padding: 0,
+  },
+  searchActionStack: {
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  searchChipRow: {
     flexDirection: 'row',
+    gap: spacing.xs,
   },
-  stackedAvatar: {
-    marginRight: -8,
+  searchFooterLeft: {
+    gap: 5,
   },
-  extraAvatar: {
+  searchJoinAction: {
     alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
+    flexDirection: 'row',
+    gap: 2,
+  },
+  smallAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#EEEED6',
     borderColor: colors.darkSurface,
     borderRadius: radius.round,
     borderWidth: 2,
-    height: 28,
+    height: 26,
     justifyContent: 'center',
+    width: 26,
+  },
+  sortButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+  },
+  spotsBadge: {
+    borderRadius: radius.round,
+    left: 7,
+    minHeight: 22,
+    paddingHorizontal: 8,
+    paddingTop: 4,
+    position: 'absolute',
+    top: 7,
+  },
+  spotsBadgeGold: {
+    backgroundColor: 'rgba(255, 200, 61, 0.10)',
+    borderColor: 'rgba(255, 200, 61, 0.28)',
+    borderWidth: 1,
+  },
+  spotsBadgeGoldSoft: {
+    backgroundColor: 'rgba(255, 200, 61, 0.10)',
+    borderColor: 'rgba(255, 200, 61, 0.28)',
+    borderWidth: 1,
+  },
+  spotsBadgeLime: {
+    backgroundColor: 'rgba(76, 255, 90, 0.12)',
+    borderColor: colors.neonMuted,
+    borderWidth: 1,
+  },
+  spotsBadgeMuted: {
+    backgroundColor: 'rgba(246, 247, 237, 0.08)',
+    borderColor: 'rgba(246, 247, 237, 0.12)',
+    borderWidth: 1,
+  },
+  spotsText: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  statusBadge: {
+    borderRadius: radius.round,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  statusBadgeGold: {
+    backgroundColor: 'rgba(255, 200, 61, 0.10)',
+    borderColor: 'rgba(255, 200, 61, 0.32)',
+  },
+  statusBadgeLime: {
+    backgroundColor: 'rgba(76, 255, 90, 0.08)',
+    borderColor: colors.neonMuted,
+  },
+  statusBadgeMuted: {
+    backgroundColor: 'rgba(246, 247, 237, 0.04)',
+    borderColor: 'rgba(246, 247, 237, 0.10)',
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  sunGlow: {
+    backgroundColor: 'rgba(255, 200, 61, 0.62)',
+    borderRadius: radius.round,
+    height: 28,
+    position: 'absolute',
+    right: 17,
+    top: 17,
     width: 28,
   },
-  extraAvatarText: {
-    color: colors.darkText,
-    fontSize: 9,
-    fontWeight: '900',
+  thumbnail: {
+    borderRadius: 18,
+    height: 100,
+    overflow: 'hidden',
+    position: 'relative',
+    width: 100,
   },
-  playersText: {
-    color: colors.darkText,
-    flexShrink: 1,
+  timeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  timeText: {
     fontSize: 10,
-    fontWeight: '900',
+    lineHeight: 14,
+    textTransform: 'uppercase',
   },
-  cardSide: {
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  levelBox: {
+  tuneButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(11, 29, 16, 0.66)',
     borderColor: colors.darkBorder,
-    borderRadius: radius.sm,
+    borderRadius: radius.round,
     borderWidth: 1,
-    minWidth: 62,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  levelText: {
-    color: colors.darkText,
-    fontSize: 10,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  levelCaption: {
-    color: colors.darkMuted,
-    fontSize: 8,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  chevron: {
-    color: colors.darkMuted,
-    fontSize: 22,
-    fontWeight: '900',
+    height: 35,
+    justifyContent: 'center',
+    width: 38,
   },
 });

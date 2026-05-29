@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { currentPlayer, lobbies, notifications } from './src/data/mock';
@@ -62,70 +64,94 @@ export default function App() {
     setActiveTab(tab);
   }
 
+  function openGamesSearch() {
+    setSelectedLobby(null);
+    setActiveTab('games');
+  }
+
+  function openCreateGame() {
+    setSelectedLobby(null);
+    setActiveTab('create');
+  }
+
+  function openCommunityFriends() {
+    setSelectedLobby(null);
+    setActiveTab('community');
+  }
+
+  function openLobbyDetails(lobby: Lobby) {
+    setSelectedLobby(lobby);
+    setActiveTab('games');
+  }
+
   return (
-    <SafeAreaView
-      style={[
-        styles.safeArea,
-        isGamesTab && styles.safeAreaDark,
-        isCreateTab && styles.safeAreaDark,
-        isHomeTab && styles.safeAreaPremium,
-        isCommunityTab && styles.safeAreaDark,
-        isProfileTab && styles.safeAreaDark,
-      ]}
-    >
-      <StatusBar style={isDarkScreen ? 'light' : 'dark'} />
-      <View
-        style={[
-          styles.appShell,
-          isGamesTab && styles.appShellDark,
-          isCreateTab && styles.appShellDark,
-          isHomeTab && styles.appShellPremium,
-          isCommunityTab && styles.appShellDark,
-          isProfileTab && styles.appShellDark,
-        ]}
-      >
-        {!isDarkScreen ? <Header unreadCount={unreadNotifications.length} /> : null}
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={[styles.content, isDarkScreen && styles.contentFlush]}
-          showsVerticalScrollIndicator={false}
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <SafeAreaView
+          edges={['top', 'left', 'right']}
+          style={[
+            styles.safeArea,
+            isGamesTab && styles.safeAreaDark,
+            isCreateTab && styles.safeAreaDark,
+            isHomeTab && styles.safeAreaPremium,
+            isCommunityTab && styles.safeAreaDark,
+            isProfileTab && styles.safeAreaDark,
+          ]}
         >
-          {activeTab === 'home' && (
-            <HomeScreen
-              currentPlayer={currentPlayer}
-              lobbies={filteredLobbies}
-              notifications={unreadNotifications}
-              onOpenGames={() => setActiveTab('games')}
-              onOpenLobby={(lobby) => {
-                setSelectedLobby(lobby);
-                setActiveTab('games');
-              }}
-            />
-          )}
-          {activeTab === 'games' && (
-            selectedLobby ? (
-              <LobbyDetailsScreen
-                lobby={selectedLobby}
-                lobbyIndex={selectedLobbyIndex}
-                onBack={() => setSelectedLobby(null)}
-              />
-            ) : (
-              <GamesScreen
-                lobbies={filteredLobbies}
-                onBack={() => setActiveTab('home')}
-                onOpenLobby={setSelectedLobby}
-                selectedFilter={selectedFilter}
-                setSelectedFilter={setSelectedFilter}
-              />
-            )
-          )}
-          {activeTab === 'create' && <CreateLobbyScreen onCancel={() => setActiveTab('home')} />}
-          {activeTab === 'community' && <CommunityScreen />}
-          {activeTab === 'profile' && <ProfileScreen player={currentPlayer} />}
-        </ScrollView>
-        <BottomNav activeTab={activeTab} isDark={isDarkScreen} onChange={handleTabChange} />
-      </View>
-    </SafeAreaView>
+          <StatusBar style={isDarkScreen ? 'light' : 'dark'} />
+          <View
+            style={[
+              styles.appShell,
+              isGamesTab && styles.appShellDark,
+              isCreateTab && styles.appShellDark,
+              isHomeTab && styles.appShellPremium,
+              isCommunityTab && styles.appShellDark,
+              isProfileTab && styles.appShellDark,
+            ]}
+          >
+            {!isDarkScreen ? <Header unreadCount={unreadNotifications.length} /> : null}
+            <ScrollView
+              ref={scrollRef}
+              contentContainerStyle={[styles.content, isDarkScreen && styles.contentFlush]}
+              showsVerticalScrollIndicator={false}
+            >
+              {activeTab === 'home' && (
+                <HomeScreen
+                  currentPlayer={currentPlayer}
+                  lobbies={filteredLobbies}
+                  notifications={unreadNotifications}
+                  onCreateGame={openCreateGame}
+                  onInviteFriends={openCommunityFriends}
+                  onOpenGames={openGamesSearch}
+                  onOpenLobby={openLobbyDetails}
+                />
+              )}
+              {activeTab === 'games' && (
+                selectedLobby ? (
+                  <LobbyDetailsScreen
+                    lobby={selectedLobby}
+                    lobbyIndex={selectedLobbyIndex}
+                    onBack={() => setSelectedLobby(null)}
+                  />
+                ) : (
+                  <GamesScreen
+                    lobbies={filteredLobbies}
+                    onBack={() => setActiveTab('home')}
+                    onOpenLobby={setSelectedLobby}
+                    selectedFilter={selectedFilter}
+                    setSelectedFilter={setSelectedFilter}
+                  />
+                )
+              )}
+              {activeTab === 'create' && <CreateLobbyScreen onCancel={() => setActiveTab('home')} />}
+              {activeTab === 'community' && <CommunityScreen />}
+              {activeTab === 'profile' && <ProfileScreen player={currentPlayer} />}
+            </ScrollView>
+            <BottomNav activeTab={activeTab} isDark={isDarkScreen} onChange={handleTabChange} />
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -147,6 +173,9 @@ function Header({ unreadCount }: { unreadCount: number }) {
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -216,7 +245,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   content: {
-    paddingBottom: 112,
+    paddingBottom: 108,
     paddingHorizontal: spacing.lg,
   },
   contentFlush: {
