@@ -16,6 +16,7 @@ import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
 import { currentPlayer, lobbies, notifications, players as playersForInvite } from './src/data/mock';
+import { isLobbyFull } from './src/features/lobbies/lobbyRules';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -75,11 +76,7 @@ export default function App() {
 
   const filteredLobbies = useMemo(() => {
     if (selectedFilter === 'Has spots') {
-      return lobbies.filter(
-        (lobby) =>
-          lobby.participants.filter((participant) => participant.role !== 'waitlist').length <
-          lobby.maxPlayers,
-      );
+      return lobbies.filter((lobby) => !isLobbyFull(lobby));
     }
 
     if (selectedFilter === 'Requests') {

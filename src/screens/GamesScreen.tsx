@@ -8,6 +8,8 @@ import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { currentPlayer } from '../data/mock';
+import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby } from '../types';
 
@@ -70,7 +72,7 @@ const gameCards: GameListItem[] = [
     location: 'Gordon Beach, Tel Aviv',
     players: '3 / 4 players',
     spotsLeft: '1 spot left',
-    startsAt: 'Fri 16:30',
+    startsAt: '2026-06-05T16:30:00+03:00',
     title: 'Friday at Gordon',
   },
   {
@@ -83,7 +85,7 @@ const gameCards: GameListItem[] = [
     location: 'Poleg Beach, Netanya',
     players: '3 / 6 players',
     spotsLeft: '3 spots left',
-    startsAt: 'Sat 08:00',
+    startsAt: '2026-06-06T08:00:00+03:00',
     title: 'League morning',
   },
   {
@@ -97,7 +99,7 @@ const gameCards: GameListItem[] = [
     metaTag: 'Women',
     players: '1 / 6 players',
     spotsLeft: '5 spots left',
-    startsAt: 'Sun 19:00',
+    startsAt: '2026-06-07T19:00:00+03:00',
     title: 'Women evening',
   },
   {
@@ -112,7 +114,7 @@ const gameCards: GameListItem[] = [
     location: 'Hilton Beach, Tel Aviv',
     players: '3 / 6 players',
     spotsLeft: '2 spots left',
-    startsAt: 'Sun 07:30',
+    startsAt: '2026-06-07T07:30:00+03:00',
     title: 'Sunrise challenge',
   },
   {
@@ -125,7 +127,7 @@ const gameCards: GameListItem[] = [
     location: 'Herzliya Beach, Herzliya',
     players: '5 / 8 players',
     spotsLeft: '4 spots left',
-    startsAt: 'Mon 18:00',
+    startsAt: '2026-06-08T18:00:00+03:00',
     title: 'Monday night',
   },
 ];
@@ -676,7 +678,7 @@ function GameCard({ game, lobby, onPress }: { game: GameListItem; lobby?: Lobby;
       spotsLeft={statusBadgeLabel}
       spotsTone={statusBadgeTone}
       status="Approval"
-      time={game.startsAt}
+      time={formatLobbyStart(game.startsAt)}
       title={game.title}
       variant={getNearbyVariant(game)}
     />
@@ -692,7 +694,7 @@ function LegacyGameCard({ game, onPress }: { game: GameListItem; onPress: () => 
         <View style={styles.timeRow}>
           <View style={styles.liveDot} />
           <AppText style={styles.timeText} tone="muted" variant="caption" weight="700">
-            {game.startsAt}
+            {formatLobbyStart(game.startsAt)}
           </AppText>
         </View>
 
@@ -771,7 +773,7 @@ function MyGameCard({
       players={formatPlayersCount(game.players)}
       spotsLeft={game.imageBadgeLabel ?? game.statusLabel}
       status={game.statusTone === 'muted' ? 'Full' : 'Approval'}
-      time={game.startsAt}
+      time={formatLobbyStart(game.startsAt)}
       title={game.title}
       variant={getNearbyVariant(game)}
     />
@@ -818,7 +820,7 @@ function BeachThumbnail({
 }
 
 function getNearbyVariant(game: GameListItem): 'morning' | 'sunset' {
-  return game.audience === 'Women' || game.startsAt.toLowerCase().includes('19:') ? 'sunset' : 'morning';
+  return game.audience === 'Women' || isEveningLobbyStart(game.startsAt) ? 'sunset' : 'morning';
 }
 
 function formatPlayersCount(playersLabel: string) {
@@ -830,7 +832,7 @@ function getCurrentPlayerParticipant(lobby: Lobby) {
 }
 
 function isActiveLobbyParticipant(participant: Lobby['participants'][number]) {
-  return participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute';
+  return isJoinedParticipant(participant);
 }
 
 function formatLevelRange(fromIndex: number, toIndex: number) {

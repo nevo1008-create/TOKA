@@ -8,6 +8,8 @@ import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { currentPlayer } from '../data/mock';
+import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby, LobbyParticipant, Player } from '../types';
 
@@ -285,7 +287,7 @@ function InviteGameContextCard({ locked = false, lobby }: { locked?: boolean; lo
         <View style={styles.locationLine}>
           <Ionicons color={colors.accentSea} name="location" size={13} />
           <AppText numberOfLines={1} tone="muted" variant="metadata" weight="700">
-            {lobby.location.name} - {lobby.startsAt}
+            {lobby.location.name} - {formatLobbyStart(lobby.startsAt)}
           </AppText>
         </View>
         <View style={styles.chipRow}>
@@ -327,7 +329,7 @@ function InviteGameOption({
       selected={selected}
       spotsLeft={`${spotsLeft} spots left`}
       status={disabled ? 'Full' : 'Approval'}
-      time={lobby.startsAt}
+      time={formatLobbyStart(lobby.startsAt)}
       title={lobby.title}
       variant={variant === 1 ? 'sunset' : 'morning'}
     />
@@ -523,7 +525,7 @@ function getScreenTitle(mode: InviteMode, player?: Player) {
 
 function getScreenSubtitle(mode: InviteMode, player?: Player, lobby?: Lobby) {
   if (mode === 'lobby-known' && lobby) {
-    return `${lobby.title} - ${lobby.startsAt}`;
+    return `${lobby.title} - ${formatLobbyStart(lobby.startsAt)}`;
   }
 
   if (mode === 'player-known' && player) {
@@ -570,7 +572,7 @@ function getUserInviteLobbies(lobbies: Lobby[]) {
     lobby.participants.some(
       (participant) =>
         participant.playerId === currentPlayer.id &&
-        (participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute'),
+        isJoinedParticipant(participant),
     ),
   );
 }
@@ -628,11 +630,11 @@ function getInvitePlayerAction(
 }
 
 function isLobbyDisabled(lobby: Lobby) {
-  return lobby.status === 'full' || lobby.status === 'completed' || lobby.status === 'closed';
+  return lobby.status === 'completed' || lobby.status === 'closed';
 }
 
 function isActiveParticipant(participant: LobbyParticipant) {
-  return participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute';
+  return isJoinedParticipant(participant);
 }
 
 function getRankLabel(lobby: Lobby) {
