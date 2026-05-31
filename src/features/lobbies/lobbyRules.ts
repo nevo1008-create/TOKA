@@ -71,7 +71,7 @@ export type LobbyWaitlistDecision =
   | {
       canJoinWaitlist: true;
       kind: 'join_waitlist';
-      label: 'Join waitlist';
+      label: string;
     }
   | {
       canJoinWaitlist: false;
@@ -178,36 +178,17 @@ export function getRuleExceptionReasons(player: Player, lobby: Lobby): JoinReque
 
 export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: LobbyDecisionContext = {}): LobbyAccessDecision {
   const relationship = getContextualRelationship(player.id, lobby, context);
-
-  if (relationship === 'pending_approval') {
-    return {
-      canEnterLobby: false,
-      kind: 'pending_approval',
-      label: 'Request pending',
-      reasons: getRuleExceptionReasons(player, lobby),
-    };
-  }
-
-  if (relationship !== 'none' && relationship !== 'rejected') {
-    return {
-      canEnterLobby: true,
-      kind: 'can_enter',
-      label: 'Open game',
-      reasons: [],
-    };
-  }
-
-  if (context.hasInviteLink) {
-    return {
-      canEnterLobby: true,
-      kind: 'can_enter',
-      label: 'Open game',
-      reasons: [],
-    };
-  }
-
   const exceptionReasons = getRuleExceptionReasons(player, lobby);
   const hasPrivateAccess = hasLobbyPrivateAccess(lobby, context);
+
+  if (relationship !== 'none' && relationship !== 'rejected' && relationship !== 'pending_approval') {
+    return {
+      canEnterLobby: true,
+      kind: 'can_enter',
+      label: 'Open game',
+      reasons: [],
+    };
+  }
 
   if (lobby.visibility === 'password' && !hasPrivateAccess) {
     return {
@@ -215,6 +196,33 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
       kind: 'requires_password',
       label: 'Enter password',
       reasons: ['private_access', ...exceptionReasons],
+    };
+  }
+
+  if (lobby.visibility === 'password' && hasPrivateAccess) {
+    return {
+      canEnterLobby: true,
+      kind: 'can_enter',
+      label: 'Open game',
+      reasons: [],
+    };
+  }
+
+  if (relationship === 'pending_approval') {
+    return {
+      canEnterLobby: false,
+      kind: 'pending_approval',
+      label: 'Request pending',
+      reasons: exceptionReasons,
+    };
+  }
+
+  if (context.hasInviteLink && lobby.visibility !== 'password') {
+    return {
+      canEnterLobby: true,
+      kind: 'can_enter',
+      label: 'Open game',
+      reasons: [],
     };
   }
 
@@ -259,7 +267,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
       canJoin: false,
       kind: 'pending_approval',
       label: 'Request pending',
-      reasons: ['Admin approval is still pending.'],
+      reasons: ['Host approval is still pending.'],
     };
   }
 
@@ -312,9 +320,10 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
   }
 
   return {
-    canJoin: true,
-    kind: 'join_game',
-    label: 'Join game',
+    canJoin: false,
+    kind: 'waitlist_only',
+    label: 'Join waitlist',
+    reasons: ['Player must join the waitlist before moving into players.'],
   };
 }
 
@@ -332,10 +341,9 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
 
   if (relationship === 'joined' || relationship === 'attended') {
     return {
-      canJoinWaitlist: false,
-      kind: 'already_joined',
-      label: 'Joined',
-      reasons: ['Player is already committed to this game.'],
+      canJoinWaitlist: true,
+      kind: 'join_waitlist',
+      label: 'Move to waitlist',
     };
   }
 
@@ -344,7 +352,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
       canJoinWaitlist: false,
       kind: 'pending_approval',
       label: 'Request pending',
-      reasons: ['Admin approval is still pending.'],
+      reasons: ['Host approval is still pending.'],
     };
   }
 
@@ -457,7 +465,7 @@ function doesPlayerMatchLevelRule(player: Player, lobby: Lobby) {
 function getContextualRelationship(playerId: string, lobby: Lobby, context: LobbyDecisionContext) {
   const relationship = getPlayerLobbyRelationship(playerId, lobby);
 
-  if (relationship === 'pending_approval' && context.ignorePendingApproval) {
+  if (relationship === 'pending_approval' && (context.ignorePendingApproval || hasLobbyPrivateAccess(lobby, context))) {
     return 'none';
   }
 

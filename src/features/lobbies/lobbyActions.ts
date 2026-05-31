@@ -113,6 +113,10 @@ export function requestLobbyApproval(lobby: Lobby, player: Player, message?: str
   };
 }
 
+export function requestWaitlistApproval(lobby: Lobby, player: Player, message?: string): LobbyActionResult {
+  return requestLobbyApproval(lobby, player, message ?? 'Requesting host approval to join the waitlist.');
+}
+
 export function approveJoinRequest(
   lobby: Lobby,
   player: Player,
@@ -162,18 +166,41 @@ export function rejectJoinRequest(lobby: Lobby, playerId: string): Lobby {
 
 export function leaveLobby(lobby: Lobby, playerId: string, now = new Date()): Lobby {
   const cancellationStatus = getCancellationStatus(lobby, now);
+  const nextParticipants = lobby.participants.map((participant) =>
+    participant.playerId === playerId
+      ? {
+          ...participant,
+          status: participant.role === 'waitlist' ? 'cancelled_on_time' : cancellationStatus,
+        }
+      : participant,
+  );
+  const nextHost = lobby.adminId === playerId
+    ? nextParticipants.find(
+        (participant) =>
+          participant.playerId !== playerId &&
+          participant.role === 'joined' &&
+          isParticipationCurrent(participant),
+      )
+    : undefined;
 
   return {
     ...lobby,
-    participants: lobby.participants.map((participant) =>
-      participant.playerId === playerId
-        ? {
-            ...participant,
-            status: participant.role === 'waitlist' ? 'cancelled_on_time' : cancellationStatus,
-          }
-        : participant,
-    ),
+    adminId: nextHost?.playerId ?? lobby.adminId,
+    participants: nextHost
+      ? nextParticipants.map((participant) =>
+          participant.playerId === nextHost.playerId
+            ? {
+                ...participant,
+                role: 'admin',
+              }
+            : participant,
+        )
+      : nextParticipants,
   };
+}
+
+function isParticipationCurrent(participant: LobbyParticipant) {
+  return participant.status === 'approved' || participant.status === 'attended';
 }
 
 function upsertParticipant(lobby: Lobby, participant: LobbyParticipant): Lobby {
@@ -183,6 +210,9 @@ function upsertParticipant(lobby: Lobby, participant: LobbyParticipant): Lobby {
 
   return {
     ...lobby,
+    joinRequests: lobby.joinRequests.filter(
+      (request) => request.playerId !== participant.playerId || request.status !== 'pending',
+    ),
     participants: nextParticipants,
   };
 }

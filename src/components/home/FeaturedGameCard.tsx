@@ -53,7 +53,7 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
 
         <View style={styles.infoRow}>
           <InfoCell icon="calendar-outline" label="Today" value="20:30" />
-          <InfoCell icon="cellular" iconColor={colors.accentLime} label="Rank" value="B to C+" />
+          <InfoCell icon="cellular" iconColor={colors.accentLime} label="Rank" value="B/C+" />
           <InfoCell icon="people-outline" label="Joined" value="5/8" />
         </View>
 

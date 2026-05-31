@@ -86,7 +86,7 @@ function getRankRuleLabel(lobby: Lobby) {
     return lobby.rankExact ?? 'Exact rank';
   }
 
-  return `${lobby.rankMin} to ${lobby.rankMax}`;
+  return `${lobby.rankMin}/${lobby.rankMax}`;
 }
 
 function getGenderRuleLabel(lobby: Lobby) {

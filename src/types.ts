@@ -117,6 +117,15 @@ export type ChatChannel = {
   unreadCount: number;
 };
 
+export type ChatMessage = {
+  id: string;
+  lobbyId: string;
+  channelId: string;
+  playerId: string;
+  body: string;
+  createdAt: string;
+};
+
 export type RatingTask = {
   id: string;
   lobbyId: string;
