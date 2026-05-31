@@ -9,8 +9,8 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getFallbackPreviewPlayingDetails, getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
-import { currentPlayer, notifications, players } from '../data/mock';
-import { colors, radius, shadows, spacing } from '../theme';
+import { currentPlayer, players } from '../data/mock';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Player, PlayerLevel } from '../types';
 
 type ConnectPlayer = {
@@ -64,13 +64,22 @@ type ProfilePreviewPlayer = CommunityPlayerCard & {
 };
 
 type CommunityScreenProps = {
+  notificationCount: number;
   onAddFriend: () => void;
   onInvitePlayer: (playerId: string, source: 'community' | 'leaderboard') => void;
   onOpenMenu: () => void;
+  onOpenNotifications: () => void;
   onViewPlayerProfile: (player: Player) => void;
 };
 
-export function CommunityScreen({ onAddFriend, onInvitePlayer, onOpenMenu, onViewPlayerProfile }: CommunityScreenProps) {
+export function CommunityScreen({
+  notificationCount,
+  onAddFriend,
+  onInvitePlayer,
+  onOpenMenu,
+  onOpenNotifications,
+  onViewPlayerProfile,
+}: CommunityScreenProps) {
   const [activePage, setActivePage] = useState<CommunityPage>('Community');
   const [activeFriendView, setActiveFriendView] = useState<FriendView>('Friends');
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
@@ -147,8 +156,9 @@ export function CommunityScreen({ onAddFriend, onInvitePlayer, onOpenMenu, onVie
       />
       <HomeHeader
         compact
-        notificationCount={notifications.length}
+        notificationCount={notificationCount}
         onMenuPress={onOpenMenu}
+        onNotificationsPress={onOpenNotifications}
         player={currentPlayer}
         rightAccessory="menu"
       />
@@ -1203,8 +1213,8 @@ const styles = StyleSheet.create({
   friendSearchInput: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 13,
-    fontWeight: '500',
     lineHeight: 17,
     padding: 0,
   },

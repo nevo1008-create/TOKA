@@ -47,7 +47,7 @@ export function PlayerRow({
     <View style={[styles.row, style]}>
       <Pressable accessibilityRole="button" onPress={onPressProfile} style={styles.infoArea}>
         <View style={styles.avatar}>
-          <AppText align="center" variant="cardTitle" weight="800">
+          <AppText align="center" variant="cardTitle" weight="700">
             {initials}
           </AppText>
           <View style={styles.statusBadge}>
@@ -56,13 +56,13 @@ export function PlayerRow({
         </View>
 
         <View style={styles.copy}>
-          <AppText numberOfLines={1} variant="titleSmall" weight="800">
+          <AppText numberOfLines={1} variant="titleSmall" weight="600">
             {name}
           </AppText>
           {location ? (
             <View style={styles.locationLine}>
               <Ionicons color={colors.accentSea} name="location" size={12} />
-              <AppText numberOfLines={2} style={styles.locationText} tone="muted" variant="metadata" weight="700">
+              <AppText numberOfLines={2} style={styles.locationText} tone="muted" variant="metadata" weight="500">
                 {location}
               </AppText>
             </View>
@@ -110,7 +110,7 @@ export function PlayerRow({
               numberOfLines={1}
               tone={getActionTextTone(primaryAction)}
               variant="metadata"
-              weight="800"
+              weight="700"
             >
               {primaryAction.label}
             </AppText>
@@ -118,7 +118,7 @@ export function PlayerRow({
         ) : null}
         {secondaryAction ? (
           <Pressable accessibilityRole="button" onPress={secondaryAction.onPress} style={styles.secondaryButton}>
-            <AppText align="center" tone="muted" variant="metadata" weight="800">
+            <AppText align="center" tone="muted" variant="metadata" weight="600">
               {secondaryAction.label}
             </AppText>
           </Pressable>

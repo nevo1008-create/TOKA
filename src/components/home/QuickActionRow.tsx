@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, shadows, spacing } from '../../theme';
+import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
 import { AppText } from '../AppText';
 
 type ActionId = 'create' | 'find' | 'invite';
@@ -69,7 +69,9 @@ const styles = StyleSheet.create({
   },
   actionTitle: {
     color: colors.ink,
+    fontFamily: homeTypography.button.fontFamily,
     fontSize: 13,
+    fontWeight: 'normal',
     lineHeight: 16,
   },
   card: {

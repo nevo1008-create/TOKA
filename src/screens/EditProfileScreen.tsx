@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
-import { colors, radius, shadows, spacing } from '../theme';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Gender, Player, PlayerSide, PreferredFoot } from '../types';
 
 type EditProfileScreenProps = {
@@ -476,8 +476,8 @@ const styles = StyleSheet.create({
   input: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.semibold,
     fontSize: 15,
-    fontWeight: '700',
     lineHeight: 20,
     minWidth: 0,
     padding: 0,

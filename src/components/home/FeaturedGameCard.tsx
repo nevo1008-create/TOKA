@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, shadows, spacing } from '../../theme';
+import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
 import type { Lobby } from '../../types';
 import { AppText } from '../AppText';
 import { AvatarStack } from './AvatarStack';
@@ -27,13 +27,13 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
       <View style={styles.content}>
         <View style={styles.topPillsRow}>
           <View style={styles.adminPill}>
-            <AppText tone="accent" variant="chip" weight="700">
+            <AppText style={styles.chipText} tone="accent" variant="chip" weight="700">
               Joined
             </AppText>
           </View>
           <View style={styles.countdownPill}>
             <Ionicons color={colors.accentGoldDark} name="time-outline" size={15} />
-            <AppText style={styles.countdownText} variant="chip" weight="700">
+            <AppText style={[styles.countdownText, styles.chipText]} variant="chip" weight="700">
               In 3h 20m
             </AppText>
           </View>
@@ -45,7 +45,7 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
           </AppText>
           <View style={styles.locationRow}>
             <Ionicons color={colors.accentSea} name="location" size={20} />
-            <AppText tone="primary" variant="uiBody" weight="600">
+            <AppText style={styles.locationText} tone="primary" variant="uiBody" weight="600">
               Gordon Beach
             </AppText>
           </View>
@@ -59,7 +59,7 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
 
         <View style={styles.genderPill}>
             <Ionicons color={colors.muted} name="people-circle-outline" size={14} />
-            <AppText tone="muted" variant="chip" weight="700">
+            <AppText style={styles.chipText} tone="muted" variant="chip" weight="700">
             Everyone
           </AppText>
         </View>
@@ -68,7 +68,7 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
 
         <View style={styles.actions}>
           <Pressable onPress={onOpenRoom} style={styles.openButton}>
-            <AppText align="center" tone="inverse" variant="button" weight="800">
+            <AppText align="center" style={styles.buttonText} tone="inverse" variant="button" weight="800">
               Open game
             </AppText>
           </Pressable>
@@ -136,6 +136,12 @@ const styles = StyleSheet.create({
     padding: 16,
     zIndex: 2,
   },
+  buttonText: {
+    ...homeTypography.button,
+  },
+  chipText: {
+    ...homeTypography.chipSmall,
+  },
   countdownPill: {
     alignItems: 'center',
     backgroundColor: '#FFF0B0',
@@ -179,9 +185,11 @@ const styles = StyleSheet.create({
   },
   infoLabelText: {
     color: colors.muted,
+    ...homeTypography.metadata,
   },
   infoValueText: {
     color: colors.ink,
+    ...homeTypography.body,
   },
   infoValueRow: {
     alignItems: 'center',
@@ -203,6 +211,9 @@ const styles = StyleSheet.create({
     width: 170,
     ...shadows.soft,
   },
+  locationText: {
+    ...homeTypography.body,
+  },
   overlay: {
     bottom: 0,
     left: 0,
@@ -218,6 +229,7 @@ const styles = StyleSheet.create({
   },
   title: {
     maxWidth: 294,
+    ...homeTypography.heroTitle,
   },
   titleBlock: {
     gap: spacing.sm,

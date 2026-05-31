@@ -9,7 +9,7 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { currentPlayer } from '../data/mock';
-import { colors, radius, shadows, spacing } from '../theme';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Player } from '../types';
 
 type AddFriendsScreenProps = {
@@ -527,8 +527,8 @@ const styles = StyleSheet.create({
   searchInput: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.semibold,
     fontSize: 14,
-    fontWeight: '600',
     lineHeight: 18,
     padding: 0,
   },

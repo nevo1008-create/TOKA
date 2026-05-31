@@ -50,74 +50,188 @@ export const radius = {
   round: 999,
 };
 
+export const fontFamilies = {
+  manrope: {
+    regular: 'Manrope_400Regular',
+    medium: 'Manrope_500Medium',
+    semibold: 'Manrope_600SemiBold',
+    bold: 'Manrope_700Bold',
+    extrabold: 'Manrope_800ExtraBold',
+  },
+};
+
 export const typography = {
   caption: {
+    fontFamily: fontFamilies.manrope.regular,
     fontSize: 11,
+    fontWeight: 'normal' as const,
     lineHeight: 15,
   },
   label: {
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 12,
+    fontWeight: 'normal' as const,
     lineHeight: 16,
   },
   bodySmall: {
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 13,
+    fontWeight: 'normal' as const,
     lineHeight: 18,
   },
   body: {
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 14,
+    fontWeight: 'normal' as const,
     lineHeight: 20,
   },
   titleSmall: {
+    fontFamily: fontFamilies.manrope.semibold,
     fontSize: 16,
+    fontWeight: 'normal' as const,
     lineHeight: 21,
   },
   title: {
+    fontFamily: fontFamilies.manrope.bold,
     fontSize: 19,
+    fontWeight: 'normal' as const,
     lineHeight: 24,
   },
   heading: {
+    fontFamily: fontFamilies.manrope.extrabold,
     fontSize: 24,
+    fontWeight: 'normal' as const,
     lineHeight: 30,
   },
   display: {
+    fontFamily: fontFamilies.manrope.extrabold,
     fontSize: 32,
+    fontWeight: 'normal' as const,
     lineHeight: 38,
   },
   displayGreeting: {
+    fontFamily: fontFamilies.manrope.extrabold,
     fontSize: 32,
+    fontWeight: 'normal' as const,
     lineHeight: 38,
   },
   heroTitle: {
+    fontFamily: fontFamilies.manrope.extrabold,
     fontSize: 30,
+    fontWeight: 'normal' as const,
     lineHeight: 36,
   },
   sectionHeading: {
+    fontFamily: fontFamilies.manrope.extrabold,
     fontSize: 23,
+    fontWeight: 'normal' as const,
     lineHeight: 29,
   },
   cardTitle: {
+    fontFamily: fontFamilies.manrope.bold,
     fontSize: 20,
+    fontWeight: 'normal' as const,
     lineHeight: 25,
   },
   uiBody: {
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 16,
+    fontWeight: 'normal' as const,
     lineHeight: 23,
   },
   metadata: {
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 13,
+    fontWeight: 'normal' as const,
     lineHeight: 17,
   },
   button: {
+    fontFamily: fontFamilies.manrope.bold,
     fontSize: 16,
+    fontWeight: 'normal' as const,
     lineHeight: 21,
   },
   chip: {
+    fontFamily: fontFamilies.manrope.bold,
     fontSize: 13,
+    fontWeight: 'normal' as const,
     lineHeight: 17,
   },
   navLabel: {
+    fontFamily: fontFamilies.manrope.semibold,
     fontSize: 11,
+    fontWeight: 'normal' as const,
     lineHeight: 14,
+  },
+};
+
+export const homeTypography = {
+  greeting: {
+    fontFamily: fontFamilies.manrope.extrabold,
+    fontSize: 34,
+    fontWeight: 'normal' as const,
+    lineHeight: 40,
+  },
+  heroTitle: {
+    fontFamily: fontFamilies.manrope.extrabold,
+    fontSize: 31,
+    fontWeight: 'normal' as const,
+    lineHeight: 38,
+  },
+  sectionTitle: {
+    fontFamily: fontFamilies.manrope.extrabold,
+    fontSize: 24,
+    fontWeight: 'normal' as const,
+    lineHeight: 30,
+  },
+  eyebrow: {
+    fontFamily: fontFamilies.manrope.extrabold,
+    fontSize: 15,
+    fontWeight: 'normal' as const,
+    letterSpacing: 0.8,
+    lineHeight: 20,
+  },
+  cardTitle: {
+    fontFamily: fontFamilies.manrope.bold,
+    fontSize: 20,
+    fontWeight: 'normal' as const,
+    lineHeight: 25,
+  },
+  body: {
+    fontFamily: fontFamilies.manrope.medium,
+    fontSize: 15,
+    fontWeight: 'normal' as const,
+    lineHeight: 21,
+  },
+  metadata: {
+    fontFamily: fontFamilies.manrope.medium,
+    fontSize: 12,
+    fontWeight: 'normal' as const,
+    lineHeight: 16,
+  },
+  button: {
+    fontFamily: fontFamilies.manrope.bold,
+    fontSize: 16,
+    fontWeight: 'normal' as const,
+    lineHeight: 22,
+  },
+  chip: {
+    fontFamily: fontFamilies.manrope.bold,
+    fontSize: 13,
+    fontWeight: 'normal' as const,
+    lineHeight: 16,
+  },
+  chipSmall: {
+    fontFamily: fontFamilies.manrope.bold,
+    fontSize: 12,
+    fontWeight: 'normal' as const,
+    lineHeight: 16,
+  },
+  navLabel: {
+    fontFamily: fontFamilies.manrope.semibold,
+    fontSize: 11,
+    fontWeight: 'normal' as const,
+    lineHeight: 15,
   },
 };
 

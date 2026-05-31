@@ -49,7 +49,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
               style={styles.navLabel}
               tone={isActive ? 'accent' : 'muted'}
               variant="navLabel"
-              weight={isActive ? '800' : '600'}
+              weight={isActive ? '700' : '600'}
             >
               {tab.label}
             </AppText>

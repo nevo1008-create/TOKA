@@ -13,7 +13,7 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
-import { currentPlayer, notifications, players } from '../data/mock';
+import { currentPlayer, players } from '../data/mock';
 import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { getJoinedParticipants, getWaitlistParticipants, isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, radius, shadows, spacing } from '../theme';
@@ -22,9 +22,11 @@ import type { GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player } fro
 type LobbyDetailsScreenProps = {
   lobby: Lobby;
   lobbyIndex: number;
+  notificationCount: number;
   onBack: () => void;
   onInvite: () => void;
   onOpenMenu: () => void;
+  onOpenNotifications: () => void;
   onViewPlayerProfile: (player: Player) => void;
 };
 
@@ -36,9 +38,11 @@ type LobbyProfilePreviewSelection = {
 export function LobbyDetailsScreen({
   lobby,
   lobbyIndex,
+  notificationCount,
   onBack,
   onInvite,
   onOpenMenu,
+  onOpenNotifications,
   onViewPlayerProfile,
 }: LobbyDetailsScreenProps) {
   const admin = players.find((player) => player.id === lobby.adminId);
@@ -79,7 +83,13 @@ export function LobbyDetailsScreen({
         end={{ x: 0.22, y: 0.72 }}
         style={styles.backgroundGlow}
       />
-      <HomeHeader compact notificationCount={notifications.length} onMenuPress={onOpenMenu} player={currentPlayer} />
+      <HomeHeader
+        compact
+        notificationCount={notificationCount}
+        onMenuPress={onOpenMenu}
+        onNotificationsPress={onOpenNotifications}
+        player={currentPlayer}
+      />
 
       <View style={styles.content}>
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.wizardBackButton}>
