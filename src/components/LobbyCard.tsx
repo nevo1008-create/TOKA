@@ -81,11 +81,11 @@ function getStatusLabel(lobby: Lobby) {
 
 function getRankRuleLabel(lobby: Lobby) {
   if (lobby.rankRuleType === 'any') {
-    return 'Any level';
+    return 'Any rank';
   }
 
   if (lobby.rankRuleType === 'exact') {
-    return lobby.rankExact ?? 'Exact level';
+    return lobby.rankExact ?? 'Exact rank';
   }
 
   return `${lobby.rankMin} to ${lobby.rankMax}`;

@@ -6,23 +6,26 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { currentPlayer, notifications } from '../data/mock';
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadows, spacing } from '../theme';
 
 type CreateLobbyScreenProps = {
   onCancel: () => void;
+  onOpenMenu: () => void;
 };
 
-export function CreateLobbyScreen({ onCancel }: CreateLobbyScreenProps) {
+export function CreateLobbyScreen({ onCancel, onOpenMenu }: CreateLobbyScreenProps) {
   const [step, setStep] = useState<1 | 2>(1);
 
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={['rgba(76, 255, 90, 0.09)', colors.darkBackground, colors.darkBackground]}
-        locations={[0, 0.34, 1]}
+        colors={['#FFF6D7', colors.background, colors.backgroundAlt]}
+        locations={[0, 0.42, 1]}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.22, y: 0.72 }}
         style={styles.backgroundGlow}
       />
-      <HomeHeader notificationCount={notifications.length} player={currentPlayer} />
+      <HomeHeader compact notificationCount={notifications.length} onMenuPress={onOpenMenu} player={currentPlayer} />
 
       <View style={styles.content}>
         {step === 1 ? <WhenWhereStep /> : null}
@@ -30,7 +33,7 @@ export function CreateLobbyScreen({ onCancel }: CreateLobbyScreenProps) {
         {step === 2 ? (
           <>
             <Pressable accessibilityRole="button" onPress={() => setStep(1)} style={styles.wizardBackButton}>
-              <Ionicons color={colors.darkText} name="chevron-back" size={20} />
+              <Ionicons color={colors.ink} name="chevron-back" size={20} />
             </Pressable>
             <AccessRulesStep />
           </>
@@ -92,15 +95,15 @@ function AccessRulesStep() {
         <SegmentedControl options={['4', '5', '6']} selected="6" />
       </Field>
 
-      <Field label="Level policy">
-        <SegmentedControl compact options={['Any level', 'Exact level', 'Range']} selected="Range" />
+      <Field label="Rank policy">
+        <SegmentedControl compact options={['Any rank', 'Exact rank', 'Range']} selected="Range" />
       </Field>
 
       <View style={styles.twoColumn}>
-        <Field label="Min level">
+        <Field label="Min rank">
           <InputShell value="B-" withChevron />
         </Field>
-        <Field label="Max level">
+        <Field label="Max rank">
           <InputShell value="A" withChevron />
         </Field>
       </View>
@@ -132,15 +135,15 @@ function PrimaryActionButton({ label, onPress }: { label: string; onPress?: () =
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={styles.createButton}>
       <LinearGradient
-        colors={['#5CFF68', colors.accentLimeDark]}
+        colors={[colors.primary, colors.primaryDark]}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
         style={styles.createButtonFill}
       >
-        <AppText align="center" tone="inverse" variant="body" weight="800">
+        <AppText align="center" tone="inverse" variant="button" weight="800">
           {label}
         </AppText>
-        <Ionicons color={colors.ink} name="arrow-forward" size={18} />
+        <Ionicons color={colors.textOnGreen} name="arrow-forward" size={18} />
       </LinearGradient>
     </Pressable>
   );
@@ -170,7 +173,7 @@ function Section({
         <View style={styles.sectionIcon}>
           <Ionicons color={colors.accentLime} name={icon} size={15} />
         </View>
-        <AppText style={styles.sectionTitle} variant="titleSmall" weight="800">
+        <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
           {title}
         </AppText>
       </View>
@@ -182,7 +185,7 @@ function Section({
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <View style={styles.field}>
-      <AppText tone="subtle" variant="label" weight="700">
+      <AppText tone="muted" variant="metadata" weight="700">
         {label}
       </AppText>
       {children}
@@ -207,8 +210,8 @@ function InputShell({
       <AppText numberOfLines={1} style={styles.inputText} variant="bodySmall" weight="700">
         {value}
       </AppText>
-      {withClear ? <Ionicons color={colors.darkSubtle} name="close-circle-outline" size={16} /> : null}
-      {withChevron ? <Ionicons color={colors.darkSubtle} name="chevron-down" size={15} /> : null}
+      {withClear ? <Ionicons color={colors.muted} name="close-circle-outline" size={16} /> : null}
+      {withChevron ? <Ionicons color={colors.muted} name="chevron-down" size={15} /> : null}
     </View>
   );
 }
@@ -237,7 +240,7 @@ function SegmentedControl({
               align="center"
               numberOfLines={1}
               tone={isSelected ? 'accent' : 'muted'}
-              variant="label"
+              variant="chip"
               weight="800"
             >
               {option}
@@ -265,9 +268,9 @@ function PolicyCard({
       <View style={styles.policyTopRow}>
         <View style={styles.policyTitleRow}>
           <View style={[styles.policyIcon, selected && styles.policyIconSelected]}>
-            <Ionicons color={selected ? colors.accentLime : colors.darkSubtle} name={icon} size={15} />
+            <Ionicons color={selected ? colors.primaryDark : colors.muted} name={icon} size={15} />
           </View>
-          <AppText tone={selected ? 'accent' : 'primary'} variant="bodySmall" weight="800">
+          <AppText tone={selected ? 'accent' : 'primary'} variant="uiBody" weight="800">
             {title}
           </AppText>
         </View>
@@ -275,7 +278,7 @@ function PolicyCard({
           {selected ? <View style={styles.radioInner} /> : null}
         </View>
       </View>
-      <AppText tone={selected ? 'muted' : 'subtle'} variant="caption" weight="600">
+      <AppText tone={selected ? 'muted' : 'subtle'} variant="metadata" weight="600">
         {description}
       </AppText>
     </Pressable>
@@ -284,7 +287,7 @@ function PolicyCard({
 
 const styles = StyleSheet.create({
   backgroundGlow: {
-    height: 360,
+    height: 430,
     left: 0,
     position: 'absolute',
     right: 0,
@@ -302,15 +305,16 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   createButton: {
-    borderRadius: radius.lg,
+    borderRadius: 18,
     overflow: 'hidden',
+    ...shadows.soft,
   },
   createButtonFill: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.xs,
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: 54,
   },
   field: {
     gap: spacing.xs,
@@ -324,30 +328,31 @@ const styles = StyleSheet.create({
   },
   inputShell: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
     borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
-    minHeight: 42,
+    minHeight: 46,
     paddingHorizontal: spacing.md,
   },
   inputText: {
     flex: 1,
   },
   policyCard: {
-    backgroundColor: 'rgba(246, 247, 237, 0.035)',
-    borderColor: 'rgba(246, 247, 237, 0.09)',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
     borderRadius: radius.lg,
     borderWidth: 1,
     flex: 1,
     gap: spacing.sm,
     minHeight: 86,
     padding: spacing.sm,
+    ...shadows.soft,
   },
   policyCardSelected: {
-    backgroundColor: 'rgba(76, 255, 90, 0.055)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.primary,
   },
   policyGrid: {
     flexDirection: 'row',
@@ -355,8 +360,8 @@ const styles = StyleSheet.create({
   },
   policyIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 26,
@@ -364,8 +369,8 @@ const styles = StyleSheet.create({
     width: 26,
   },
   policyIconSelected: {
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   policyTitleRow: {
     alignItems: 'center',
@@ -385,7 +390,7 @@ const styles = StyleSheet.create({
   },
   radioOuter: {
     alignItems: 'center',
-    borderColor: 'rgba(246, 247, 237, 0.16)',
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 20,
@@ -393,26 +398,27 @@ const styles = StyleSheet.create({
     width: 20,
   },
   radioOuterSelected: {
-    borderColor: colors.neonMuted,
+    borderColor: colors.primary,
   },
   screen: {
-    backgroundColor: colors.darkBackground,
+    backgroundColor: colors.background,
     minHeight: '100%',
   },
   section: {
-    backgroundColor: 'rgba(11, 29, 16, 0.62)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 24,
     borderWidth: 1,
-    padding: spacing.md,
+    padding: spacing.lg,
+    ...shadows.card,
   },
   sectionBody: {
     gap: spacing.md,
   },
   sectionIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 28,
@@ -420,7 +426,7 @@ const styles = StyleSheet.create({
     width: 28,
   },
   sectionTitle: {
-    color: '#ECEDE6',
+    color: colors.ink,
   },
   sectionTitleRow: {
     alignItems: 'center',
@@ -440,11 +446,11 @@ const styles = StyleSheet.create({
     minHeight: 32,
   },
   segmentSelected: {
-    backgroundColor: 'rgba(76, 255, 90, 0.09)',
+    backgroundColor: colors.surfaceMuted,
   },
   segmentedControl: {
-    backgroundColor: 'rgba(3, 16, 8, 0.48)',
-    borderColor: 'rgba(246, 247, 237, 0.09)',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
@@ -455,11 +461,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.round,
   },
   textArea: {
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
     borderRadius: radius.lg,
     borderWidth: 1,
-    color: colors.darkMuted,
+    color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
     minHeight: 60,
@@ -474,22 +480,23 @@ const styles = StyleSheet.create({
   wizardBackButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 34,
     justifyContent: 'center',
     width: 34,
+    ...shadows.soft,
   },
   wizardDot: {
-    backgroundColor: 'rgba(246, 247, 237, 0.18)',
+    backgroundColor: colors.border,
     borderRadius: radius.round,
     height: 6,
     width: 6,
   },
   wizardDotActive: {
-    backgroundColor: colors.accentLime,
+    backgroundColor: colors.primary,
     width: 16,
   },
   wizardDots: {

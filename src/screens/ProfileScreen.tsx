@@ -1,27 +1,97 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Avatar } from '../components/Avatar';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
+import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
+import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
+import { PlayerRow } from '../components/PlayerRow';
 import { ProgressBar } from '../components/ProgressBar';
 import { notifications, players } from '../data/mock';
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadows, spacing } from '../theme';
 import type { Player } from '../types';
 
-export function ProfileScreen({ player }: { player: Player }) {
+type ProfileScreenProps = {
+  onBack?: () => void;
+  onEditProfile?: () => void;
+  onInvitePlayer: (playerId: string) => void;
+  onOpenMenu?: () => void;
+  onViewPlayerProfile?: (player: Player) => void;
+  player: Player;
+};
+
+export function ProfileScreen({
+  onBack,
+  onEditProfile,
+  onInvitePlayer,
+  onOpenMenu,
+  onViewPlayerProfile,
+  player,
+}: ProfileScreenProps) {
+  const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
+  const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
+  const [profilePreviewPlayer, setProfilePreviewPlayer] = useState<{
+    context: 'friend' | 'recent';
+    player: Player;
+  } | null>(null);
+  const [requestedPlayerIds, setRequestedPlayerIds] = useState<string[]>([]);
   const friendPlayers = players.filter((candidate) => player.friendIds.includes(candidate.id));
   const recentPlayers = players.filter((candidate) => candidate.id !== player.id);
+
+  function openActions(person: Player, context: 'friend' | 'recent') {
+    const isFriend = player.friendIds.includes(person.id);
+    const isRequested = requestedPlayerIds.includes(person.id);
+
+    setActionSheetPlayer({
+      contextLabel: getProfilePlayerContext(person, context, isFriend),
+      initials: person.initials,
+      name: person.name,
+    });
+    setActionSheetActions(
+      getProfilePlayerActions(
+        context,
+        isFriend,
+        isRequested,
+        () => openProfile(person, context),
+        () => onInvitePlayer(person.id),
+        () => requestFriend(person.id),
+        () => cancelFriendRequest(person.id),
+      ),
+    );
+  }
+
+  function openProfile(person: Player, context: 'friend' | 'recent') {
+    setProfilePreviewPlayer({ context, player: person });
+  }
+
+  function requestFriend(playerId: string) {
+    setRequestedPlayerIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
+  }
+
+  function cancelFriendRequest(playerId: string) {
+    setRequestedPlayerIds((current) => current.filter((id) => id !== playerId));
+  }
 
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={['rgba(76, 255, 90, 0.09)', colors.darkBackground, colors.darkBackground]}
-        locations={[0, 0.34, 1]}
+        colors={['#FFF6D7', colors.background, colors.backgroundAlt]}
+        locations={[0, 0.42, 1]}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.22, y: 0.72 }}
         style={styles.backgroundGlow}
       />
-      <HomeHeader notificationCount={notifications.length} player={player} />
+      <HomeHeader
+        compact
+        notificationCount={notifications.length}
+        onBack={onBack}
+        onMenuPress={onOpenMenu}
+        player={player}
+      />
 
       <View style={styles.content}>
         <View style={styles.profileCard}>
@@ -32,7 +102,7 @@ export function ProfileScreen({ player }: { player: Player }) {
 
             <View style={styles.profileCopy}>
               <View style={styles.nameRow}>
-                <AppText numberOfLines={1} style={styles.profileName} variant="heading" weight="800">
+                <AppText numberOfLines={1} style={styles.profileName} variant="sectionHeading" weight="800">
                   {player.name}
                 </AppText>
                 <View style={styles.verifiedPill}>
@@ -46,16 +116,18 @@ export function ProfileScreen({ player }: { player: Player }) {
                 </AppText>
               </View>
               <View style={styles.profileMetaRow}>
-                <Ionicons color={colors.darkSubtle} name="person-outline" size={13} />
+                <Ionicons color={colors.subtle} name="person-outline" size={13} />
                 <AppText numberOfLines={1} tone="subtle" variant="caption" weight="600">
                   {capitalize(player.gender)}
                 </AppText>
               </View>
             </View>
 
-            <Pressable accessibilityRole="button" style={styles.editButton}>
-              <Ionicons color={colors.accentLime} name="pencil-outline" size={16} />
-            </Pressable>
+            {onEditProfile ? (
+              <Pressable accessibilityRole="button" onPress={onEditProfile} style={styles.editButton}>
+                <Ionicons color={colors.accentLime} name="pencil-outline" size={16} />
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
@@ -66,36 +138,46 @@ export function ProfileScreen({ player }: { player: Player }) {
             end={{ x: 0.9, y: 1 }}
             style={styles.levelBadge}
           >
-            <AppText align="center" tone="inverse" style={styles.levelLabel} weight="800">
+            <AppText align="center" tone="primary" style={styles.levelLabel} weight="800">
               Level
             </AppText>
-            <AppText align="center" tone="inverse" style={styles.levelNumber} weight="800">
+            <AppText align="center" tone="primary" style={styles.levelNumber} weight="800">
               8
             </AppText>
           </LinearGradient>
 
           <View style={styles.pointsCopy}>
             <View style={styles.pointsHeader}>
-              <AppText variant="titleSmall" weight="800">
-                TOCA Points
-              </AppText>
-              <AppText tone="muted" variant="caption" weight="700">
-                1,250 / 2,000
-              </AppText>
+              <View style={styles.pointsTitleBlock}>
+                <AppText tone="muted" variant="metadata" weight="700">
+                  TOCA Points
+                </AppText>
+                <AppText style={styles.pointsValue} variant="cardTitle" weight="900">
+                  1,250 pts
+                </AppText>
+              </View>
+              <View style={styles.nextLevelPill}>
+                <AppText align="center" tone="warning" variant="caption" weight="800">
+                  Level 9
+                </AppText>
+                <AppText align="center" tone="muted" variant="caption" weight="700">
+                  2,000 pts
+                </AppText>
+              </View>
             </View>
-            <ProgressBar fillColor={colors.accentGold} progress={0.625} style={styles.progress} trackColor="rgba(246,247,237,0.11)" />
-            <AppText tone="subtle" variant="caption" weight="600">
-              750 points until Level 9
+            <ProgressBar fillColor={colors.accentGold} progress={0.625} style={styles.progress} trackColor="#D9E8D8" />
+            <AppText tone="muted" variant="metadata" weight="600">
+              750 pts to next level
             </AppText>
           </View>
         </View>
 
         <View style={styles.summaryStrip}>
-          <SummaryItem icon="ribbon-outline" label="Level" value={player.level} />
+          <SummaryItem icon="ribbon-outline" label="Rank" value={player.level} />
           <View style={styles.summaryDivider} />
-          <SummaryItem icon="star-outline" label="Rating" value="3.6" warning />
+          <SummaryItem icon="star-outline" label="Rating" tone="rating" value="3.6" />
           <View style={styles.summaryDivider} />
-          <SummaryItem icon="calendar-outline" label="Games" tone="sea" value={`${player.gamesPlayed}`} />
+          <SummaryItem icon="calendar-outline" label="Games" value={`${player.gamesPlayed}`} />
           <View style={styles.summaryDivider} />
           <SummaryItem icon="medal-outline" label="Badges" tone="purple" value="7" />
         </View>
@@ -109,8 +191,34 @@ export function ProfileScreen({ player }: { player: Player }) {
           </View>
         </View>
 
-        <PeopleSection action="See all" players={friendPlayers} title="Friends" trailingCount={24} />
-        <PeopleSection players={recentPlayers} showRecency title="Recently played with" variant="connect" />
+        <View style={styles.section}>
+          <SectionHeader title="Trust & routine" />
+          <View style={styles.trustGrid}>
+            <TrustCue icon="checkmark-circle-outline" label="Show-up rate" value="96%" />
+            <TrustCue icon="flag-outline" label="Hosted games" value="8" />
+            <TrustCue icon="star-outline" label="Rated players" value="34" warning />
+            <TrustCue icon="location" label="Preferred beaches" value="Gordon, Hilton" sea />
+          </View>
+        </View>
+
+        <PeopleSection
+          action="See all"
+          context="friend"
+          onMore={openActions}
+          onPressProfile={openProfile}
+          ownerPlayer={player}
+          players={friendPlayers}
+          title="Friends"
+        />
+        <PeopleSection
+          context="recent"
+          onMore={openActions}
+          onPressProfile={openProfile}
+          ownerPlayer={player}
+          players={recentPlayers}
+          showRecency
+          title="Recently played with"
+        />
 
         <View style={styles.section}>
           <SectionHeader title="Badges & titles" />
@@ -123,6 +231,89 @@ export function ProfileScreen({ player }: { player: Player }) {
           </ScrollView>
         </View>
       </View>
+      <PlayerActionSheet
+        actions={actionSheetActions}
+        contextLabel={actionSheetPlayer?.contextLabel}
+        initials={actionSheetPlayer?.initials ?? ''}
+        name={actionSheetPlayer?.name ?? ''}
+        onClose={() => setActionSheetPlayer(null)}
+        visible={Boolean(actionSheetPlayer)}
+      />
+      <PlayerProfilePreview
+        context={
+          profilePreviewPlayer
+            ? getProfilePlayerContext(
+                profilePreviewPlayer.player,
+                profilePreviewPlayer.context,
+                player.friendIds.includes(profilePreviewPlayer.player.id),
+              )
+            : undefined
+        }
+        initials={profilePreviewPlayer?.player.initials ?? ''}
+        level={profilePreviewPlayer?.player.level}
+        meta={profilePreviewPlayer ? `${profilePreviewPlayer.player.tocaPoints} TOCA points` : undefined}
+        moreActions={
+          profilePreviewPlayer
+            ? getProfilePlayerActions(
+                profilePreviewPlayer.context,
+                player.friendIds.includes(profilePreviewPlayer.player.id),
+                requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                () => undefined,
+                () => onInvitePlayer(profilePreviewPlayer.player.id),
+                () => requestFriend(profilePreviewPlayer.player.id),
+                () => cancelFriendRequest(profilePreviewPlayer.player.id),
+              )
+            : undefined
+        }
+        name={profilePreviewPlayer?.player.name ?? ''}
+        onClose={() => setProfilePreviewPlayer(null)}
+        primaryAction={
+          profilePreviewPlayer
+            ? {
+                label: 'View full profile',
+                onPress: () => onViewPlayerProfile?.(profilePreviewPlayer.player),
+              }
+            : undefined
+        }
+        profileDetails={
+          profilePreviewPlayer ? getPreviewPlayingDetails(profilePreviewPlayer.player) : undefined
+        }
+        secondaryAction={
+          profilePreviewPlayer
+            ? {
+                disabled:
+                  getProfilePreviewActionLabel(
+                    profilePreviewPlayer.context,
+                    player.friendIds.includes(profilePreviewPlayer.player.id),
+                    requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                  ) === 'Requested',
+                label: getProfilePreviewActionLabel(
+                  profilePreviewPlayer.context,
+                  player.friendIds.includes(profilePreviewPlayer.player.id),
+                  requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                ),
+                onPress: () => {
+                  const actionLabel = getProfilePreviewActionLabel(
+                    profilePreviewPlayer.context,
+                    player.friendIds.includes(profilePreviewPlayer.player.id),
+                    requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                  );
+
+                  if (actionLabel === 'Invite' || actionLabel === 'Invite to game') {
+                    onInvitePlayer(profilePreviewPlayer.player.id);
+                  }
+
+                  if (actionLabel === 'Add friend') {
+                    requestFriend(profilePreviewPlayer.player.id);
+                  }
+                },
+              }
+            : undefined
+        }
+        rating={profilePreviewPlayer ? getProfilePlayerRating(profilePreviewPlayer.player) : undefined}
+        trustCues={profilePreviewPlayer ? getPreviewTrustCues(profilePreviewPlayer.player) : undefined}
+        visible={Boolean(profilePreviewPlayer)}
+      />
     </View>
   );
 }
@@ -136,21 +327,28 @@ function SummaryItem({
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  tone?: 'purple' | 'sea';
+  tone?: 'purple' | 'rating' | 'sea';
   value: string;
   warning?: boolean;
 }) {
-  const accentColor = tone === 'sea' ? colors.accentSea : tone === 'purple' ? colors.accentPurple : warning ? colors.accent : colors.accentLime;
+  const accentColor =
+    tone === 'sea'
+      ? colors.accentSea
+      : tone === 'purple'
+        ? colors.accentPurple
+        : tone === 'rating' || warning
+          ? colors.accentGoldDark
+          : colors.accentLime;
 
   return (
     <View style={styles.summaryItem}>
-      <View style={[styles.summaryIcon, warning && styles.summaryIconGold, tone === 'sea' && styles.summaryIconSea, tone === 'purple' && styles.summaryIconPurple]}>
+      <View style={[styles.summaryIcon, (warning || tone === 'rating') && styles.summaryIconRating, tone === 'sea' && styles.summaryIconSea, tone === 'purple' && styles.summaryIconPurple]}>
         <Ionicons color={accentColor} name={icon} size={15} />
       </View>
-      <AppText style={tone ? { color: accentColor } : undefined} tone={warning ? 'warning' : 'primary'} variant="titleSmall" weight="800">
+      <AppText tone="primary" variant="cardTitle" weight="800">
         {value}
       </AppText>
-      <AppText style={tone ? { color: accentColor } : undefined} tone="muted" variant="caption" weight="600">
+      <AppText tone="muted" variant="metadata" weight="600">
         {label}
       </AppText>
     </View>
@@ -168,13 +366,15 @@ function PlayingCell({
 }) {
   return (
     <View style={styles.playingCell}>
-      <View style={styles.playingIcon}>
-        <Ionicons color={colors.accentLime} name={icon} size={16} />
+      <View style={styles.playingIconSlot}>
+        <View style={styles.playingIcon}>
+          <Ionicons color={colors.accentLime} name={icon} size={16} />
+        </View>
       </View>
-      <AppText align="center" tone="subtle" variant="caption" weight="600">
+      <AppText align="center" style={styles.playingLabel} tone="muted" variant="metadata" weight="600">
         {label}
       </AppText>
-      <AppText align="center" numberOfLines={1} variant="caption" weight="800">
+      <AppText align="center" numberOfLines={1} style={styles.playingValue} variant="metadata" weight="800">
         {value}
       </AppText>
     </View>
@@ -182,27 +382,57 @@ function PlayingCell({
 }
 
 function GearCell({ hasBall, hasCourtMarks }: { hasBall: boolean; hasCourtMarks: boolean }) {
+  const gearItems = [hasBall ? 'Ball' : null, hasCourtMarks ? 'Marks' : null].filter(Boolean).join('   ');
+
   return (
     <View style={styles.playingCell}>
-      <View style={styles.gearIconRow}>
-        <View style={[styles.gearIcon, hasBall && styles.gearIconActive]}>
-          <Ionicons color={hasBall ? colors.accentLime : colors.darkSubtle} name="football-outline" size={14} />
-        </View>
-        <View style={[styles.gearIcon, hasCourtMarks && styles.gearIconActive]}>
-          <Ionicons color={hasCourtMarks ? colors.accentLime : colors.darkSubtle} name="flag-outline" size={14} />
+      <View style={styles.playingIconSlot}>
+        <View style={styles.gearIconRow}>
+          <View style={[styles.gearIcon, hasBall && styles.gearIconActive, styles.gearIconOverlapRight]}>
+            <Ionicons color={hasBall ? colors.accentLime : colors.subtle} name="football-outline" size={14} />
+          </View>
+          <View style={[styles.gearIcon, hasCourtMarks && styles.gearIconActive, styles.gearIconOverlapLeft]}>
+            <Ionicons color={hasCourtMarks ? colors.accentLime : colors.subtle} name="flag-outline" size={14} />
+          </View>
         </View>
       </View>
-      <View style={styles.gearLabelRow}>
-        {hasBall ? (
-          <AppText align="center" variant="caption" weight="800">
-            Ball
-          </AppText>
-        ) : null}
-        {hasCourtMarks ? (
-          <AppText align="center" variant="caption" weight="800">
-            Mark
-          </AppText>
-        ) : null}
+      <AppText align="center" style={styles.playingLabel} tone="muted" variant="metadata" weight="600">
+        Equipment
+      </AppText>
+      <AppText align="center" numberOfLines={1} style={styles.playingValue} variant="metadata" weight="800">
+        {gearItems || 'None'}
+      </AppText>
+    </View>
+  );
+}
+
+function TrustCue({
+  icon,
+  label,
+  sea = false,
+  value,
+  warning = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  sea?: boolean;
+  value: string;
+  warning?: boolean;
+}) {
+  const iconColor = sea ? colors.accentSea : warning ? colors.accent : colors.primaryDark;
+
+  return (
+    <View style={styles.trustCue}>
+      <View style={[styles.trustCueIcon, sea && styles.trustCueIconSea, warning && styles.trustCueIconGold]}>
+        <Ionicons color={iconColor} name={icon} size={15} />
+      </View>
+      <View style={styles.trustCueCopy}>
+        <AppText numberOfLines={1} variant="uiBody" weight="800">
+          {value}
+        </AppText>
+        <AppText numberOfLines={1} tone="muted" variant="metadata" weight="600">
+          {label}
+        </AppText>
       </View>
     </View>
   );
@@ -210,33 +440,46 @@ function GearCell({ hasBall, hasCourtMarks }: { hasBall: boolean; hasCourtMarks:
 
 function PeopleSection({
   action,
+  context,
+  onMore,
+  onPressProfile,
+  ownerPlayer,
   players: people,
   showRecency = false,
   title,
-  trailingCount,
-  variant = 'friend',
 }: {
   action?: string;
+  context: 'friend' | 'recent';
+  onMore: (player: Player, context: 'friend' | 'recent') => void;
+  onPressProfile: (player: Player, context: 'friend' | 'recent') => void;
+  ownerPlayer: Player;
   players: Player[];
   showRecency?: boolean;
   title: string;
-  trailingCount?: number;
-  variant?: 'connect' | 'friend';
 }) {
   return (
     <View style={styles.section}>
-      <SectionHeader action={action} icon="chevron-forward" title={title} />
-      <ScrollView horizontal contentContainerStyle={styles.peopleRow} showsHorizontalScrollIndicator={false}>
-        {people.map((person, index) => (
-          <PlayerMiniCard
-            key={person.id}
-            player={person}
-            recency={showRecency ? getRecentLabel(index) : undefined}
-            variant={variant}
-          />
-        ))}
-        {trailingCount ? <MoreCard label="Add friends" value={`${trailingCount}+`} /> : null}
-      </ScrollView>
+      <SectionHeader action={action} icon="chevron-down" title={title} />
+      <View style={styles.playerRowStack}>
+        {people.map((person, index) => {
+          const isFriend = ownerPlayer.friendIds.includes(person.id);
+
+          return (
+            <PlayerRow
+              context={getProfilePlayerContext(person, context, isFriend, showRecency ? index : undefined)}
+              initials={person.initials}
+              key={person.id}
+              level={person.level}
+              location={person.area}
+              name={person.name}
+              onMore={() => onMore(person, context)}
+              onPressProfile={() => onPressProfile(person, context)}
+              rating={getProfilePlayerRating(person)}
+              statusIcon={person.id === 'p3' ? 'shield-checkmark' : 'star'}
+            />
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -263,14 +506,14 @@ function PlayerMiniCard({
           <Ionicons color={colors.ink} name={isShield ? 'shield-checkmark' : 'star'} size={11} />
         </View>
       </View>
-      <AppText align="center" numberOfLines={1} style={styles.playerName} variant="bodySmall" weight="800">
+      <AppText align="center" numberOfLines={1} style={styles.playerName} variant="uiBody" weight="800">
         {player.name}
       </AppText>
       <View style={styles.playerMetaRow}>
         <MiniChip label={player.level} />
         <MiniChip icon="star" label={player.id === 'p4' ? '3.6' : player.id === 'p3' ? '4.0' : '3.2'} warning />
       </View>
-      <AppText align="center" tone="subtle" variant="caption" weight="600">
+      <AppText align="center" tone="muted" variant="metadata" weight="600">
         {recency ?? `${player.tocaPoints} points`}
       </AppText>
     </View>
@@ -281,7 +524,7 @@ function MoreCard({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.moreCard}>
       <View style={styles.moreCircle}>
-        <AppText align="center" tone="accent" variant="titleSmall" weight="800">
+        <AppText align="center" tone="accent" variant="cardTitle" weight="800">
           {value}
         </AppText>
       </View>
@@ -303,15 +546,15 @@ function SectionHeader({
 }) {
   return (
     <View style={styles.sectionHeader}>
-      <AppText style={styles.sectionTitle} variant="heading" weight="800">
+      <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
         {title}
       </AppText>
       {action && icon ? (
         <Pressable accessibilityRole="button" style={styles.sectionAction}>
-          <AppText tone="accent" variant="label" weight="800">
+          <AppText tone="accent" variant="button" weight="800">
             {action}
           </AppText>
-          <Ionicons color={colors.accentLime} name={icon} size={15} />
+          <Ionicons color={colors.accentLime} name={icon} size={16} />
         </Pressable>
       ) : null}
     </View>
@@ -332,21 +575,26 @@ function BadgeCard({
   warning?: boolean;
 }) {
   return (
-    <View style={[styles.badgeCard, muted && styles.mutedCard]}>
+    <LinearGradient
+      colors={muted ? [colors.surfaceRaised, colors.surface] : ['#FFFFFF', '#F7F1FF', '#FFF9EC']}
+      start={{ x: 0.1, y: 0 }}
+      end={{ x: 0.9, y: 1 }}
+      style={[styles.badgeCard, muted && styles.mutedCard]}
+    >
       <View style={[styles.badgeIcon, warning && styles.badgeIconGold, muted && styles.badgeIconMuted]}>
         <Ionicons
-          color={muted ? colors.darkSubtle : warning ? colors.accent : colors.accentLime}
+          color={muted ? colors.subtle : warning ? colors.accentGoldDark : colors.accentPurple}
           name={icon}
           size={19}
         />
       </View>
-      <AppText align="center" numberOfLines={1} variant="bodySmall" weight="800">
+      <AppText align="center" numberOfLines={2} style={styles.badgeTitle} variant="metadata" weight="900">
         {title}
       </AppText>
-      <AppText align="center" tone="subtle" variant="caption" weight="600">
+      <AppText align="center" numberOfLines={2} style={styles.badgeDescription} tone="muted" variant="caption" weight="600">
         {description}
       </AppText>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -365,12 +613,12 @@ function MiniChip({
     <View style={[styles.miniChip, active && styles.miniChipActive, warning && styles.miniChipGold]}>
       {icon ? (
         <Ionicons
-          color={warning ? colors.accent : active ? colors.accentLime : colors.darkMuted}
+          color={warning ? colors.accentGoldDark : active ? colors.accentLime : colors.muted}
           name={icon}
           size={10}
         />
       ) : null}
-      <AppText tone={warning ? 'warning' : active ? 'accent' : 'muted'} variant="caption" weight="800">
+      <AppText tone={active ? 'accent' : 'muted'} variant="chip" weight="800">
         {label}
       </AppText>
     </View>
@@ -385,12 +633,113 @@ function getRecentLabel(index: number) {
   return ['2d ago', '3d ago', '5d ago', '1w ago'][index] ?? '1w ago';
 }
 
+function getProfilePlayerRating(player: Player) {
+  if (player.id === 'p4') {
+    return '3.6';
+  }
+
+  if (player.id === 'p3') {
+    return '4.0';
+  }
+
+  return '3.2';
+}
+
+function getPreviewTrustCues(player: Player) {
+  return [
+    {
+      icon: 'checkmark-circle-outline' as const,
+      label: 'Show-up rate',
+      value: player.rankStatus === 'established' ? '98%' : player.rankStatus === 'stabilizing' ? '94%' : 'New',
+    },
+    {
+      icon: 'calendar-outline' as const,
+      label: 'Games played',
+      tone: 'green' as const,
+      value: `${player.gamesPlayed}`,
+    },
+  ];
+}
+
+function getPreviewPlayingDetails(player: Player) {
+  return getPlayerPreviewPlayingDetails(player);
+}
+
+function getProfilePlayerContext(
+  player: Player,
+  context: 'friend' | 'recent',
+  isFriend: boolean,
+  recencyIndex?: number,
+) {
+  if (context === 'friend') {
+    return `${player.area} regular`;
+  }
+
+  const recency = typeof recencyIndex === 'number' ? getRecentLabel(recencyIndex) : 'Recently played';
+  return isFriend ? `${recency} - friend` : `${recency} - add to crew`;
+}
+
+function getProfilePlayerActions(
+  context: 'friend' | 'recent',
+  isFriend: boolean,
+  isRequested: boolean,
+  onViewProfile: () => void,
+  onInviteToGame: () => void,
+  onAddFriend: () => void,
+  onRemoveRequest: () => void,
+): PlayerAction[] {
+  const viewProfileAction = {
+    icon: 'person-circle-outline' as const,
+    label: isFriend ? 'Show full profile' : 'View full profile',
+    onPress: onViewProfile,
+  };
+  const inviteAction = { icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInviteToGame };
+  const reportAction = { destructive: true, icon: 'ban-outline' as const, label: 'Report & block' };
+
+  if (isRequested) {
+    return [
+      viewProfileAction,
+      inviteAction,
+      { icon: 'person-remove-outline' as const, label: 'Remove friend request', onPress: onRemoveRequest },
+      reportAction,
+    ];
+  }
+
+  if (isFriend || context === 'friend') {
+    return [
+      viewProfileAction,
+      inviteAction,
+      { destructive: true, icon: 'person-remove-outline', label: 'Remove friend' },
+      reportAction,
+    ];
+  }
+
+  return [
+    viewProfileAction,
+    { icon: 'person-add-outline' as const, label: 'Add friend', onPress: onAddFriend },
+    inviteAction,
+    reportAction,
+  ];
+}
+
+function getProfilePreviewActionLabel(context: 'friend' | 'recent', isFriend: boolean, isRequested: boolean) {
+  if (context === 'friend') {
+    return 'Invite to game';
+  }
+
+  if (isRequested) {
+    return 'Requested';
+  }
+
+  return isFriend ? 'Invite' : 'Add friend';
+}
+
 const styles = StyleSheet.create({
   avatarWrap: {
     position: 'relative',
   },
   backgroundGlow: {
-    height: 360,
+    height: 430,
     left: 0,
     position: 'absolute',
     right: 0,
@@ -398,19 +747,20 @@ const styles = StyleSheet.create({
   },
   badgeCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.58)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    borderColor: 'rgba(126, 122, 200, 0.22)',
+    borderRadius: 22,
     borderWidth: 1,
-    gap: 6,
+    gap: 5,
     minHeight: 126,
-    padding: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
     width: 116,
+    ...shadows.soft,
   },
   badgeIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: 'rgba(126, 122, 200, 0.12)',
+    borderColor: 'rgba(126, 122, 200, 0.28)',
     borderRadius: radius.round,
     borderWidth: 1,
     height: 38,
@@ -418,32 +768,41 @@ const styles = StyleSheet.create({
     width: 38,
   },
   badgeIconGold: {
-    backgroundColor: 'rgba(255, 200, 61, 0.10)',
-    borderColor: 'rgba(255, 200, 61, 0.28)',
+    backgroundColor: 'rgba(126, 122, 200, 0.12)',
+    borderColor: 'rgba(126, 122, 200, 0.28)',
   },
   badgeIconMuted: {
-    backgroundColor: 'rgba(246, 247, 237, 0.04)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   badgeRow: {
     gap: spacing.sm,
     paddingRight: spacing.xl2,
   },
+  badgeDescription: {
+    maxWidth: 94,
+  },
+  badgeTitle: {
+    color: colors.ink,
+    maxWidth: 94,
+    minHeight: 34,
+  },
   content: {
-    gap: spacing.md,
+    gap: 16,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.xl2,
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
   },
   editButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 36,
     justifyContent: 'center',
     width: 36,
+    ...shadows.soft,
   },
   levelBadge: {
     alignItems: 'center',
@@ -468,8 +827,8 @@ const styles = StyleSheet.create({
   },
   gearIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 28,
@@ -477,12 +836,22 @@ const styles = StyleSheet.create({
     width: 28,
   },
   gearIconActive: {
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   gearIconRow: {
+    alignItems: 'center',
     flexDirection: 'row',
-    gap: 5,
+    height: 28,
+    justifyContent: 'center',
+    width: 48,
+  },
+  gearIconOverlapLeft: {
+    marginLeft: -4,
+  },
+  gearIconOverlapRight: {
+    marginRight: -4,
+    zIndex: 1,
   },
   gearLabelRow: {
     alignItems: 'center',
@@ -494,8 +863,8 @@ const styles = StyleSheet.create({
   },
   miniChip: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
@@ -504,12 +873,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
   },
   miniChipActive: {
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   miniChipGold: {
-    backgroundColor: 'rgba(255, 200, 61, 0.10)',
-    borderColor: 'rgba(255, 200, 61, 0.28)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   moreCard: {
     alignItems: 'center',
@@ -520,8 +889,8 @@ const styles = StyleSheet.create({
   },
   moreCircle: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.70)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 58,
@@ -542,19 +911,20 @@ const styles = StyleSheet.create({
   },
   playerCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.58)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
     borderWidth: 1,
     gap: 6,
     height: 144,
     padding: spacing.sm,
     width: 108,
+    ...shadows.soft,
   },
   playerAvatar: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.06)',
-    borderColor: 'rgba(246, 247, 237, 0.12)',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 58,
@@ -565,7 +935,7 @@ const styles = StyleSheet.create({
   playerBadge: {
     alignItems: 'center',
     backgroundColor: colors.accentLime,
-    borderColor: colors.darkBackground,
+    borderColor: colors.background,
     borderRadius: radius.round,
     borderWidth: 2,
     bottom: -1,
@@ -588,41 +958,58 @@ const styles = StyleSheet.create({
   playerName: {
     maxWidth: 88,
   },
+  playerRowStack: {
+    gap: spacing.sm,
+  },
   playingCell: {
     alignItems: 'center',
     flex: 1,
-    gap: 4,
+    gap: 3,
     minWidth: 0,
   },
   playingGrid: {
-    backgroundColor: 'rgba(11, 29, 16, 0.52)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
+    ...shadows.soft,
   },
   playingIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 28,
     justifyContent: 'center',
     width: 28,
   },
+  playingIconSlot: {
+    alignItems: 'center',
+    height: 30,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  playingLabel: {
+    minHeight: 17,
+  },
+  playingValue: {
+    minHeight: 17,
+  },
   pointsCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.58)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 24,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    padding: spacing.md,
+    padding: spacing.lg,
+    ...shadows.card,
   },
   pointsCopy: {
     flex: 1,
@@ -630,16 +1017,34 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   pointsHeader: {
-    alignItems: 'baseline',
+    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  profileCard: {
-    backgroundColor: 'rgba(11, 29, 16, 0.62)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+  pointsTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pointsValue: {
+    color: colors.ink,
+  },
+  nextLevelPill: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 242, 189, 0.72)',
+    borderColor: 'rgba(246, 201, 69, 0.34)',
+    borderRadius: radius.md,
     borderWidth: 1,
-    padding: spacing.md,
+    minWidth: 78,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 4,
+  },
+  profileCard: {
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: spacing.lg,
+    ...shadows.card,
   },
   profileCopy: {
     flex: 1,
@@ -652,7 +1057,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   profileName: {
-    color: '#ECEDE6',
+    color: colors.ink,
     flexShrink: 1,
   },
   profileTop: {
@@ -664,7 +1069,7 @@ const styles = StyleSheet.create({
     height: 6,
   },
   screen: {
-    backgroundColor: colors.darkBackground,
+    backgroundColor: colors.background,
     minHeight: '100%',
   },
   section: {
@@ -687,14 +1092,14 @@ const styles = StyleSheet.create({
     lineHeight: 28,
   },
   summaryDivider: {
-    backgroundColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.border,
     height: 34,
     width: 1,
   },
   summaryIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 26,
@@ -702,13 +1107,13 @@ const styles = StyleSheet.create({
     marginBottom: 3,
     width: 26,
   },
-  summaryIconGold: {
-    backgroundColor: 'rgba(255, 200, 61, 0.10)',
-    borderColor: 'rgba(255, 200, 61, 0.28)',
+  summaryIconRating: {
+    backgroundColor: 'rgba(255, 249, 236, 0.92)',
+    borderColor: 'rgba(246, 201, 69, 0.34)',
   },
   summaryIconPurple: {
-    backgroundColor: 'rgba(167, 139, 250, 0.12)',
-    borderColor: 'rgba(167, 139, 250, 0.36)',
+    backgroundColor: 'rgba(244, 123, 95, 0.12)',
+    borderColor: 'rgba(244, 123, 95, 0.36)',
   },
   summaryIconSea: {
     backgroundColor: 'rgba(39, 210, 196, 0.10)',
@@ -720,14 +1125,52 @@ const styles = StyleSheet.create({
   },
   summaryStrip: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.48)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     minHeight: 78,
     paddingHorizontal: spacing.sm,
+    ...shadows.soft,
+  },
+  trustCue: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 58,
+    paddingHorizontal: spacing.sm,
+    ...shadows.soft,
+  },
+  trustCueCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  trustCueIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  trustCueIconGold: {
+    backgroundColor: colors.surfaceYellow,
+    borderColor: 'rgba(246, 201, 69, 0.46)',
+  },
+  trustCueIconSea: {
+    backgroundColor: colors.surfaceAqua,
+    borderColor: 'rgba(27, 183, 168, 0.34)',
+  },
+  trustGrid: {
+    gap: spacing.sm,
   },
   verifiedPill: {
     alignItems: 'center',

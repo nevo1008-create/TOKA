@@ -17,6 +17,7 @@ type HomeScreenProps = {
   notifications: Notification[];
   onCreateGame: () => void;
   onInviteFriends: () => void;
+  onOpenMenu: () => void;
   onOpenGames: () => void;
   onOpenLobby: (lobby: Lobby) => void;
 };
@@ -27,6 +28,7 @@ export function HomeScreen({
   notifications,
   onCreateGame,
   onInviteFriends,
+  onOpenMenu,
   onOpenGames,
   onOpenLobby,
 }: HomeScreenProps) {
@@ -34,23 +36,38 @@ export function HomeScreen({
   const nearbyLeagueLobby = lobbies[1] ?? featuredLobby;
   const nearbyWomenLobby = lobbies[2] ?? featuredLobby;
   const firstName = currentPlayer.name.split(' ')[0];
+  const showNearbyLeagueLobby = nearbyLeagueLobby ? isLobbyDiscoverable(nearbyLeagueLobby) : false;
+  const showNearbyWomenLobby = nearbyWomenLobby ? isLobbyDiscoverable(nearbyWomenLobby) : false;
 
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={['rgba(76, 255, 90, 0.09)', colors.darkBackground, colors.darkBackground]}
-        locations={[0, 0.34, 1]}
-        style={styles.backgroundGlow}
+        colors={['#FFF6D7', colors.background, colors.backgroundAlt]}
+        locations={[0, 0.42, 1]}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.22, y: 0.72 }}
+        style={styles.sunWash}
       />
-      <HomeHeader notificationCount={notifications.length} player={currentPlayer} />
+      <LinearGradient
+        colors={['rgba(255, 255, 255, 0.34)', 'rgba(246, 238, 220, 0)']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.topLight}
+      />
+      <View pointerEvents="none" style={styles.palmGlow}>
+        <View style={[styles.palmFrond, styles.palmFrondOne]} />
+        <View style={[styles.palmFrond, styles.palmFrondTwo]} />
+        <View style={[styles.palmFrond, styles.palmFrondThree]} />
+      </View>
+      <HomeHeader notificationCount={notifications.length} onMenuPress={onOpenMenu} player={currentPlayer} />
 
       <View style={styles.content}>
         <View style={styles.hero}>
           <View style={styles.heroTitleRow}>
-            <AppText style={styles.heroTitle} variant="display" weight="800">
+            <AppText style={styles.heroTitle} variant="displayGreeting" weight="900">
               Good evening,
             </AppText>
-            <AppText style={styles.heroTitle} tone="accent" variant="display" weight="800">
+            <AppText style={styles.heroTitle} tone="accent" variant="displayGreeting" weight="900">
               {firstName}
             </AppText>
           </View>
@@ -59,14 +76,13 @@ export function HomeScreen({
         <PlayerStatusStrip />
 
         <View style={styles.nextGameHeader}>
-          <AppText style={styles.nextGameTitle} variant="label" weight="800">
+          <AppText style={styles.nextGameTitle} variant="sectionHeading" weight="800">
             My next game
           </AppText>
         </View>
 
         <FeaturedGameCard
           lobby={featuredLobby}
-          onJoin={() => (featuredLobby ? onOpenLobby(featuredLobby) : onOpenGames())}
           onOpenRoom={() => (featuredLobby ? onOpenLobby(featuredLobby) : onOpenGames())}
         />
 
@@ -76,13 +92,13 @@ export function HomeScreen({
           onInviteFriends={onInviteFriends}
         />
 
-        <View style={styles.section}>
+        <View style={[styles.section, styles.nearbySection]}>
           <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitle} variant="heading" weight="800">
+            <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
               Nearby Games
             </AppText>
             <Pressable accessibilityRole="button" onPress={onOpenGames} style={styles.mapAction}>
-              <AppText tone="accent" variant="titleSmall" weight="800">
+              <AppText tone="accent" variant="button" weight="800">
                 See all
               </AppText>
               <Ionicons color={colors.accentLime} name="chevron-forward" size={20} />
@@ -90,38 +106,42 @@ export function HomeScreen({
           </View>
 
           <View style={styles.nearbyStack}>
-            <NearbyGameCard
-              audience="Everyone"
-              distance="18.1 km"
-              level="A+"
-              location="Poleg Beach"
-              onPress={() => (nearbyLeagueLobby ? onOpenLobby(nearbyLeagueLobby) : onOpenGames())}
-              players="3 / 6"
-              spotsLeft="3 spots left"
-              status="Full"
-              time="Sat 08:00"
-              title="League morning"
-              variant="morning"
-            />
-            <NearbyGameCard
-              audience="Women"
-              distance="49.5 km"
-              level="C-D"
-              location="Aqueduct Beach"
-              onPress={() => (nearbyWomenLobby ? onOpenLobby(nearbyWomenLobby) : onOpenGames())}
-              players="1 / 6"
-              spotsLeft="5 spots left"
-              status="Approval"
-              time="Sun 19:00"
-              title="Women evening"
-              variant="sunset"
-            />
+            {showNearbyLeagueLobby ? (
+              <NearbyGameCard
+                audience="Everyone"
+                distance="18.1 km"
+                level="A+"
+                location="Poleg Beach"
+                onPress={() => (nearbyLeagueLobby ? onOpenLobby(nearbyLeagueLobby) : onOpenGames())}
+                players="3 / 6"
+                spotsLeft="3 spots left"
+                status="Full"
+                time="Sat 08:00"
+                title="League morning"
+                variant="morning"
+              />
+            ) : null}
+            {showNearbyWomenLobby ? (
+              <NearbyGameCard
+                audience="Women"
+                distance="49.5 km"
+                level="C-D"
+                location="Aqueduct Beach"
+                onPress={() => (nearbyWomenLobby ? onOpenLobby(nearbyWomenLobby) : onOpenGames())}
+                players="1 / 6"
+                spotsLeft="5 spots left"
+                status="Approval"
+                time="Sun 19:00"
+                title="Women evening"
+                variant="sunset"
+              />
+            ) : null}
           </View>
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitle} variant="heading" weight="800">
+            <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
               Rate games
             </AppText>
           </View>
@@ -150,19 +170,59 @@ export function HomeScreen({
   );
 }
 
+function isLobbyDiscoverable(lobby: Lobby) {
+  return lobby.status === 'open' || lobby.status === 'full';
+}
+
 const styles = StyleSheet.create({
-  backgroundGlow: {
-    height: 360,
+  palmFrond: {
+    backgroundColor: 'rgba(239, 165, 26, 0.08)',
+    borderRadius: 999,
+    height: 130,
+    position: 'absolute',
+    right: 26,
+    top: -34,
+    width: 10,
+  },
+  palmFrondOne: {
+    transform: [{ rotate: '48deg' }],
+  },
+  palmFrondTwo: {
+    right: 50,
+    top: -28,
+    transform: [{ rotate: '68deg' }],
+  },
+  palmFrondThree: {
+    right: 5,
+    top: -18,
+    transform: [{ rotate: '28deg' }],
+  },
+  palmGlow: {
+    height: 180,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: 150,
+  },
+  sunWash: {
+    height: 430,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  topLight: {
+    height: 190,
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
   },
   content: {
-    gap: spacing.md,
-    paddingBottom: spacing.lg,
+    gap: 15,
+    paddingBottom: 170,
     paddingHorizontal: spacing.xl2,
-    paddingTop: spacing.md,
+    paddingTop: 18,
   },
   hero: {
     alignItems: 'flex-start',
@@ -176,8 +236,6 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     alignSelf: 'flex-start',
-    fontSize: 29,
-    lineHeight: 35,
   },
   mapAction: {
     alignItems: 'center',
@@ -187,31 +245,30 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.md,
   },
   nearbyStack: {
-    gap: spacing.sm,
+    gap: 12,
+  },
+  nearbySection: {
+    marginTop: -10,
   },
   nextGameHeader: {
-    marginBottom: -spacing.xs,
-    marginTop: -spacing.xs,
+    marginBottom: -8,
+    marginTop: 2,
   },
   nextGameTitle: {
-    color: 'rgba(215, 217, 208, 0.78)',
-    letterSpacing: 0.4,
+    color: colors.ink,
     textTransform: 'uppercase',
   },
   screen: {
-    backgroundColor: colors.darkBackground,
+    backgroundColor: colors.background,
     minHeight: '100%',
   },
   section: {
-    gap: spacing.sm,
+    gap: 14,
   },
   sectionHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  sectionTitle: {
-    fontSize: 23,
-    lineHeight: 28,
-  },
+  sectionTitle: {},
 });

@@ -7,7 +7,7 @@ import { AppText } from './AppText';
 import { Avatar } from './Avatar';
 import { IconButton } from './IconButton';
 
-const defaultSubtitle = 'Footvolley games by level, place, and trust';
+const defaultSubtitle = 'Footvolley games by rank, place, and trust';
 
 type AppHeaderProps = {
   notificationCount?: number;
@@ -29,8 +29,8 @@ export function AppHeader({
       ) : null}
 
       <View style={styles.brandRow}>
-        <LinearGradient colors={[colors.darkSurfaceHigh, colors.ink]} style={styles.logoMark}>
-          <AppText tone="warning" variant="titleSmall" weight="900">
+        <LinearGradient colors={[colors.surfaceYellow, colors.surfaceMuted]} style={styles.logoMark}>
+          <AppText tone="accent" variant="titleSmall" weight="900">
             T
           </AppText>
         </LinearGradient>
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   logoMark: {
     alignItems: 'center',
-    borderColor: colors.neon,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 44,

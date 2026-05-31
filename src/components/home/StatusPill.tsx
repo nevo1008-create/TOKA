@@ -31,15 +31,15 @@ const styles = StyleSheet.create({
 
 const toneStyles = StyleSheet.create({
   gold: {
-    backgroundColor: 'rgba(255, 200, 61, 0.12)',
+    backgroundColor: colors.surfaceYellow,
     borderColor: 'rgba(255, 200, 61, 0.34)',
   },
   green: {
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: 'rgba(76, 255, 90, 0.32)',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   muted: {
-    backgroundColor: 'rgba(246, 247, 237, 0.03)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
 });

@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadows, spacing } from '../theme';
 import { AppText } from './AppText';
 
 export type Tab = 'home' | 'games' | 'create' | 'community' | 'profile';
@@ -23,13 +22,13 @@ type BottomNavProps = {
   isDark?: boolean;
 };
 
-export function BottomNav({ activeTab, onChange, isDark = false }: BottomNavProps) {
+export function BottomNav({ activeTab, onChange }: BottomNavProps) {
   return (
-    <BlurView intensity={isDark ? 48 : 20} tint={isDark ? 'dark' : 'light'} style={[styles.bottomNav, isDark && styles.bottomNavDark]}>
+    <View style={styles.bottomNav}>
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         const isCreate = tab.id === 'create';
-        const iconColor = isActive ? colors.accentLime : isCreate ? colors.darkText : colors.darkMuted;
+        const iconColor = isActive ? colors.primaryDark : isCreate ? colors.textOnGreen : colors.muted;
 
         return (
           <Pressable
@@ -41,6 +40,7 @@ export function BottomNav({ activeTab, onChange, isDark = false }: BottomNavProp
               style={[
                 styles.navIcon,
                 isCreate && styles.createNavIcon,
+                isActive && !isCreate && styles.activeNavIcon,
               ]}
             >
               <Ionicons color={iconColor} name={isActive ? tab.activeIcon : tab.icon} size={isCreate ? 33 : 21} />
@@ -48,7 +48,7 @@ export function BottomNav({ activeTab, onChange, isDark = false }: BottomNavProp
             <AppText
               style={styles.navLabel}
               tone={isActive ? 'accent' : 'muted'}
-              variant="caption"
+              variant="navLabel"
               weight={isActive ? '800' : '600'}
             >
               {tab.label}
@@ -56,7 +56,7 @@ export function BottomNav({ activeTab, onChange, isDark = false }: BottomNavProp
           </Pressable>
         );
       })}
-    </BlurView>
+    </View>
   );
 }
 
@@ -64,47 +64,47 @@ const styles = StyleSheet.create({
   bottomNav: {
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
+    borderColor: 'rgba(255, 255, 255, 0.82)',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    bottom: 6,
+    bottom: 0,
     flexDirection: 'row',
     gap: spacing.xs,
-    left: spacing.xl2,
-    padding: spacing.xs,
+    left: 0,
+    paddingBottom: 4,
+    paddingHorizontal: 12,
+    paddingTop: 4,
     position: 'absolute',
-    right: spacing.xl2,
-  },
-  bottomNavDark: {
-    backgroundColor: 'rgba(6, 20, 10, 0.86)',
-    borderColor: colors.darkBorder,
-    borderRadius: 24,
-    bottom: 6,
-    left: spacing.xl2,
-    paddingBottom: 6,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.xs,
-    right: spacing.xl2,
+    right: 0,
+    ...shadows.nav,
   },
   navItem: {
     alignItems: 'center',
     flex: 1,
-    gap: spacing.xxs,
-    minHeight: 51,
+    gap: 1,
+    minHeight: 46,
   },
   createNavItem: {
-    transform: [{ translateY: -5 }],
+    transform: [{ translateY: -7 }],
   },
   navIcon: {
     alignItems: 'center',
     borderRadius: radius.round,
-    height: 34,
+    height: 30,
     justifyContent: 'center',
-    width: 34,
+    width: 30,
   },
   createNavIcon: {
-    height: 44,
-    width: 44,
+    backgroundColor: colors.primary,
+    borderColor: 'rgba(255, 255, 255, 0.70)',
+    borderWidth: 3,
+    height: 48,
+    width: 48,
+    ...shadows.soft,
+  },
+  activeNavIcon: {
+    backgroundColor: colors.surfaceMuted,
   },
   navLabel: {
     maxWidth: 68,

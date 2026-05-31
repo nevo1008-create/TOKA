@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View, type PressableProps, type ViewStyle } from 'react-native';
 
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadows, spacing } from '../theme';
 import { AppText } from './AppText';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -38,7 +38,7 @@ export function IconButton({
       ]}
       {...props}
     >
-      <Ionicons color={isPrimary ? colors.ink : colors.darkText} name={icon} size={iconSize} />
+      <Ionicons color={isPrimary ? colors.textOnGreen : colors.ink} name={icon} size={iconSize} />
       {badgeCount && badgeCount > 0 ? (
         <View style={styles.badge}>
           <AppText align="center" tone="inverse" variant="caption" weight="900">
@@ -53,8 +53,8 @@ export function IconButton({
 const styles = StyleSheet.create({
   badge: {
     alignItems: 'center',
-    backgroundColor: colors.neon,
-    borderColor: colors.darkBackground,
+    backgroundColor: colors.primary,
+    borderColor: colors.surface,
     borderRadius: radius.round,
     borderWidth: 2,
     height: 20,
@@ -70,20 +70,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     position: 'relative',
+    ...shadows.soft,
   },
 });
 
 const variantStyles = StyleSheet.create({
   ghost: {
     backgroundColor: colors.transparent,
-    borderColor: colors.darkBorder,
+    borderColor: colors.border,
   },
   primary: {
-    backgroundColor: colors.neon,
-    borderColor: colors.neon,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   surface: {
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
   },
 });

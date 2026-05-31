@@ -46,22 +46,22 @@ const styles = StyleSheet.create({
 
 const toneStyles = StyleSheet.create({
   accent: {
-    color: colors.neon,
+    color: colors.primaryDark,
   },
   danger: {
     color: colors.danger,
   },
   inverse: {
-    color: colors.ink,
+    color: colors.textOnGreen,
   },
   muted: {
-    color: colors.darkMuted,
+    color: colors.muted,
   },
   primary: {
-    color: colors.darkText,
+    color: colors.ink,
   },
   subtle: {
-    color: colors.darkSubtle,
+    color: colors.subtle,
   },
   warning: {
     color: colors.accent,

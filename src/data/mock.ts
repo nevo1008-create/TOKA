@@ -151,7 +151,7 @@ export const lobbies: Lobby[] = [
       distanceKm: 18.1,
     },
     startsAt: 'Sat 08:00',
-    status: 'full',
+    status: 'rating_open',
     visibility: 'approval_required',
     capacityMode: 'fixed',
     minPlayers: 6,

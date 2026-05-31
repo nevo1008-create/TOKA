@@ -9,7 +9,7 @@ type ProgressBarProps = {
   trackColor?: string;
 };
 
-export function ProgressBar({ fillColor = colors.neon, progress, style, trackColor = colors.darkBorder }: ProgressBarProps) {
+export function ProgressBar({ fillColor = colors.primary, progress, style, trackColor = '#D9E8D8' }: ProgressBarProps) {
   const width = `${Math.max(0, Math.min(progress, 1)) * 100}%` as DimensionValue;
 
   return (

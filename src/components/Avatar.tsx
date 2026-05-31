@@ -14,12 +14,12 @@ export function Avatar({ player, size }: AvatarProps) {
   return (
     <View style={[styles.avatarRing, { borderRadius: size / 2 + 2, height: size + 4, width: size + 4 }]}>
       <LinearGradient
-        colors={[colors.sand, '#B9D6A8']}
+        colors={[colors.surfaceYellow, colors.surfaceAqua]}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={[styles.avatar, { borderRadius: size / 2, height: size, width: size }]}
       >
-        <AppText align="center" style={{ fontSize: size * 0.34, lineHeight: size * 0.42 }} tone="inverse" weight="900">
+        <AppText align="center" style={{ fontSize: size * 0.34, lineHeight: size * 0.42 }} tone="primary" weight="900">
           {player.initials}
         </AppText>
       </LinearGradient>
@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
   },
   avatarRing: {
     alignItems: 'center',
-    backgroundColor: colors.darkBorderStrong,
+    backgroundColor: colors.surface,
     justifyContent: 'center',
   },
 });

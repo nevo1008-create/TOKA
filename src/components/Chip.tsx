@@ -15,12 +15,12 @@ type ChipProps = {
 };
 
 export function Chip({ icon, label, style, tone = 'neutral' }: ChipProps) {
-  const iconColor = tone === 'accent' ? colors.neon : tone === 'warning' ? colors.accent : colors.darkMuted;
+  const iconColor = tone === 'accent' ? colors.primaryDark : tone === 'warning' ? colors.accent : colors.muted;
 
   return (
     <View style={[styles.chip, toneStyles[tone], style]}>
       {icon ? <Ionicons color={iconColor} name={icon} size={13} /> : null}
-      <AppText tone={tone === 'accent' ? 'accent' : 'muted'} variant="label" weight="800">
+      <AppText tone={tone === 'accent' ? 'accent' : tone === 'warning' ? 'warning' : 'muted'} variant="chip" weight="700">
         {label}
       </AppText>
     </View>
@@ -41,19 +41,19 @@ const styles = StyleSheet.create({
 
 const toneStyles = StyleSheet.create({
   accent: {
-    backgroundColor: 'rgba(93, 240, 92, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   muted: {
-    backgroundColor: colors.darkSurfaceLow,
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
   },
   neutral: {
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   warning: {
-    backgroundColor: 'rgba(242, 180, 65, 0.1)',
-    borderColor: 'rgba(242, 180, 65, 0.28)',
+    backgroundColor: colors.surfaceYellow,
+    borderColor: 'rgba(246, 201, 69, 0.46)',
   },
 });

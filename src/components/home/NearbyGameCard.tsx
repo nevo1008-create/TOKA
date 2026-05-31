@@ -1,19 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, shadows } from '../../theme';
 import { AppText } from '../AppText';
+import { BeachGameVisual } from './BeachGameVisual';
 
 type NearbyGameCardProps = {
   actionLabel?: string;
-  actionTone?: 'accent' | 'warning';
+  actionTone?: 'accent' | 'muted' | 'warning';
   audience?: string;
+  disabled?: boolean;
   distance: string;
   level: string;
   location: string;
   onPress?: () => void;
   players: string;
+  selected?: boolean;
+  spotsTone?: 'green' | 'yellow';
   spotsLeft?: string;
   status: 'Approval' | 'Full';
   time: string;
@@ -22,51 +25,64 @@ type NearbyGameCardProps = {
 };
 
 export function NearbyGameCard({
-  actionLabel = 'Open room',
+  actionLabel = 'Open game',
   actionTone = 'accent',
   audience = 'Everyone',
+  disabled = false,
   distance,
   level,
   location,
   onPress,
   players,
+  selected = false,
+  spotsTone = 'yellow',
   spotsLeft = '3 spots left',
   status,
   time,
   title,
   variant,
 }: NearbyGameCardProps) {
+  const isWarningAction = actionTone === 'warning';
+  const isMutedAction = actionTone === 'muted';
+  const isLongAction = actionLabel.length > 7;
+
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.card}>
-      <BeachThumb badgeLabel={spotsLeft} variant={variant} />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.card, selected && styles.cardSelected, disabled && styles.cardDisabled]}
+    >
+      <BeachThumb badgeLabel={spotsLeft} tone={spotsTone} variant={variant} />
       <View style={styles.copy}>
         <View style={styles.timeRow}>
           <View style={styles.liveDot} />
-          <AppText style={styles.timeText} tone="muted" variant="caption" weight="700">
+          <AppText style={styles.timeText} tone="primary" variant="metadata" weight="600">
             {time}
           </AppText>
         </View>
 
-        <AppText numberOfLines={1} style={styles.title} variant="title" weight="800">
+        <AppText numberOfLines={1} style={styles.title} variant="cardTitle" weight="800">
           {title}
         </AppText>
 
         <View style={styles.locationRow}>
           <Ionicons color={colors.accentSea} name="location" size={13} />
-          <AppText numberOfLines={1} style={styles.locationText} tone="muted" variant="bodySmall" weight="500">
+          <AppText numberOfLines={1} style={styles.locationText} tone="primary" variant="metadata" weight="500">
             {location}
           </AppText>
         </View>
 
-        <View style={styles.footer}>
-          <View style={styles.chipRow}>
+        <View style={styles.lowerRow}>
+          <View style={styles.infoChipStack}>
             <View style={styles.levelPill}>
-              <AppText tone="muted" variant="caption" weight="800">
+              <AppText tone="primary" variant="chip" weight="700">
                 {level}
               </AppText>
             </View>
             <View style={styles.genderPill}>
-              <AppText tone="subtle" variant="caption" weight="800">
+              <AppText numberOfLines={1} tone="muted" variant="chip" weight="600">
                 {audience}
               </AppText>
             </View>
@@ -74,20 +90,35 @@ export function NearbyGameCard({
 
           <View style={styles.actionStack}>
             <View style={styles.playersPill}>
-              <Ionicons color={colors.darkMuted} name="people-outline" size={12} />
-              <AppText style={styles.playersText} tone="muted" variant="caption" weight="800">
+              <Ionicons color={colors.muted} name="people-outline" size={12} />
+              <AppText style={styles.playersText} tone="muted" variant="metadata" weight="600">
                 {players} players
               </AppText>
             </View>
-            <View style={styles.cardAction}>
-              <AppText tone={actionTone} variant="caption" weight="800">
+            <View
+              style={[
+                styles.cardAction,
+                isWarningAction && styles.cardActionWarning,
+                isMutedAction && styles.cardActionMuted,
+              ]}
+            >
+              <AppText
+                align="center"
+                numberOfLines={1}
+                style={[styles.actionText, isLongAction && styles.actionTextLong]}
+                tone={actionTone === 'accent' ? 'inverse' : actionTone === 'muted' ? 'muted' : 'primary'}
+                variant="metadata"
+                weight="900"
+              >
                 {actionLabel}
               </AppText>
-              <Ionicons
-                color={actionTone === 'warning' ? colors.accent : colors.accentLime}
-                name="chevron-forward"
-                size={14}
-              />
+              {isLongAction ? null : (
+                <Ionicons
+                  color={actionTone === 'accent' ? colors.textOnGreen : actionTone === 'muted' ? colors.muted : colors.ink}
+                  name={isMutedAction ? 'checkmark' : 'chevron-forward'}
+                  size={14}
+                />
+              )}
             </View>
           </View>
         </View>
@@ -96,24 +127,28 @@ export function NearbyGameCard({
   );
 }
 
-function BeachThumb({ badgeLabel, variant }: { badgeLabel: string; variant: 'morning' | 'sunset' }) {
-  const colorsForVariant: readonly [string, string, string] =
-    variant === 'morning'
-      ? ['#F7D58C', '#B87D35', '#2B1D0D']
-      : ['#FCE7B5', '#70C6DC', '#0E4353'];
+function BeachThumb({
+  badgeLabel,
+  tone,
+  variant,
+}: {
+  badgeLabel: string;
+  tone: 'green' | 'yellow';
+  variant: 'morning' | 'sunset';
+}) {
+  const isLongBadge = badgeLabel.length > 8;
 
   return (
     <View style={styles.thumb}>
-      <LinearGradient colors={colorsForVariant} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
-      <View style={styles.thumbSun} />
-      <View style={styles.thumbNetPost} />
-      <View style={[styles.thumbNetLine, styles.thumbNetLineTop]} />
-      <View style={[styles.thumbNetLine, styles.thumbNetLineBottom]} />
-      <View style={styles.thumbPersonOne} />
-      <View style={styles.thumbPersonTwo} />
-      <View style={styles.thumbPalm} />
-      <View style={styles.imageBadge}>
-        <AppText tone="warning" variant="caption" weight="800">
+      <BeachGameVisual compact variant={variant} />
+      <View style={[styles.imageBadge, tone === 'green' && styles.imageBadgeGreen]}>
+        <AppText
+          numberOfLines={1}
+          style={[styles.imageBadgeText, isLongBadge && styles.imageBadgeTextLong]}
+          tone={tone === 'green' ? 'accent' : 'primary'}
+          variant="chip"
+          weight="800"
+        >
           {badgeLabel}
         </AppText>
       </View>
@@ -124,70 +159,114 @@ function BeachThumb({ badgeLabel, variant }: { badgeLabel: string; variant: 'mor
 const styles = StyleSheet.create({
   actionStack: {
     alignItems: 'flex-end',
-    gap: 3,
+    gap: 5,
+    width: 92,
+  },
+  actionText: {
+    flexShrink: 1,
+    fontSize: 14,
+    lineHeight: 17,
+    maxWidth: 66,
+  },
+  actionTextLong: {
+    fontSize: 12,
+    lineHeight: 15,
+    maxWidth: 84,
   },
   card: {
-    backgroundColor: 'rgba(11, 29, 16, 0.70)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.74)',
+    borderRadius: 24,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 9,
-    minHeight: 122,
+    gap: 11,
+    minHeight: 132,
     overflow: 'hidden',
-    padding: 9,
+    padding: 12,
+    ...shadows.soft,
+  },
+  cardDisabled: {
+    opacity: 0.58,
+  },
+  cardSelected: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: 'rgba(36, 196, 90, 0.42)',
   },
   cardAction: {
     alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.round,
     flexDirection: 'row',
     gap: 2,
+    justifyContent: 'center',
+    minHeight: 38,
+    width: 92,
   },
-  chipRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
+  cardActionMuted: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  cardActionWarning: {
+    backgroundColor: colors.accent,
   },
   copy: {
     flex: 1,
+    gap: 3,
     justifyContent: 'space-between',
     minWidth: 0,
   },
-  footer: {
+  lowerRow: {
     alignItems: 'flex-end',
     flexDirection: 'row',
+    gap: 8,
     justifyContent: 'space-between',
-    minHeight: 38,
+    minHeight: 66,
+    paddingTop: 2,
   },
   genderPill: {
-    backgroundColor: 'rgba(246, 247, 237, 0.035)',
-    borderColor: 'rgba(246, 247, 237, 0.08)',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
-    paddingHorizontal: 7,
+    maxWidth: 96,
+    paddingHorizontal: 6,
     paddingVertical: 3,
   },
   imageBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 200, 61, 0.10)',
+    backgroundColor: colors.surfaceYellow,
     borderColor: 'rgba(255, 200, 61, 0.28)',
     borderRadius: radius.round,
     borderWidth: 1,
     left: 7,
-    minHeight: 22,
-    paddingHorizontal: 8,
-    paddingTop: 4,
+    minHeight: 28,
+    paddingHorizontal: 10,
+    paddingTop: 5,
     position: 'absolute',
     top: 7,
   },
+  imageBadgeGreen: {
+    backgroundColor: 'rgba(36, 196, 90, 0.14)',
+    borderColor: 'rgba(36, 196, 90, 0.30)',
+  },
+  imageBadgeText: {
+    lineHeight: 16,
+  },
+  imageBadgeTextLong: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
   levelPill: {
-    backgroundColor: 'rgba(246, 247, 237, 0.04)',
-    borderColor: 'rgba(246, 247, 237, 0.08)',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
     paddingVertical: 3,
   },
   liveDot: {
-    backgroundColor: colors.accentLime,
+    backgroundColor: colors.primary,
     borderRadius: radius.round,
     height: 7,
     width: 7,
@@ -203,89 +282,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  infoChipStack: {
+    alignItems: 'flex-start',
+    gap: 5,
+    minWidth: 0,
+  },
   playersPill: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.06)',
-    borderColor: 'rgba(246, 247, 237, 0.12)',
+    backgroundColor: colors.transparent,
+    borderColor: colors.transparent,
     borderRadius: radius.round,
-    borderWidth: 1,
+    borderWidth: 0,
     flexDirection: 'row',
     gap: 4,
-    minHeight: 22,
-    paddingHorizontal: 7,
+    minHeight: 18,
+    maxWidth: 92,
+    paddingHorizontal: 0,
   },
   playersText: {
-    fontSize: 10,
+    flexShrink: 1,
+    fontSize: 9,
     lineHeight: 13,
   },
   thumb: {
     borderRadius: 18,
-    height: 100,
+    height: 106,
     overflow: 'hidden',
     position: 'relative',
-    width: 100,
-  },
-  thumbNetLine: {
-    backgroundColor: 'rgba(246,247,237,0.5)',
-    height: 1,
-    left: 22,
-    position: 'absolute',
-    right: 4,
-  },
-  thumbNetLineBottom: {
-    top: 60,
-  },
-  thumbNetLineTop: {
-    top: 48,
-  },
-  thumbNetPost: {
-    backgroundColor: 'rgba(246,247,237,0.5)',
-    bottom: 30,
-    left: 52,
-    position: 'absolute',
-    top: 40,
-    width: 1,
-  },
-  thumbPalm: {
-    backgroundColor: 'rgba(3,16,8,0.58)',
-    height: 58,
-    left: 12,
-    position: 'absolute',
-    top: 4,
-    transform: [{ rotate: '11deg' }],
-    width: 6,
-  },
-  thumbPersonOne: {
-    backgroundColor: '#2B1A0D',
-    borderRadius: radius.round,
-    bottom: 20,
-    height: 23,
-    left: 28,
-    position: 'absolute',
-    width: 8,
-  },
-  thumbPersonTwo: {
-    backgroundColor: '#2B1A0D',
-    borderRadius: radius.round,
-    bottom: 20,
-    height: 26,
-    position: 'absolute',
-    right: 24,
-    width: 8,
-  },
-  thumbSun: {
-    backgroundColor: 'rgba(255,255,255,0.52)',
-    borderRadius: radius.round,
-    height: 32,
-    left: 12,
-    position: 'absolute',
-    top: 15,
-    width: 32,
+    width: 104,
   },
   title: {
-    color: '#ECEDE6',
-    fontSize: 17,
-    lineHeight: 21,
+    color: colors.ink,
   },
   timeRow: {
     alignItems: 'center',
@@ -293,8 +320,6 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   timeText: {
-    fontSize: 10,
-    lineHeight: 14,
     textTransform: 'uppercase',
   },
 });

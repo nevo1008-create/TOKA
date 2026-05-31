@@ -2,49 +2,58 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, shadows, spacing } from '../../theme';
 import type { Player } from '../../types';
 import { AppText } from '../AppText';
 
 type HomeHeaderProps = {
+  compact?: boolean;
   notificationCount: number;
   onBack?: () => void;
+  onMenuPress?: () => void;
   player: Player;
   rightAccessory?: 'avatar' | 'menu';
 };
 
-export function HomeHeader({ notificationCount, onBack, player, rightAccessory = 'menu' }: HomeHeaderProps) {
+export function HomeHeader({
+  compact = false,
+  notificationCount,
+  onBack,
+  onMenuPress,
+  player,
+  rightAccessory = 'menu',
+}: HomeHeaderProps) {
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, compact && styles.headerCompact]}>
       <View style={styles.brandRow}>
         {onBack ? (
-          <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}>
-            <Ionicons color={colors.darkText} name="chevron-back" size={22} />
+          <Pressable accessibilityRole="button" onPress={onBack} style={[styles.backButton, compact && styles.backButtonCompact]}>
+            <Ionicons color={colors.ink} name="chevron-back" size={compact ? 20 : 22} />
           </Pressable>
         ) : null}
         <LinearGradient
-          colors={[colors.accentLime, colors.darkSurfaceHigh]}
+          colors={[colors.surfaceYellow, colors.surfaceMuted]}
           start={{ x: 0.05, y: 0 }}
           end={{ x: 0.95, y: 1 }}
-          style={styles.logoBall}
+          style={[styles.logoBall, compact && styles.logoBallCompact]}
         >
-          <Ionicons color={colors.ink} name="football" size={25} />
+          <Ionicons color={colors.primaryDark} name="football" size={compact ? 21 : 25} />
         </LinearGradient>
         <View>
-          <AppText style={styles.logoText} variant="display" weight="800">
+          <AppText style={[styles.logoText, compact && styles.logoTextCompact]} variant="display" weight="800">
             TOCA
           </AppText>
-          <AppText style={styles.subtitle} tone="accent" variant="label" weight="800">
+          <AppText style={[styles.subtitle, compact && styles.subtitleCompact]} tone="accent" variant="label" weight="800">
             FOOTVOLLEY COMMUNITY
           </AppText>
         </View>
       </View>
 
       <View style={styles.actions}>
-        <Pressable accessibilityRole="button" style={styles.bellButton}>
-          <Ionicons color={colors.darkText} name="notifications-outline" size={24} />
+        <Pressable accessibilityRole="button" style={[styles.bellButton, compact && styles.bellButtonCompact]}>
+            <Ionicons color={colors.ink} name="notifications-outline" size={compact ? 21 : 24} />
           {notificationCount > 0 ? (
-            <View style={styles.notificationBadge}>
+            <View style={[styles.notificationBadge, compact && styles.notificationBadgeCompact]}>
               <AppText align="center" tone="inverse" variant="label" weight="800">
                 {notificationCount}
               </AppText>
@@ -52,14 +61,18 @@ export function HomeHeader({ notificationCount, onBack, player, rightAccessory =
           ) : null}
         </Pressable>
         {rightAccessory === 'menu' ? (
-          <Pressable accessibilityRole="button" style={styles.menuRing}>
-            <View style={styles.menuButton}>
-              <Ionicons color={colors.darkText} name="menu-outline" size={26} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={onMenuPress}
+            style={[styles.menuRing, compact && styles.menuRingCompact]}
+          >
+            <View style={[styles.menuButton, compact && styles.menuButtonCompact]}>
+              <Ionicons color={colors.ink} name="menu-outline" size={compact ? 23 : 26} />
             </View>
           </Pressable>
         ) : (
-          <View style={styles.avatarRing}>
-            <View style={styles.avatar}>
+          <View style={[styles.avatarRing, compact && styles.avatarRingCompact]}>
+            <View style={[styles.avatar, compact && styles.avatarCompact]}>
               <AppText align="center" tone="inverse" variant="heading" weight="800">
                 {player.initials}
               </AppText>
@@ -75,7 +88,7 @@ const styles = StyleSheet.create({
   actions: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: 10,
   },
   avatar: {
     alignItems: 'center',
@@ -84,6 +97,10 @@ const styles = StyleSheet.create({
     height: 50,
     justifyContent: 'center',
     width: 50,
+  },
+  avatarCompact: {
+    height: 42,
+    width: 42,
   },
   avatarRing: {
     alignItems: 'center',
@@ -94,28 +111,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 58,
   },
+  avatarRingCompact: {
+    height: 48,
+    width: 48,
+  },
   backButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.72)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
     borderRadius: radius.round,
-    borderWidth: 1,
     height: 38,
     justifyContent: 'center',
     width: 38,
+    ...shadows.soft,
+  },
+  backButtonCompact: {
+    height: 34,
+    width: 34,
   },
   bellButton: {
     alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.round,
     height: 44,
     justifyContent: 'center',
     position: 'relative',
-    width: 42,
+    width: 44,
+    ...shadows.soft,
+  },
+  bellButtonCompact: {
+    height: 38,
+    width: 38,
   },
   brandRow: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: 10,
     minWidth: 0,
   },
   header: {
@@ -123,16 +154,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.xl2,
-    paddingTop: spacing.lg,
+    paddingTop: 22,
+  },
+  headerCompact: {
+    paddingTop: 10,
   },
   logoBall: {
     alignItems: 'center',
-    borderColor: colors.darkText,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
     borderRadius: radius.round,
-    borderWidth: 2,
-    height: 42,
+    borderWidth: 1,
+    height: 44,
     justifyContent: 'center',
-    width: 42,
+    width: 44,
+    ...shadows.soft,
+  },
+  logoBallCompact: {
+    height: 36,
+    width: 36,
   },
   logoText: {
     fontSize: 28,
@@ -141,26 +180,37 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     transform: [{ skewX: '-10deg' }],
   },
+  logoTextCompact: {
+    fontSize: 23,
+    lineHeight: 25,
+  },
   menuButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.74)',
+    backgroundColor: colors.surface,
     borderRadius: radius.round,
-    height: 50,
+    height: 52,
     justifyContent: 'center',
-    width: 50,
+    width: 52,
+    ...shadows.soft,
+  },
+  menuButtonCompact: {
+    height: 42,
+    width: 42,
   },
   menuRing: {
     alignItems: 'center',
-    borderColor: colors.darkBorder,
     borderRadius: radius.round,
-    borderWidth: 1,
-    height: 56,
+    height: 52,
     justifyContent: 'center',
-    width: 56,
+    width: 52,
+  },
+  menuRingCompact: {
+    height: 42,
+    width: 42,
   },
   notificationBadge: {
     alignItems: 'center',
-    backgroundColor: colors.accentLime,
+    backgroundColor: colors.primary,
     borderRadius: radius.round,
     height: 26,
     justifyContent: 'center',
@@ -169,9 +219,19 @@ const styles = StyleSheet.create({
     right: -5,
     top: -2,
   },
+  notificationBadgeCompact: {
+    height: 22,
+    minWidth: 22,
+    right: -4,
+    top: -3,
+  },
   subtitle: {
     letterSpacing: 0.4,
     fontSize: 11,
     lineHeight: 13,
+  },
+  subtitleCompact: {
+    fontSize: 9,
+    lineHeight: 11,
   },
 });

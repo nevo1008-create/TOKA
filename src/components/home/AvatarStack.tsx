@@ -28,7 +28,7 @@ export function AvatarStack({ initials, size = 44 }: AvatarStackProps) {
               },
             ]}
           >
-            <AppText align="center" tone={isExtra ? 'primary' : 'inverse'} variant="body" weight="800">
+            <AppText align="center" tone="primary" variant="body" weight="800">
               {initial}
             </AppText>
           </View>
@@ -41,14 +41,14 @@ export function AvatarStack({ initials, size = 44 }: AvatarStackProps) {
 const styles = StyleSheet.create({
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#EEEED6',
-    borderColor: colors.darkSurface,
+    backgroundColor: colors.surfaceYellow,
+    borderColor: colors.surface,
     borderWidth: 2,
     justifyContent: 'center',
   },
   extraAvatar: {
-    backgroundColor: 'rgba(3, 16, 8, 0.42)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
   },
   row: {
     alignItems: 'center',

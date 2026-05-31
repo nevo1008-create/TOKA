@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, shadows, spacing } from '../../theme';
 import { AppText } from '../AppText';
 import { ProgressBar } from '../ProgressBar';
 
@@ -15,36 +15,36 @@ export function PlayerStatusStrip() {
         end={{ x: 0.9, y: 1 }}
         style={stripStyles.levelBadge}
       >
-        <AppText align="center" tone="inverse" style={stripStyles.levelLabel} weight="800">
+        <AppText align="center" tone="primary" style={stripStyles.levelLabel} weight="800">
           Level
         </AppText>
-        <AppText align="center" tone="inverse" style={stripStyles.levelNumber} weight="800">
+        <AppText align="center" tone="primary" style={stripStyles.levelNumber} weight="800">
           8
         </AppText>
       </LinearGradient>
 
       <View style={stripStyles.points}>
         <View style={stripStyles.pointsHeader}>
-          <AppText style={stripStyles.pointsTitle} variant="bodySmall" weight="800">
+          <AppText style={stripStyles.pointsTitle} variant="uiBody" weight="800">
             TOCA Points
           </AppText>
-          <AppText tone="muted" variant="caption" weight="600">
+          <AppText tone="primary" variant="metadata" weight="500">
             1,250 / 2,000
           </AppText>
         </View>
-        <ProgressBar fillColor={colors.accentGold} progress={0.625} style={stripStyles.progress} trackColor="rgba(246,247,237,0.11)" />
+        <ProgressBar fillColor={colors.accentGold} progress={0.625} style={stripStyles.progress} />
       </View>
 
       <View style={stripStyles.metricPill}>
         <Ionicons color="rgba(255, 200, 61, 0.86)" name="star" size={13} />
-        <AppText style={stripStyles.metricValue} weight="800">
+        <AppText style={stripStyles.metricValue} variant="button" weight="800">
           3.6
         </AppText>
       </View>
 
       <View style={stripStyles.metricPill}>
         <Ionicons color="rgba(255, 200, 61, 0.86)" name="ribbon-outline" size={14} />
-        <AppText style={stripStyles.metricValue} weight="800">
+        <AppText style={stripStyles.metricValue} variant="button" weight="800">
           B+
         </AppText>
       </View>
@@ -61,10 +61,10 @@ export function ProgressCard() {
         end={{ x: 0.9, y: 1 }}
         style={styles.levelBadge}
       >
-        <AppText align="center" tone="inverse" variant="label" weight="700">
+        <AppText align="center" tone="primary" variant="label" weight="700">
           Level
         </AppText>
-        <AppText align="center" tone="inverse" style={styles.levelNumber} weight="800">
+        <AppText align="center" tone="primary" style={styles.levelNumber} weight="800">
           8
         </AppText>
       </LinearGradient>
@@ -76,7 +76,7 @@ export function ProgressCard() {
         <AppText tone="muted" variant="body">
           1,250 / 2,000
         </AppText>
-        <ProgressBar fillColor={colors.accentGold} progress={0.625} style={styles.progress} trackColor="rgba(246,247,237,0.12)" />
+        <ProgressBar fillColor={colors.accentGold} progress={0.625} style={styles.progress} />
       </View>
 
       <View style={styles.divider} />
@@ -116,8 +116,8 @@ export function ProgressCard() {
 const styles = StyleSheet.create({
   card: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.58)',
-    borderColor: 'rgba(76, 255, 90, 0.12)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 20,
     borderWidth: 1,
     flexDirection: 'row',
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(246,247,237,0.12)',
+    backgroundColor: colors.border,
     width: 1,
   },
   level: {
@@ -167,46 +167,45 @@ const styles = StyleSheet.create({
 const stripStyles = StyleSheet.create({
   card: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.48)',
-    borderColor: 'rgba(76, 255, 90, 0.12)',
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.78)',
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
-    minHeight: 58,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    minHeight: 64,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    ...shadows.card,
   },
   levelBadge: {
     alignItems: 'center',
     borderRadius: 14,
-    height: 44,
+    height: 48,
     justifyContent: 'center',
-    width: 48,
+    width: 52,
   },
   levelLabel: {
-    fontSize: 9,
-    lineHeight: 11,
+    fontSize: 10,
+    lineHeight: 12,
   },
   levelNumber: {
-    fontSize: 20,
-    lineHeight: 22,
+    fontSize: 24,
+    lineHeight: 26,
   },
   metricPill: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 200, 61, 0.07)',
-    borderColor: 'rgba(255, 200, 61, 0.20)',
+    backgroundColor: colors.surfaceYellow,
+    borderColor: 'rgba(246, 201, 69, 0.24)',
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 3,
-    minHeight: 30,
-    paddingHorizontal: 7,
+    minHeight: 32,
+    paddingHorizontal: 9,
   },
   metricValue: {
-    color: colors.darkText,
-    fontSize: 13,
-    lineHeight: 16,
+    color: colors.ink,
   },
   points: {
     flex: 1,
@@ -216,12 +215,10 @@ const stripStyles = StyleSheet.create({
     gap: 1,
   },
   pointsTitle: {
-    color: '#ECEDE6',
-    fontSize: 13,
-    lineHeight: 16,
+    color: colors.ink,
   },
   progress: {
-    height: 5,
+    height: 6,
     marginTop: spacing.xs,
   },
 });

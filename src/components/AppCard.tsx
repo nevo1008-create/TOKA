@@ -36,10 +36,11 @@ export function AppCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.darkSurface,
-    borderColor: colors.darkBorder,
-    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
     borderWidth: 1,
+    ...shadows.card,
   },
 });
 
@@ -47,10 +48,10 @@ const variantStyles = StyleSheet.create({
   flat: {},
   raised: {
     ...shadows.card,
-    backgroundColor: colors.darkSurfaceHigh,
+    backgroundColor: colors.surfaceRaised,
   },
   subtle: {
-    backgroundColor: colors.darkSurfaceLow,
+    backgroundColor: colors.surfaceMuted,
   },
 });
 

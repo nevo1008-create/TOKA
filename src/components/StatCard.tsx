@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadows, spacing } from '../theme';
 import { AppText } from './AppText';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -18,7 +18,7 @@ type StatCardProps = {
 };
 
 export function StatCard({ children, icon, label, style, tone = 'accent', value }: StatCardProps) {
-  const iconColor = tone === 'accent' ? colors.neon : tone === 'warning' ? colors.accent : colors.darkMuted;
+  const iconColor = tone === 'accent' ? colors.primaryDark : tone === 'warning' ? colors.accent : colors.muted;
 
   return (
     <View style={[styles.card, style]}>
@@ -38,19 +38,25 @@ export function StatCard({ children, icon, label, style, tone = 'accent', value 
 
 const styles = StyleSheet.create({
   accentBorder: {
-    borderColor: colors.neonMuted,
+    borderColor: colors.border,
   },
   card: {
     alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 20,
+    borderWidth: 1,
     flex: 1,
     gap: spacing.xs,
     minHeight: 118,
     paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.sm,
+    ...shadows.soft,
   },
   iconWrap: {
     alignItems: 'center',
-    backgroundColor: colors.darkSurfaceHigh,
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 42,

@@ -1,15 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
+import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
+import { getFallbackPreviewPlayingDetails, getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
+import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { currentPlayer, notifications, players } from '../data/mock';
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadows, spacing } from '../theme';
 import type { Player, PlayerLevel } from '../types';
 
 type ConnectPlayer = {
+  area: string;
   badge: 'shield' | 'star';
   id: string;
   initials: string;
@@ -20,6 +25,7 @@ type ConnectPlayer = {
 };
 
 type CommunityPlayerCard = {
+  area?: string;
   badge: 'shield' | 'star';
   id: string;
   initials: string;
@@ -27,14 +33,15 @@ type CommunityPlayerCard = {
   name: string;
   points: number;
   rating: string;
+  sourcePlayerId?: string;
 };
 
 const connectPlayers: ConnectPlayer[] = [
-  { id: 'c1', initials: 'AM', name: 'Amit', points: 290, rating: '3.5', level: 'B+', badge: 'star' },
-  { id: 'c2', initials: 'YN', name: 'Yoni', points: 242, rating: '3.2', level: 'B', badge: 'star' },
-  { id: 'c3', initials: 'TL', name: 'Tal', points: 471, rating: '4.0', level: 'A-', badge: 'shield' },
-  { id: 'c4', initials: 'NM', name: 'Noam', points: 318, rating: '3.6', level: 'B+', badge: 'star' },
-  { id: 'c5', initials: 'ID', name: 'Ido', points: 265, rating: '3.3', level: 'B', badge: 'shield' },
+  { id: 'c1', initials: 'AM', name: 'Amit', points: 290, rating: '3.5', level: 'B+', badge: 'star', area: 'Gordon Beach' },
+  { id: 'c2', initials: 'YN', name: 'Yoni', points: 242, rating: '3.2', level: 'B', badge: 'star', area: 'Hilton Beach' },
+  { id: 'c3', initials: 'TL', name: 'Tal', points: 471, rating: '4.0', level: 'A-', badge: 'shield', area: 'Polegy Beach' },
+  { id: 'c4', initials: 'NM', name: 'Noam', points: 318, rating: '3.6', level: 'B+', badge: 'star', area: 'Frishman Beach' },
+  { id: 'c5', initials: 'ID', name: 'Ido', points: 265, rating: '3.3', level: 'B', badge: 'shield', area: 'Aqueduct Beach' },
 ];
 
 const leaderboard = [
@@ -48,24 +55,37 @@ const leaderboard = [
 const communityPages = ['Community', 'Leaderboard'] as const;
 const friendViews = ['Friends', 'Friend requests'] as const;
 
-const playerBubbleHeight = 144;
-const playerBubbleWidth = 108;
-
 type CommunityPage = (typeof communityPages)[number];
 type FriendView = (typeof friendViews)[number];
-type PlayerMenuVariant = 'connect' | 'friend' | 'request';
+type PlayerMenuVariant = 'connect' | 'friend' | 'leaderboard' | 'request' | 'requested';
+type ProfilePreviewPlayer = CommunityPlayerCard & {
+  context: string;
+  menuVariant: PlayerMenuVariant;
+};
 
-export function CommunityScreen() {
+type CommunityScreenProps = {
+  onAddFriend: () => void;
+  onInvitePlayer: (playerId: string, source: 'community' | 'leaderboard') => void;
+  onOpenMenu: () => void;
+  onViewPlayerProfile: (player: Player) => void;
+};
+
+export function CommunityScreen({ onAddFriend, onInvitePlayer, onOpenMenu, onViewPlayerProfile }: CommunityScreenProps) {
   const [activePage, setActivePage] = useState<CommunityPage>('Community');
   const [activeFriendView, setActiveFriendView] = useState<FriendView>('Friends');
-  const [openPlayerMenuId, setOpenPlayerMenuId] = useState<string | null>(null);
+  const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
+  const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
+  const [profilePreviewPlayer, setProfilePreviewPlayer] = useState<ProfilePreviewPlayer | null>(null);
   const [leaderboardScope, setLeaderboardScope] = useState<'All' | 'Friends' | 'Region'>('Friends');
+  const [cancelledRequestIds, setCancelledRequestIds] = useState<string[]>([]);
+  const [requestedPlayerIds, setRequestedPlayerIds] = useState<string[]>([]);
   const friendPlayers = players.filter((player) => currentPlayer.friendIds.includes(player.id));
   const visibleFriends = [
     ...friendPlayers,
     ...players.filter((player) => player.id !== currentPlayer.id && !currentPlayer.friendIds.includes(player.id)),
   ].slice(0, 4);
   const friendCards: CommunityPlayerCard[] = visibleFriends.map((player, index) => ({
+    area: player.area,
     badge: index % 3 === 2 ? 'shield' : 'star',
     id: player.id,
     initials: player.initials,
@@ -73,18 +93,65 @@ export function CommunityScreen() {
     name: player.name,
     points: player.tocaPoints,
     rating: player.id === currentPlayer.id ? '3.6' : index === 0 ? '3.2' : index === 1 ? '3.6' : index === 2 ? '4.0' : '3.3',
+    sourcePlayerId: player.id,
   }));
   const requestCards: CommunityPlayerCard[] = connectPlayers.slice(0, 4);
   const activeSocialCards = activeFriendView === 'Friends' ? friendCards : requestCards;
 
+  function openActions(player: CommunityPlayerCard, context: PlayerMenuVariant) {
+    const playerId = player.sourcePlayerId ?? player.id;
+    const isFriend = Boolean(player.sourcePlayerId && currentPlayer.friendIds.includes(player.sourcePlayerId));
+    const isRequested = context === 'requested' || requestedPlayerIds.includes(playerId);
+
+    setActionSheetPlayer({
+      contextLabel: getCommunityContext(player, context),
+      initials: player.initials,
+      name: player.name,
+    });
+    setActionSheetActions(
+      getPlayerActions(
+        context,
+        isFriend,
+        isRequested,
+        () => openProfile(player, context),
+        player.sourcePlayerId
+          ? () => onInvitePlayer(player.sourcePlayerId as string, context === 'leaderboard' ? 'leaderboard' : 'community')
+          : undefined,
+        () => requestFriend(playerId),
+        () => cancelFriendRequest(playerId),
+      ),
+    );
+  }
+
+  function openProfile(player: CommunityPlayerCard, context: PlayerMenuVariant) {
+    setProfilePreviewPlayer({ ...player, context: getCommunityContext(player, context), menuVariant: context });
+  }
+
+  function requestFriend(playerId: string) {
+    setRequestedPlayerIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
+  }
+
+  function cancelFriendRequest(playerId: string) {
+    setRequestedPlayerIds((current) => current.filter((id) => id !== playerId));
+    setCancelledRequestIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
+  }
+
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={['rgba(76, 255, 90, 0.09)', colors.darkBackground, colors.darkBackground]}
-        locations={[0, 0.34, 1]}
+        colors={['#FFF6D7', colors.background, colors.backgroundAlt]}
+        locations={[0, 0.42, 1]}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.22, y: 0.72 }}
         style={styles.backgroundGlow}
       />
-      <HomeHeader notificationCount={notifications.length} player={currentPlayer} rightAccessory="menu" />
+      <HomeHeader
+        compact
+        notificationCount={notifications.length}
+        onMenuPress={onOpenMenu}
+        player={currentPlayer}
+        rightAccessory="menu"
+      />
 
       <View style={styles.content}>
         <View style={styles.pageTabs}>
@@ -103,7 +170,7 @@ export function CommunityScreen() {
                   align="center"
                   style={[styles.pageTabText, isActive && styles.pageTabTextActive]}
                   tone={isActive ? 'accent' : 'muted'}
-                  variant="bodySmall"
+                  variant="button"
                   weight="800"
                 >
                   {page}
@@ -131,8 +198,8 @@ export function CommunityScreen() {
                       >
                         <AppText
                           align="center"
-                          tone={isActive ? 'warning' : 'muted'}
-                          variant="label"
+                          tone={isActive ? 'accent' : 'muted'}
+                          variant="chip"
                           weight="800"
                         >
                           {view}
@@ -142,8 +209,8 @@ export function CommunityScreen() {
                   })}
                 </View>
 
-                <Pressable accessibilityRole="button" style={styles.sectionAction}>
-                  <AppText tone="accent" variant="label" weight="800">
+                <Pressable accessibilityRole="button" onPress={onAddFriend} style={styles.sectionAction}>
+                  <AppText tone="accent" variant="button" weight="800">
                     Add friend
                   </AppText>
                   <Ionicons color={colors.accentLime} name="person-add-outline" size={15} />
@@ -152,10 +219,10 @@ export function CommunityScreen() {
 
               {activeFriendView === 'Friends' ? (
                 <View style={styles.friendSearchBox}>
-                  <Ionicons color={colors.darkSubtle} name="search" size={16} />
+                  <Ionicons color={colors.subtle} name="search" size={16} />
                   <TextInput
                     placeholder="Search friends"
-                    placeholderTextColor={colors.darkSubtle}
+                    placeholderTextColor={colors.subtle}
                     style={styles.friendSearchInput}
                   />
                 </View>
@@ -167,45 +234,69 @@ export function CommunityScreen() {
                 </View>
               )}
 
-              <ScrollView horizontal contentContainerStyle={styles.suggestionRow} showsHorizontalScrollIndicator={false}>
+              <View style={styles.playerRowStack}>
                 {activeSocialCards.map((player) => {
-                  const menuScope = activeFriendView === 'Friends' ? 'friend' : 'request-received';
-                  const menuId = `${menuScope}-${player.id}`;
+                  const context = activeFriendView === 'Friends' ? 'friend' : 'request';
 
                   return (
-                    <PlayerCard
-                      isMenuOpen={openPlayerMenuId === menuId}
+                    <PlayerRow
+                      context={getCommunityContext(player, context)}
+                      initials={player.initials}
                       key={`${activeFriendView}-${player.id}`}
-                      menuEnabled
-                      menuVariant={activeFriendView === 'Friends' ? 'friend' : 'request'}
-                      onPress={() => {
-                        setOpenPlayerMenuId(openPlayerMenuId === menuId ? null : menuId);
-                      }}
-                      player={player}
+                      level={player.level}
+                      location={player.area}
+                      name={player.name}
+                      onMore={() => openActions(player, context)}
+                      onPressProfile={() => openProfile(player, context)}
+                      primaryAction={
+                        context === 'request'
+                          ? { label: 'Accept' }
+                          : undefined
+                      }
+                      rating={player.rating}
+                      secondaryAction={context === 'request' ? { label: 'Decline' } : undefined}
+                      statusIcon={player.badge === 'shield' ? 'shield-checkmark' : 'star'}
+                      style={context === 'request' ? styles.friendRequestPlayerRow : undefined}
                     />
                   );
                 })}
-                {activeFriendView === 'Friends' ? <MoreBubble label="Friends" value="24" /> : null}
-              </ScrollView>
+              </View>
             </View>
 
             <View style={styles.section}>
               <SectionHeader title={activeFriendView === 'Friend requests' ? 'Sent' : 'Connect nearby'} />
-              <ScrollView horizontal contentContainerStyle={styles.suggestionRow} showsHorizontalScrollIndicator={false}>
-                {connectPlayers.map((player) => (
-                  <PlayerCard
-                    isMenuOpen={openPlayerMenuId === `connect-${player.id}`}
-                    key={player.id}
-                    menuEnabled
-                    menuVariant="connect"
-                    onPress={() => {
-                      const menuId = `connect-${player.id}`;
-                      setOpenPlayerMenuId(openPlayerMenuId === menuId ? null : menuId);
-                    }}
-                    player={player}
-                  />
-                ))}
-              </ScrollView>
+              <View style={styles.playerRowStack}>
+                {(activeFriendView === 'Friend requests'
+                  ? connectPlayers.filter((player) => !cancelledRequestIds.includes(player.id))
+                  : connectPlayers
+                ).map((player) => {
+                  const isRequested = activeFriendView === 'Friend requests' || requestedPlayerIds.includes(player.id);
+
+                  return (
+                    <PlayerRow
+                      context={getCommunityContext(player, 'connect')}
+                      initials={player.initials}
+                      key={player.id}
+                      level={player.level}
+                      location={player.area}
+                      name={player.name}
+                      onMore={() => openActions(player, isRequested ? 'requested' : 'connect')}
+                      onPressProfile={() => openProfile(player, isRequested ? 'requested' : 'connect')}
+                      primaryAction={
+                        isRequested
+                          ? getRelationshipAction({
+                              isFriend: false,
+                              isRequested,
+                              onAdd: () => requestFriend(player.id),
+                            })
+                          : undefined
+                      }
+                      rating={player.rating}
+                      statusIcon={player.badge === 'shield' ? 'shield-checkmark' : 'star'}
+                    />
+                  );
+                })}
+              </View>
             </View>
 
             <View style={styles.communitySummaryFooter}>
@@ -226,10 +317,10 @@ export function CommunityScreen() {
             <View style={styles.leaderboardPanel}>
               <View style={styles.panelHeader}>
                 <View>
-                  <AppText style={styles.sectionTitle} variant="heading" weight="800">
+                  <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
                     Leaderboard
                   </AppText>
-                  <AppText tone="subtle" variant="label" weight="600">
+                  <AppText tone="muted" variant="metadata" weight="600">
                     Friends this month
                   </AppText>
                 </View>
@@ -249,8 +340,8 @@ export function CommunityScreen() {
                   >
                     <AppText
                       align="center"
-                      tone={leaderboardScope === tab ? 'warning' : 'muted'}
-                      variant="label"
+                      tone={leaderboardScope === tab ? 'accent' : 'muted'}
+                      variant="chip"
                       weight="800"
                     >
                       {tab}
@@ -261,20 +352,139 @@ export function CommunityScreen() {
 
               <View style={styles.leaderboardList}>
                 {leaderboard.map((row) => (
-                  <LeaderboardRow key={row.rank} row={row} />
+                  <LeaderboardRow
+                    key={row.rank}
+                    onMore={() => {
+                      const player = rowToCommunityPlayer(row);
+                      openActions(player, 'leaderboard');
+                    }}
+                    onPressProfile={() => openProfile(rowToCommunityPlayer(row), 'leaderboard')}
+                    row={row}
+                  />
                 ))}
               </View>
 
               <Pressable accessibilityRole="button" style={styles.fullLeaderboardButton}>
-                <AppText tone="accent" variant="bodySmall" weight="800">
+                <AppText tone="accent" variant="button" weight="800">
                   View full leaderboard
                 </AppText>
                 <Ionicons color={colors.accentLime} name="chevron-forward" size={16} />
               </Pressable>
+
+              <View style={styles.leaderboardInsight}>
+                <Ionicons color={colors.accent} name="flash-outline" size={16} />
+                <AppText style={styles.leaderboardInsightText} variant="uiBody" weight="800">
+                  Rate your last game for +20 pts
+                </AppText>
+              </View>
             </View>
           </>
         )}
       </View>
+      <PlayerActionSheet
+        actions={actionSheetActions}
+        contextLabel={actionSheetPlayer?.contextLabel}
+        initials={actionSheetPlayer?.initials ?? ''}
+        name={actionSheetPlayer?.name ?? ''}
+        onClose={() => setActionSheetPlayer(null)}
+        visible={Boolean(actionSheetPlayer)}
+      />
+      <PlayerProfilePreview
+        context={profilePreviewPlayer?.context}
+        initials={profilePreviewPlayer?.initials ?? ''}
+        level={profilePreviewPlayer?.level}
+        meta={profilePreviewPlayer ? `${profilePreviewPlayer.points} TOCA points` : undefined}
+        moreActions={
+          profilePreviewPlayer
+            ? getPlayerActions(
+                profilePreviewPlayer.menuVariant,
+                Boolean(profilePreviewPlayer.sourcePlayerId && currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId)),
+                profilePreviewPlayer.menuVariant === 'requested' ||
+                  requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                () => undefined,
+                profilePreviewPlayer.sourcePlayerId
+                  ? () =>
+                      onInvitePlayer(
+                        profilePreviewPlayer.sourcePlayerId as string,
+                        profilePreviewPlayer.menuVariant === 'leaderboard' ? 'leaderboard' : 'community',
+                      )
+                  : undefined,
+                () => requestFriend(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                () => cancelFriendRequest(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+              )
+            : undefined
+        }
+        name={profilePreviewPlayer?.name ?? ''}
+        onClose={() => setProfilePreviewPlayer(null)}
+        primaryAction={
+          profilePreviewPlayer
+            ? {
+                label: 'View full profile',
+                onPress: () => onViewPlayerProfile(getProfilePlayerFromCommunity(profilePreviewPlayer)),
+              }
+            : undefined
+        }
+        profileDetails={
+          profilePreviewPlayer
+            ? getCommunityPreviewDetails(
+                profilePreviewPlayer.sourcePlayerId
+                  ? players.find((candidate) => candidate.id === profilePreviewPlayer.sourcePlayerId)
+                  : undefined,
+              )
+            : undefined
+        }
+        secondaryAction={
+          profilePreviewPlayer
+            ? {
+                disabled:
+                  getCommunityProfileActionState(
+                    profilePreviewPlayer,
+                    currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId ?? ''),
+                    profilePreviewPlayer.menuVariant === 'requested' ||
+                      requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                  ).label === 'Requested',
+                label: getCommunityProfileActionState(
+                  profilePreviewPlayer,
+                  currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId ?? ''),
+                  profilePreviewPlayer.menuVariant === 'requested' ||
+                    requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                ).label,
+                onPress: () => {
+                  const actionState = getCommunityProfileActionState(
+                    profilePreviewPlayer,
+                    currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId ?? ''),
+                    profilePreviewPlayer.menuVariant === 'requested' ||
+                      requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                  );
+                  const playerId = profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id;
+
+                  if (actionState.kind === 'invite' && profilePreviewPlayer.sourcePlayerId) {
+                    onInvitePlayer(
+                      profilePreviewPlayer.sourcePlayerId,
+                      profilePreviewPlayer.menuVariant === 'leaderboard' ? 'leaderboard' : 'community',
+                    );
+                  }
+
+                  if (actionState.kind === 'add') {
+                    requestFriend(playerId);
+                  }
+                },
+              }
+            : undefined
+        }
+        rating={profilePreviewPlayer?.rating}
+        trustCues={
+          profilePreviewPlayer
+            ? getCommunityPreviewTrustCues(
+                profilePreviewPlayer,
+                profilePreviewPlayer.sourcePlayerId
+                  ? players.find((candidate) => candidate.id === profilePreviewPlayer.sourcePlayerId)
+                  : undefined,
+              )
+            : undefined
+        }
+        visible={Boolean(profilePreviewPlayer)}
+      />
     </View>
   );
 }
@@ -288,7 +498,7 @@ function MyStandingCard() {
 
   return (
     <LinearGradient
-      colors={['rgba(255, 200, 61, 0.12)', 'rgba(11, 29, 16, 0.66)', 'rgba(76, 255, 90, 0.07)']}
+      colors={[colors.surfaceYellow, colors.surface, colors.surfaceMuted]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.standingCard}
@@ -301,7 +511,7 @@ function MyStandingCard() {
           <AppText tone="subtle" variant="caption" weight="700">
             TOCA pts this month
           </AppText>
-          <AppText style={styles.standingPoints} tone="warning" variant="title" weight="800">
+          <AppText style={styles.standingPoints} tone="warning" variant="heroTitle" weight="800">
             +{monthlyPoints}
           </AppText>
         </View>
@@ -345,7 +555,7 @@ function MyStandingCard() {
       </View>
 
       <View style={styles.standingFooter}>
-        <StandingMetric icon="ribbon-outline" label="Grade" value={currentPlayer.level} />
+        <StandingMetric icon="ribbon-outline" label="Rank" value={currentPlayer.level} />
         <StandingMetric icon="star" label="Rating" value="3.6" />
         <StandingMetric icon="trending-up-outline" label="To next" value={`+${nextLevelPoints - currentTotalPoints}`} />
       </View>
@@ -388,12 +598,12 @@ function SectionHeader({
 }) {
   return (
     <View style={styles.sectionHeader}>
-      <AppText style={styles.sectionTitle} variant="heading" weight="800">
+      <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
         {title}
       </AppText>
       {action && icon ? (
         <Pressable accessibilityRole="button" style={styles.sectionAction}>
-          <AppText tone="accent" variant="label" weight="800">
+          <AppText tone="accent" variant="button" weight="800">
             {action}
           </AppText>
           <Ionicons color={colors.accentLime} name={icon} size={15} />
@@ -440,7 +650,7 @@ function MoreBubble({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.moreCard}>
       <View style={styles.moreCircle}>
-        <AppText align="center" tone="accent" variant="title" weight="800">
+        <AppText align="center" tone="accent" variant="cardTitle" weight="800">
           {value}
         </AppText>
       </View>
@@ -483,7 +693,7 @@ function PlayerCard({
             </AppText>
           </View>
           <View style={styles.playerMenuTitle}>
-            <AppText numberOfLines={1} variant="bodySmall" weight="800">
+            <AppText numberOfLines={1} variant="metadata" weight="800">
               {player.name}
             </AppText>
           </View>
@@ -522,18 +732,190 @@ function PlayerCard({
           <Ionicons color={colors.ink} name={isShield ? 'shield-checkmark' : 'star'} size={11} />
         </View>
       </View>
-      <AppText align="center" numberOfLines={1} style={styles.suggestionName} variant="bodySmall" weight="800">
+      <AppText align="center" numberOfLines={1} style={styles.suggestionName} variant="uiBody" weight="800">
         {player.name}
       </AppText>
       <View style={styles.suggestionMetaRow}>
         <MiniChip label={player.level} />
         <MiniChip icon="star" label={player.rating} warning />
       </View>
-      <AppText align="center" tone="subtle" variant="caption" weight="600">
-        {player.points} points
+      <AppText align="center" tone="muted" variant="metadata" weight="600">
+        {getCommunityContext(player, menuVariant)}
       </AppText>
     </Pressable>
   );
+}
+
+function getCommunityContext(player: CommunityPlayerCard, menuVariant: PlayerMenuVariant) {
+  if (menuVariant === 'connect') {
+    return player.level === 'A-' ? 'Usually Gordon evenings' : 'Available today';
+  }
+
+  if (menuVariant === 'requested') {
+    return 'Friend request sent';
+  }
+
+  if (menuVariant === 'leaderboard') {
+    return `${player.points} pts this month`;
+  }
+
+  if (menuVariant === 'request') {
+    return 'Played at Gordon';
+  }
+
+  return player.points > 400 ? 'B+ regular' : 'Played together 4x';
+}
+
+function getCommunityPreviewTrustCues(player: CommunityPlayerCard, sourcePlayer?: Player) {
+  return [
+    {
+      icon: 'checkmark-circle-outline' as const,
+      label: 'Show-up rate',
+      value: sourcePlayer
+        ? sourcePlayer.rankStatus === 'established'
+          ? '98%'
+          : sourcePlayer.rankStatus === 'stabilizing'
+            ? '94%'
+            : 'New'
+        : player.badge === 'shield'
+          ? 'Verified'
+          : 'Active',
+    },
+    {
+      icon: 'calendar-outline' as const,
+      label: 'Games played',
+      tone: 'aqua' as const,
+      value: sourcePlayer ? `${sourcePlayer.gamesPlayed}` : player.points > 400 ? '20+' : '8+',
+    },
+  ];
+}
+
+function getCommunityPreviewDetails(sourcePlayer?: Player) {
+  return sourcePlayer ? getPlayerPreviewPlayingDetails(sourcePlayer) : getFallbackPreviewPlayingDetails();
+}
+
+function getPlayerActions(
+  context: PlayerMenuVariant,
+  isFriend: boolean,
+  isRequested: boolean,
+  onViewProfile: () => void,
+  onInviteToGame?: () => void,
+  onAddFriend?: () => void,
+  onRemoveRequest?: () => void,
+): PlayerAction[] {
+  const profileLabel = isFriend ? 'Show full profile' : 'View full profile';
+  const viewProfileAction = { icon: 'person-circle-outline' as const, label: profileLabel, onPress: onViewProfile };
+  const inviteAction = { icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInviteToGame };
+  const reportAction = { destructive: true, icon: 'ban-outline' as const, label: 'Report & block' };
+
+  if (isRequested || context === 'requested') {
+    return [
+      viewProfileAction,
+      inviteAction,
+      { icon: 'person-remove-outline' as const, label: 'Remove friend request', onPress: onRemoveRequest },
+      reportAction,
+    ];
+  }
+
+  if (context === 'friend') {
+    return [
+      viewProfileAction,
+      inviteAction,
+      { destructive: true, icon: 'person-remove-outline', label: 'Remove friend' },
+      reportAction,
+    ];
+  }
+
+  if (context === 'request') {
+    return [
+      viewProfileAction,
+      { icon: 'checkmark' as const, label: 'Accept' },
+      { icon: 'close' as const, label: 'Decline' },
+      reportAction,
+    ];
+  }
+
+  return [
+    viewProfileAction,
+    { icon: 'person-add-outline', label: 'Add friend', onPress: onAddFriend },
+    inviteAction,
+    reportAction,
+  ];
+}
+
+function getCommunityProfileActionState(
+  player: ProfilePreviewPlayer,
+  isFriend: boolean,
+  isRequested: boolean,
+): { kind: 'accept' | 'add' | 'invite' | 'message' | 'requested'; label: string } {
+  if (isRequested && player.menuVariant !== 'request') {
+    return { kind: 'requested', label: 'Requested' };
+  }
+
+  if (!isFriend && player.menuVariant !== 'request') {
+    return { kind: 'add', label: 'Add friend' };
+  }
+
+  return { kind: getProfilePreviewActionKind(player.menuVariant), label: getProfilePreviewActionLabel(player.menuVariant) };
+}
+
+function getProfilePreviewActionKind(context: PlayerMenuVariant) {
+  if (context === 'friend') {
+    return 'invite' as const;
+  }
+
+  if (context === 'request') {
+    return 'accept' as const;
+  }
+
+  if (context === 'leaderboard') {
+    return 'invite' as const;
+  }
+
+  return 'add' as const;
+}
+
+function getProfilePreviewActionLabel(context: PlayerMenuVariant) {
+  if (context === 'friend') {
+    return 'Invite to game';
+  }
+
+  if (context === 'request') {
+    return 'Accept';
+  }
+
+  if (context === 'leaderboard') {
+    return 'Invite to game';
+  }
+
+  return 'Add friend';
+}
+
+function getRelationshipAction({
+  isFriend,
+  isRequested,
+  onAdd,
+}: {
+  isFriend: boolean;
+  isRequested: boolean;
+  onAdd: () => void;
+}): PlayerRowAction | undefined {
+  if (isFriend) {
+    return undefined;
+  }
+
+  if (isRequested) {
+    return {
+      disabled: true,
+      label: 'Requested',
+      variant: 'muted',
+    };
+  }
+
+  return {
+    label: 'Add friend',
+    onPress: onAdd,
+  };
 }
 
 function PlayerMenuRow({
@@ -561,7 +943,7 @@ function PlayerMenuRow({
       ]}
     >
       <View style={[styles.playerMenuRowIcon, danger && styles.playerMenuRowIconDanger]}>
-        <Ionicons color={accent ? colors.accentLime : danger ? colors.danger : colors.darkMuted} name={icon} size={13} />
+        <Ionicons color={accent ? colors.accentLime : danger ? colors.danger : colors.muted} name={icon} size={13} />
       </View>
       <AppText tone={accent ? 'accent' : danger ? 'subtle' : 'muted'} variant="caption" weight="800">
         {label}
@@ -604,19 +986,19 @@ function ReceivedRequestCard({ index, player }: { index: number; player: Communi
           </AppText>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.requestActionButton}>
-          <Ionicons color={colors.darkMuted} name="close" size={13} />
+          <Ionicons color={colors.muted} name="close" size={13} />
           <AppText tone="muted" variant="caption" weight="800">
             Deny
           </AppText>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.requestIconAction}>
-          <Ionicons color={colors.darkMuted} name="person-circle-outline" size={14} />
+          <Ionicons color={colors.muted} name="person-circle-outline" size={14} />
           <AppText tone="muted" variant="caption" weight="800">
             Profile
           </AppText>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.requestIconAction}>
-          <Ionicons color={colors.darkSubtle} name="ban-outline" size={14} />
+          <Ionicons color={colors.subtle} name="ban-outline" size={14} />
           <AppText tone="subtle" variant="caption" weight="800">
             Block
           </AppText>
@@ -637,15 +1019,66 @@ function MiniChip({
 }) {
   return (
     <View style={[styles.miniChip, warning && styles.miniChipGold]}>
-      {icon ? <Ionicons color={warning ? colors.accent : colors.darkMuted} name={icon} size={10} /> : null}
-      <AppText tone={warning ? 'warning' : 'muted'} variant="caption" weight="800">
+      {icon ? <Ionicons color={warning ? colors.accentGoldDark : colors.muted} name={icon} size={10} /> : null}
+      <AppText tone="muted" variant="chip" weight="800">
         {label}
       </AppText>
     </View>
   );
 }
 
-function LeaderboardRow({ row }: { row: (typeof leaderboard)[number] }) {
+function rowToCommunityPlayer(row: (typeof leaderboard)[number]): CommunityPlayerCard {
+  const matchedPlayer = players.find((player) => player.initials === row.initials || player.name === row.name);
+
+  return {
+    area: matchedPlayer?.area ?? 'Tel Aviv beaches',
+    badge: row.rank <= 3 ? 'star' : 'shield',
+    id: `leader-${row.rank}`,
+    initials: row.initials,
+    level: row.level,
+    name: row.name,
+    points: row.points,
+    rating: row.rating,
+    sourcePlayerId: matchedPlayer?.id,
+  };
+}
+
+function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer): Player {
+  const sourcePlayer = player.sourcePlayerId
+    ? players.find((candidate) => candidate.id === player.sourcePlayerId)
+    : undefined;
+
+  if (sourcePlayer) {
+    return sourcePlayer;
+  }
+
+  return {
+    area: player.area ?? 'Nearby beaches',
+    friendIds: [],
+    gamesPlayed: player.points > 400 ? 28 : 8,
+    gender: 'male',
+    hasBall: false,
+    hasCourtMarks: false,
+    id: player.id,
+    initials: player.initials,
+    level: player.level,
+    name: player.name,
+    preferredFoot: 'right',
+    rankStatus: player.badge === 'shield' ? 'established' : 'self_declared',
+    side: 'both',
+    tocaPoints: player.points,
+  };
+}
+
+function LeaderboardRow({
+  onMore,
+  onPressProfile,
+  row,
+}: {
+  onMore: () => void;
+  onPressProfile: () => void;
+  row: (typeof leaderboard)[number];
+}) {
   return (
     <View style={[styles.leaderboardRow, row.isCurrent && styles.currentUserRow]}>
       <View style={[styles.rankBadge, row.rank <= 3 && styles.topRankBadge]}>
@@ -654,7 +1087,7 @@ function LeaderboardRow({ row }: { row: (typeof leaderboard)[number] }) {
         </AppText>
       </View>
 
-      <View style={styles.leaderPlayer}>
+      <Pressable accessibilityRole="button" onPress={onPressProfile} style={styles.leaderPlayer}>
         <View style={styles.leaderAvatar}>
           <AppText align="center" tone="inverse" variant="caption" weight="800">
             {row.initials}
@@ -664,16 +1097,16 @@ function LeaderboardRow({ row }: { row: (typeof leaderboard)[number] }) {
           <AppText
             numberOfLines={1}
             style={[styles.leaderName, row.isCurrent && styles.currentUserText]}
-            variant="bodySmall"
+            variant="cardTitle"
             weight="800"
           >
             {row.name}
           </AppText>
           <AppText tone="subtle" variant="caption" weight="600">
-            {row.games} games - {row.level} level - {row.rating} rating
+            {row.games} games - {row.level} rank - {row.rating} rating
           </AppText>
         </View>
-      </View>
+      </Pressable>
 
       <View style={styles.pointsBlock}>
         <AppText align="right" style={styles.pointsValue} tone="warning" variant="title" weight="800">
@@ -683,23 +1116,27 @@ function LeaderboardRow({ row }: { row: (typeof leaderboard)[number] }) {
           TOCA pts
         </AppText>
       </View>
+
+      <Pressable accessibilityRole="button" onPress={onMore} style={styles.leaderMoreButton}>
+        <Ionicons color={colors.muted} name="ellipsis-horizontal" size={18} />
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   backgroundGlow: {
-    height: 360,
+    height: 430,
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
   },
   content: {
-    gap: spacing.md,
+    gap: 16,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.xl2,
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
   },
   communitySummaryFooter: {
     gap: spacing.xs,
@@ -715,14 +1152,14 @@ const styles = StyleSheet.create({
   fullLeaderboardButton: {
     alignItems: 'center',
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.borderSoft,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.xs,
     justifyContent: 'center',
-    minHeight: 38,
+    minHeight: 42,
   },
   friendMenuHeader: {
     alignItems: 'center',
@@ -731,37 +1168,40 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   friendSegment: {
-    borderBottomColor: 'rgba(246, 247, 237, 0.08)',
-    borderBottomWidth: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
     flex: 1,
     flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 34,
+    gap: 2,
+    minHeight: 36,
+    padding: 3,
   },
   friendSegmentItem: {
     alignItems: 'center',
-    borderBottomColor: colors.transparent,
-    borderBottomWidth: 2,
+    borderRadius: radius.round,
     justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: spacing.xs,
+    minHeight: 30,
+    paddingHorizontal: spacing.md,
   },
   friendSegmentItemActive: {
-    borderBottomColor: colors.accent,
+    backgroundColor: colors.surfaceMuted,
   },
   friendSearchBox: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.62)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
     minHeight: 36,
     paddingHorizontal: spacing.md,
+    ...shadows.soft,
   },
   friendSearchInput: {
-    color: colors.darkText,
+    color: colors.ink,
     flex: 1,
     fontSize: 13,
     fontWeight: '500',
@@ -780,30 +1220,58 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  leaderMoreButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
   leaderboardList: {
     gap: spacing.sm,
   },
   leaderboardPanel: {
-    backgroundColor: 'rgba(11, 29, 16, 0.62)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 24,
     borderWidth: 1,
     gap: spacing.md,
-    padding: spacing.md,
+    padding: spacing.lg,
+    ...shadows.card,
+  },
+  leaderboardInsight: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceYellow,
+    borderColor: 'rgba(246, 201, 69, 0.46)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+  },
+  leaderboardInsightText: {
+    flex: 1,
   },
   leaderboardRow: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.035)',
-    borderColor: 'rgba(246, 247, 237, 0.08)',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
     borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
     minHeight: 62,
     paddingHorizontal: spacing.sm,
+    ...shadows.soft,
   },
   leaderName: {
-    color: '#ECEDE6',
+    color: colors.ink,
+    fontSize: 18,
+    lineHeight: 22,
   },
   leaderPlayer: {
     alignItems: 'center',
@@ -814,8 +1282,8 @@ const styles = StyleSheet.create({
   },
   miniChip: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
@@ -824,13 +1292,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
   },
   miniChipGold: {
-    backgroundColor: 'rgba(255, 200, 61, 0.10)',
-    borderColor: 'rgba(255, 200, 61, 0.28)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   moreCircle: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.70)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 58,
@@ -856,24 +1324,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: radius.round,
     justifyContent: 'center',
-    minHeight: 30,
-    paddingHorizontal: spacing.md,
+    minHeight: 34,
+    paddingHorizontal: spacing.lg,
   },
   pageTabActive: {
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
+    backgroundColor: colors.surfaceMuted,
   },
   pageTabs: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(11, 29, 16, 0.48)',
-    borderColor: colors.darkBorder,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 2,
     padding: 3,
+    ...shadows.soft,
   },
   pageTabText: {
-    color: colors.darkMuted,
+    color: colors.muted,
     fontSize: 12,
     lineHeight: 16,
   },
@@ -885,8 +1354,8 @@ const styles = StyleSheet.create({
   },
   playerMenuAvatar: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.07)',
-    borderColor: 'rgba(246, 247, 237, 0.12)',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 26,
@@ -895,12 +1364,12 @@ const styles = StyleSheet.create({
   },
   playerMenuCard: {
     alignItems: 'stretch',
-    backgroundColor: 'rgba(11, 29, 16, 0.86)',
+    backgroundColor: colors.surfaceRaised,
     gap: 5,
-    height: playerBubbleHeight,
+    height: 144,
     justifyContent: 'flex-start',
     padding: 7,
-    width: playerBubbleWidth,
+    width: 108,
   },
   playerMenuHeader: {
     alignItems: 'center',
@@ -909,8 +1378,8 @@ const styles = StyleSheet.create({
   },
   playerMenuRow: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.035)',
-    borderColor: 'rgba(246, 247, 237, 0.07)',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.borderSoft,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -927,8 +1396,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   playerMenuRowAccent: {
-    backgroundColor: 'rgba(76, 255, 90, 0.08)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   playerMenuRowIcon: {
     alignItems: 'center',
@@ -954,6 +1423,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  playerRowStack: {
+    gap: spacing.sm,
+  },
+  friendRequestPlayerRow: {
+    minHeight: 78,
+    paddingVertical: spacing.sm,
+  },
   moreCard: {
     alignItems: 'center',
     gap: 6,
@@ -963,8 +1439,8 @@ const styles = StyleSheet.create({
   },
   rankBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.04)',
-    borderColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 28,
@@ -977,14 +1453,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   requestHeaderText: {
-    color: '#ECEDE6',
+    color: colors.ink,
     fontSize: 18,
     lineHeight: 23,
   },
   requestActionButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.045)',
-    borderColor: 'rgba(246, 247, 237, 0.09)',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1005,8 +1481,8 @@ const styles = StyleSheet.create({
   },
   requestAvatar: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.07)',
-    borderColor: 'rgba(246, 247, 237, 0.12)',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 42,
@@ -1014,13 +1490,14 @@ const styles = StyleSheet.create({
     width: 42,
   },
   requestCard: {
-    backgroundColor: 'rgba(11, 29, 16, 0.64)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: 18,
     borderWidth: 1,
     gap: spacing.xs,
     minHeight: 92,
     padding: spacing.sm,
+    ...shadows.soft,
   },
   requestCopy: {
     flex: 1,
@@ -1029,8 +1506,8 @@ const styles = StyleSheet.create({
   },
   requestIconAction: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.035)',
-    borderColor: 'rgba(246, 247, 237, 0.08)',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1048,7 +1525,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   requestName: {
-    color: '#ECEDE6',
+    color: colors.ink,
     flexShrink: 1,
   },
   requestNameRow: {
@@ -1067,14 +1544,15 @@ const styles = StyleSheet.create({
   },
   pointsBlock: {
     alignItems: 'flex-end',
-    minWidth: 64,
+    flexShrink: 0,
+    width: 48,
   },
   pointsValue: {
     fontSize: 20,
     lineHeight: 24,
   },
   screen: {
-    backgroundColor: colors.darkBackground,
+    backgroundColor: colors.background,
     minHeight: '100%',
   },
   section: {
@@ -1099,7 +1577,7 @@ const styles = StyleSheet.create({
   suggestionBadge: {
     alignItems: 'center',
     backgroundColor: colors.accentLime,
-    borderColor: colors.darkBackground,
+    borderColor: colors.background,
     borderRadius: radius.round,
     borderWidth: 2,
     bottom: -1,
@@ -1117,22 +1595,23 @@ const styles = StyleSheet.create({
   },
   suggestionCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.58)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
     borderWidth: 1,
     gap: 6,
-    height: playerBubbleHeight,
+    height: 144,
     padding: spacing.sm,
-    width: playerBubbleWidth,
+    width: 108,
+    ...shadows.soft,
   },
   suggestionCardPressable: {
-    backgroundColor: 'rgba(11, 29, 16, 0.66)',
+    backgroundColor: colors.surface,
   },
   suggestedAvatar: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.06)',
-    borderColor: 'rgba(246, 247, 237, 0.12)',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 58,
@@ -1153,8 +1632,8 @@ const styles = StyleSheet.create({
   },
   summaryIcon: {
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 255, 90, 0.075)',
-    borderColor: colors.neonMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     height: 22,
@@ -1172,8 +1651,8 @@ const styles = StyleSheet.create({
   },
   summaryItem: {
     alignItems: 'center',
-    backgroundColor: 'rgba(246, 247, 237, 0.025)',
-    borderColor: 'rgba(246, 247, 237, 0.06)',
+    backgroundColor: colors.surface,
+    borderColor: colors.surfaceAqua,
     borderRadius: radius.lg,
     borderWidth: 1,
     flex: 1,
@@ -1187,14 +1666,15 @@ const styles = StyleSheet.create({
   },
   summaryStrip: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.42)',
-    borderColor: colors.darkBorder,
-    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 64,
     padding: spacing.xs,
+    ...shadows.soft,
   },
   summaryValue: {
     fontSize: 17,
@@ -1211,13 +1691,14 @@ const styles = StyleSheet.create({
     width: 32,
   },
   standingCard: {
-    borderColor: 'rgba(255, 200, 61, 0.18)',
-    borderRadius: radius.xl,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 24,
     borderWidth: 1,
     gap: spacing.xs,
     minHeight: 86,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    ...shadows.card,
   },
   standingCopy: {
     flex: 1,
@@ -1257,7 +1738,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   standingMeterTrack: {
-    backgroundColor: 'rgba(246, 247, 237, 0.10)',
+    backgroundColor: colors.border,
     borderRadius: radius.round,
     height: 5,
     overflow: 'hidden',
@@ -1287,12 +1768,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabs: {
-    backgroundColor: 'rgba(3, 16, 8, 0.58)',
-    borderBottomColor: colors.darkBorder,
-    borderBottomWidth: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.sm,
-    paddingBottom: spacing.xs,
+    gap: 2,
+    padding: 3,
   },
   tab: {
     alignItems: 'center',
@@ -1301,8 +1783,8 @@ const styles = StyleSheet.create({
     minHeight: 32,
   },
   tabActive: {
-    backgroundColor: 'rgba(255, 200, 61, 0.06)',
-    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.round,
   },
   topRankBadge: {
     backgroundColor: 'rgba(255, 200, 61, 0.10)',

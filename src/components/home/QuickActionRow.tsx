@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, shadows, spacing } from '../../theme';
 import { AppText } from '../AppText';
 
 type ActionId = 'create' | 'find' | 'invite';
@@ -34,12 +34,12 @@ export function QuickActionRow({ onCreateGame, onFindGame, onInviteFriends }: Qu
     <View style={styles.card}>
       {actions.map((action, index) => (
         <View key={action.title} style={styles.actionWrap}>
-          <Pressable accessibilityRole="button" onPress={handlers[action.id]} style={styles.action}>
-            <View style={[styles.iconRing, { borderColor: action.iconColor }]}>
+          <Pressable accessibilityRole="button" onPress={handlers[action.id]} style={[styles.action, action.id === 'create' && styles.createAction]}>
+            <View style={[styles.iconRing, action.id === 'create' && styles.createIconRing, { borderColor: action.iconColor }]}>
               <Ionicons color={action.iconColor} name={action.icon} size={index === 1 ? 22 : 19} />
             </View>
             <View style={styles.copy}>
-              <AppText numberOfLines={1} style={styles.actionTitle} weight="700">
+              <AppText align="center" numberOfLines={2} style={styles.actionTitle} variant="button" weight="700">
                 {action.title}
               </AppText>
             </View>
@@ -55,10 +55,11 @@ const styles = StyleSheet.create({
   action: {
     alignItems: 'center',
     flex: 1,
-    flexDirection: 'row',
-    gap: 1,
-    minHeight: 64,
+    gap: 5,
+    justifyContent: 'center',
+    minHeight: 74,
     minWidth: 0,
+    paddingHorizontal: 2,
   },
   actionWrap: {
     alignItems: 'center',
@@ -67,35 +68,46 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   actionTitle: {
-    color: 'rgba(243, 244, 238, 0.9)',
-    fontSize: 11,
-    lineHeight: 14,
+    color: colors.ink,
+    fontSize: 13,
+    lineHeight: 16,
   },
   card: {
     alignItems: 'center',
-    backgroundColor: 'rgba(11, 29, 16, 0.78)',
-    borderColor: colors.darkBorder,
-    borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 26,
     borderWidth: 1,
     flexDirection: 'row',
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    ...shadows.card,
   },
   copy: {
-    flex: 1,
+    alignItems: 'center',
     minWidth: 0,
+    width: '100%',
   },
   iconRing: {
     alignItems: 'center',
-    borderColor: colors.accentLime,
+    backgroundColor: colors.surfaceAqua,
     borderRadius: radius.round,
     borderWidth: 1,
-    height: 34,
+    height: 40,
     justifyContent: 'center',
-    width: 34,
+    width: 40,
+  },
+  createAction: {
+    gap: 7,
+  },
+  createIconRing: {
+    backgroundColor: colors.surfaceMuted,
+    height: 44,
+    width: 44,
   },
   separator: {
-    backgroundColor: 'rgba(246, 247, 237, 0.11)',
-    height: 36,
+    backgroundColor: 'rgba(216, 232, 212, 0.60)',
+    height: 46,
     marginHorizontal: spacing.xxs,
     width: 1,
   },
