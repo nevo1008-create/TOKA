@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
-import { colors, radius, shadows, spacing } from '../theme';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 
 type ReportProblemScreenProps = {
   onBack: () => void;
@@ -563,8 +563,8 @@ const styles = StyleSheet.create({
   textArea: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.semibold,
     fontSize: 15,
-    fontWeight: '600',
     lineHeight: 21,
     minHeight: 120,
     padding: 0,

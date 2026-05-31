@@ -7,15 +7,17 @@ import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
-import { currentPlayer, notifications } from '../data/mock';
-import { colors, radius, shadows, spacing } from '../theme';
+import { currentPlayer } from '../data/mock';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby } from '../types';
 
 type GamesScreenProps = {
   initialSection?: GameSection;
   lobbies: Lobby[];
+  notificationCount: number;
   onBack: () => void;
   onOpenMenu: () => void;
+  onOpenNotifications: () => void;
   onOpenLobby: (lobby: Lobby) => void;
   selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
@@ -135,7 +137,9 @@ export function getLobbyImageUrl(index: number) {
 export function GamesScreen({
   initialSection = 'Find Games',
   lobbies,
+  notificationCount,
   onOpenMenu,
+  onOpenNotifications,
   onOpenLobby,
   selectedFilter,
   setSelectedFilter,
@@ -155,7 +159,13 @@ export function GamesScreen({
         end={{ x: 0.22, y: 0.72 }}
         style={styles.backgroundGlow}
       />
-      <HomeHeader compact notificationCount={notifications.length} onMenuPress={onOpenMenu} player={currentPlayer} />
+      <HomeHeader
+        compact
+        notificationCount={notificationCount}
+        onMenuPress={onOpenMenu}
+        onNotificationsPress={onOpenNotifications}
+        player={currentPlayer}
+      />
 
       <View style={styles.content}>
         <View style={styles.sectionTabs}>
@@ -1298,8 +1308,8 @@ const styles = StyleSheet.create({
   searchInput: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 14,
-    fontWeight: '500',
     lineHeight: 18,
     padding: 0,
   },

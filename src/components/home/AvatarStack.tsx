@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../../theme';
+import { colors, homeTypography, radius, spacing } from '../../theme';
 import { AppText } from '../AppText';
 
 type AvatarStackProps = {
@@ -28,7 +28,7 @@ export function AvatarStack({ initials, size = 44 }: AvatarStackProps) {
               },
             ]}
           >
-            <AppText align="center" tone="primary" variant="body" weight="800">
+            <AppText align="center" style={styles.avatarText} tone="primary" variant="body" weight="800">
               {initial}
             </AppText>
           </View>
@@ -45,6 +45,9 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     borderWidth: 2,
     justifyContent: 'center',
+  },
+  avatarText: {
+    ...homeTypography.chip,
   },
   extraAvatar: {
     backgroundColor: colors.surfaceAqua,

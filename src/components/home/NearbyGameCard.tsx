@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, shadows } from '../../theme';
+import { colors, homeTypography, radius, shadows } from '../../theme';
 import { AppText } from '../AppText';
 import { BeachGameVisual } from './BeachGameVisual';
 
@@ -21,6 +21,7 @@ type NearbyGameCardProps = {
   status: 'Approval' | 'Full';
   time: string;
   title: string;
+  useHomeTypography?: boolean;
   variant: 'morning' | 'sunset';
 };
 
@@ -40,6 +41,7 @@ export function NearbyGameCard({
   status,
   time,
   title,
+  useHomeTypography = false,
   variant,
 }: NearbyGameCardProps) {
   const isWarningAction = actionTone === 'warning';
@@ -54,22 +56,38 @@ export function NearbyGameCard({
       onPress={onPress}
       style={[styles.card, selected && styles.cardSelected, disabled && styles.cardDisabled]}
     >
-      <BeachThumb badgeLabel={spotsLeft} tone={spotsTone} variant={variant} />
+      <BeachThumb badgeLabel={spotsLeft} tone={spotsTone} useHomeTypography={useHomeTypography} variant={variant} />
       <View style={styles.copy}>
         <View style={styles.timeRow}>
           <View style={styles.liveDot} />
-          <AppText style={styles.timeText} tone="primary" variant="metadata" weight="600">
+          <AppText
+            style={[styles.timeText, useHomeTypography && styles.homeMetadataText]}
+            tone="primary"
+            variant="metadata"
+            weight="600"
+          >
             {time}
           </AppText>
         </View>
 
-        <AppText numberOfLines={1} style={styles.title} variant="cardTitle" weight="800">
+        <AppText
+          numberOfLines={1}
+          style={[styles.title, useHomeTypography && styles.homeCardTitle]}
+          variant="cardTitle"
+          weight="800"
+        >
           {title}
         </AppText>
 
         <View style={styles.locationRow}>
           <Ionicons color={colors.accentSea} name="location" size={13} />
-          <AppText numberOfLines={1} style={styles.locationText} tone="primary" variant="metadata" weight="500">
+          <AppText
+            numberOfLines={1}
+            style={[styles.locationText, useHomeTypography && styles.homeBodyText]}
+            tone="primary"
+            variant="metadata"
+            weight="500"
+          >
             {location}
           </AppText>
         </View>
@@ -77,12 +95,18 @@ export function NearbyGameCard({
         <View style={styles.lowerRow}>
           <View style={styles.infoChipStack}>
             <View style={styles.levelPill}>
-              <AppText tone="primary" variant="chip" weight="700">
+              <AppText style={useHomeTypography && styles.homeChipText} tone="primary" variant="chip" weight="700">
                 {level}
               </AppText>
             </View>
             <View style={styles.genderPill}>
-              <AppText numberOfLines={1} tone="muted" variant="chip" weight="600">
+              <AppText
+                numberOfLines={1}
+                style={useHomeTypography && styles.homeChipText}
+                tone="muted"
+                variant="chip"
+                weight="600"
+              >
                 {audience}
               </AppText>
             </View>
@@ -91,7 +115,12 @@ export function NearbyGameCard({
           <View style={styles.actionStack}>
             <View style={styles.playersPill}>
               <Ionicons color={colors.muted} name="people-outline" size={12} />
-              <AppText style={styles.playersText} tone="muted" variant="metadata" weight="600">
+              <AppText
+                style={[styles.playersText, useHomeTypography && styles.homePlayersText]}
+                tone="muted"
+                variant="metadata"
+                weight="600"
+              >
                 {players} players
               </AppText>
             </View>
@@ -105,7 +134,11 @@ export function NearbyGameCard({
               <AppText
                 align="center"
                 numberOfLines={1}
-                style={[styles.actionText, isLongAction && styles.actionTextLong]}
+                style={[
+                  styles.actionText,
+                  useHomeTypography && styles.homeActionText,
+                  isLongAction && styles.actionTextLong,
+                ]}
                 tone={actionTone === 'accent' ? 'inverse' : actionTone === 'muted' ? 'muted' : 'primary'}
                 variant="metadata"
                 weight="900"
@@ -130,10 +163,12 @@ export function NearbyGameCard({
 function BeachThumb({
   badgeLabel,
   tone,
+  useHomeTypography,
   variant,
 }: {
   badgeLabel: string;
   tone: 'green' | 'yellow';
+  useHomeTypography: boolean;
   variant: 'morning' | 'sunset';
 }) {
   const isLongBadge = badgeLabel.length > 8;
@@ -144,7 +179,11 @@ function BeachThumb({
       <View style={[styles.imageBadge, tone === 'green' && styles.imageBadgeGreen]}>
         <AppText
           numberOfLines={1}
-          style={[styles.imageBadgeText, isLongBadge && styles.imageBadgeTextLong]}
+          style={[
+            styles.imageBadgeText,
+            useHomeTypography && styles.homeImageBadgeText,
+            isLongBadge && styles.imageBadgeTextLong,
+          ]}
           tone={tone === 'green' ? 'accent' : 'primary'}
           variant="chip"
           weight="800"
@@ -232,6 +271,30 @@ const styles = StyleSheet.create({
     maxWidth: 96,
     paddingHorizontal: 6,
     paddingVertical: 3,
+  },
+  homeActionText: {
+    fontFamily: homeTypography.button.fontFamily,
+    fontWeight: 'normal',
+  },
+  homeBodyText: {
+    fontFamily: homeTypography.body.fontFamily,
+    fontWeight: 'normal',
+  },
+  homeCardTitle: {
+    ...homeTypography.cardTitle,
+  },
+  homeChipText: {
+    ...homeTypography.chipSmall,
+  },
+  homeImageBadgeText: {
+    ...homeTypography.chipSmall,
+  },
+  homeMetadataText: {
+    ...homeTypography.metadata,
+  },
+  homePlayersText: {
+    fontFamily: homeTypography.metadata.fontFamily,
+    fontWeight: 'normal',
   },
   imageBadge: {
     alignItems: 'center',

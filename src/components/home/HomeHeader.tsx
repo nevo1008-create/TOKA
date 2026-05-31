@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, shadows, spacing } from '../../theme';
+import { colors, fontFamilies, homeTypography, radius, shadows, spacing } from '../../theme';
 import type { Player } from '../../types';
 import { AppText } from '../AppText';
 
@@ -11,8 +11,10 @@ type HomeHeaderProps = {
   notificationCount: number;
   onBack?: () => void;
   onMenuPress?: () => void;
+  onNotificationsPress?: () => void;
   player: Player;
   rightAccessory?: 'avatar' | 'menu';
+  useHomeTypography?: boolean;
 };
 
 export function HomeHeader({
@@ -20,8 +22,10 @@ export function HomeHeader({
   notificationCount,
   onBack,
   onMenuPress,
+  onNotificationsPress,
   player,
   rightAccessory = 'menu',
+  useHomeTypography = false,
 }: HomeHeaderProps) {
   return (
     <View style={[styles.header, compact && styles.headerCompact]}>
@@ -40,17 +44,39 @@ export function HomeHeader({
           <Ionicons color={colors.primaryDark} name="football" size={compact ? 21 : 25} />
         </LinearGradient>
         <View>
-          <AppText style={[styles.logoText, compact && styles.logoTextCompact]} variant="display" weight="800">
+          <AppText
+            style={[
+              styles.logoText,
+              useHomeTypography && styles.logoTextHome,
+              compact && styles.logoTextCompact,
+            ]}
+            variant="display"
+            weight="800"
+          >
             TOCA
           </AppText>
-          <AppText style={[styles.subtitle, compact && styles.subtitleCompact]} tone="accent" variant="label" weight="800">
+          <AppText
+            style={[
+              styles.subtitle,
+              useHomeTypography && styles.subtitleHome,
+              compact && styles.subtitleCompact,
+            ]}
+            tone="accent"
+            variant="label"
+            weight="800"
+          >
             FOOTVOLLEY COMMUNITY
           </AppText>
         </View>
       </View>
 
       <View style={styles.actions}>
-        <Pressable accessibilityRole="button" style={[styles.bellButton, compact && styles.bellButtonCompact]}>
+        <Pressable
+          accessibilityLabel="Open notifications"
+          accessibilityRole="button"
+          onPress={onNotificationsPress}
+          style={[styles.bellButton, compact && styles.bellButtonCompact]}
+        >
             <Ionicons color={colors.ink} name="notifications-outline" size={compact ? 21 : 24} />
           {notificationCount > 0 ? (
             <View style={[styles.notificationBadge, compact && styles.notificationBadgeCompact]}>
@@ -180,6 +206,10 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     transform: [{ skewX: '-10deg' }],
   },
+  logoTextHome: {
+    fontFamily: fontFamilies.manrope.extrabold,
+    fontWeight: 'normal',
+  },
   logoTextCompact: {
     fontSize: 23,
     lineHeight: 25,
@@ -229,6 +259,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     fontSize: 11,
     lineHeight: 13,
+  },
+  subtitleHome: {
+    fontFamily: homeTypography.chipSmall.fontFamily,
+    fontWeight: 'normal',
   },
   subtitleCompact: {
     fontSize: 9,
