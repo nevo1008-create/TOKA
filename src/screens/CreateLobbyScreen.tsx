@@ -5,15 +5,22 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
-import { currentPlayer, notifications } from '../data/mock';
-import { colors, radius, shadows, spacing } from '../theme';
+import { currentPlayer } from '../data/mock';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 
 type CreateLobbyScreenProps = {
+  notificationCount: number;
   onCancel: () => void;
   onOpenMenu: () => void;
+  onOpenNotifications: () => void;
 };
 
-export function CreateLobbyScreen({ onCancel, onOpenMenu }: CreateLobbyScreenProps) {
+export function CreateLobbyScreen({
+  notificationCount,
+  onCancel,
+  onOpenMenu,
+  onOpenNotifications,
+}: CreateLobbyScreenProps) {
   const [step, setStep] = useState<1 | 2>(1);
 
   return (
@@ -25,7 +32,13 @@ export function CreateLobbyScreen({ onCancel, onOpenMenu }: CreateLobbyScreenPro
         end={{ x: 0.22, y: 0.72 }}
         style={styles.backgroundGlow}
       />
-      <HomeHeader compact notificationCount={notifications.length} onMenuPress={onOpenMenu} player={currentPlayer} />
+      <HomeHeader
+        compact
+        notificationCount={notificationCount}
+        onMenuPress={onOpenMenu}
+        onNotificationsPress={onOpenNotifications}
+        player={currentPlayer}
+      />
 
       <View style={styles.content}>
         {step === 1 ? <WhenWhereStep /> : null}
@@ -466,6 +479,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     color: colors.muted,
+    fontFamily: fontFamilies.manrope.medium,
     fontSize: 13,
     lineHeight: 18,
     minHeight: 60,

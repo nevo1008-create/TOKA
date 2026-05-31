@@ -132,6 +132,7 @@ export type Notification = {
     | 'join_request'
     | 'request_approved'
     | 'request_rejected'
+    | 'room_invite'
     | 'waitlist_update'
     | 'rating_required'
     | 'lobby_changed';

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radius, shadows, spacing } from '../../theme';
+import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
 import { AppText } from '../AppText';
 import { ProgressBar } from '../ProgressBar';
 
@@ -28,7 +28,7 @@ export function PlayerStatusStrip() {
           <AppText style={stripStyles.pointsTitle} variant="uiBody" weight="800">
             TOCA Points
           </AppText>
-          <AppText tone="primary" variant="metadata" weight="500">
+          <AppText style={stripStyles.pointsCount} tone="primary" variant="metadata" weight="500">
             1,250 / 2,000
           </AppText>
         </View>
@@ -183,14 +183,18 @@ const stripStyles = StyleSheet.create({
     borderRadius: 14,
     height: 48,
     justifyContent: 'center',
-    width: 52,
+    width: 58,
   },
   levelLabel: {
-    fontSize: 10,
-    lineHeight: 12,
+    fontFamily: homeTypography.chipSmall.fontFamily,
+    fontSize: 8,
+    fontWeight: 'normal',
+    lineHeight: 10,
   },
   levelNumber: {
+    fontFamily: homeTypography.heroTitle.fontFamily,
     fontSize: 24,
+    fontWeight: 'normal',
     lineHeight: 26,
   },
   metricPill: {
@@ -206,6 +210,7 @@ const stripStyles = StyleSheet.create({
   },
   metricValue: {
     color: colors.ink,
+    ...homeTypography.button,
   },
   points: {
     flex: 1,
@@ -216,6 +221,12 @@ const stripStyles = StyleSheet.create({
   },
   pointsTitle: {
     color: colors.ink,
+    fontFamily: homeTypography.cardTitle.fontFamily,
+    fontWeight: 'normal',
+    lineHeight: 22,
+  },
+  pointsCount: {
+    ...homeTypography.metadata,
   },
   progress: {
     height: 6,

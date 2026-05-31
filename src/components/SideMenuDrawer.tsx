@@ -9,23 +9,22 @@ import type { Player } from '../types';
 import { AppText } from './AppText';
 
 type DrawerRowAction =
-  | 'about'
   | 'blockedPlayers'
-  | 'communityGuidelines'
   | 'deleteAccount'
-  | 'logOut'
-  | 'notifications'
-  | 'privacyPolicy'
-  | 'reportProblem'
-  | 'termsOfService';
+  | 'logOut';
 
 type SideMenuDrawerProps = {
   onClose: () => void;
+  onAbout: () => void;
+  onCommunityGuidelines: () => void;
   onEditProfile: () => void;
   onHelpSupport: () => void;
   onInviteFriends: () => void;
   onMyGames: () => void;
+  onNotifications: () => void;
+  onPrivacyPolicy: () => void;
   onReportProblem: () => void;
+  onTermsOfService: () => void;
   onPlaceholderAction: (action: DrawerRowAction, label: string) => void;
   onViewProfile: () => void;
   player: Player;
@@ -44,11 +43,16 @@ type DrawerRowConfig = {
 
 export function SideMenuDrawer({
   onClose,
+  onAbout,
+  onCommunityGuidelines,
   onEditProfile,
   onHelpSupport,
   onInviteFriends,
   onMyGames,
+  onNotifications,
+  onPrivacyPolicy,
   onReportProblem,
+  onTermsOfService,
   onPlaceholderAction,
   onViewProfile,
   player,
@@ -82,7 +86,7 @@ export function SideMenuDrawer({
   const accountRows: DrawerRowConfig[] = [
     { icon: 'create-outline', label: 'Edit profile', onPress: onEditProfile, tone: 'green' },
     { icon: 'calendar-outline', label: 'My games', onPress: onMyGames, tone: 'aqua' },
-    { action: 'notifications', icon: 'notifications-outline', label: 'Notifications', tone: 'gold' },
+    { icon: 'notifications-outline', label: 'Notifications', onPress: onNotifications, tone: 'gold' },
   ];
 
   const safetyRows: DrawerRowConfig[] = [
@@ -93,10 +97,10 @@ export function SideMenuDrawer({
   ];
 
   const aboutRows: DrawerRowConfig[] = [
-    { action: 'about', icon: 'information-circle-outline', label: 'About us', tone: 'aqua' },
-    { action: 'communityGuidelines', icon: 'people-circle-outline', label: 'Community guidelines', tone: 'green' },
-    { action: 'privacyPolicy', icon: 'shield-checkmark-outline', label: 'Privacy policy' },
-    { action: 'termsOfService', icon: 'document-text-outline', label: 'Terms of service' },
+    { icon: 'information-circle-outline', label: 'About us', onPress: onAbout, tone: 'aqua' },
+    { icon: 'people-circle-outline', label: 'Community guidelines', onPress: onCommunityGuidelines, tone: 'green' },
+    { icon: 'shield-checkmark-outline', label: 'Privacy policy', onPress: onPrivacyPolicy },
+    { icon: 'document-text-outline', label: 'Terms of service', onPress: onTermsOfService },
   ];
 
   const managementRows: DrawerRowConfig[] = [
@@ -235,7 +239,7 @@ export function SideMenuDrawer({
 function DrawerGroup({ children, title }: { children: ReactNode; title: string }) {
   return (
     <View style={styles.group}>
-      <AppText style={styles.groupTitle} tone="muted" variant="metadata" weight="900">
+      <AppText style={styles.groupTitle} tone="muted" variant="metadata" weight="700">
         {title}
       </AppText>
       <View style={styles.groupCard}>{children}</View>
@@ -270,7 +274,7 @@ function DrawerRow({ onPress, row }: { onPress: () => void; row: DrawerRowConfig
         style={[styles.rowLabel, row.destructive && styles.rowLabelDestructive]}
         tone={row.destructive ? 'danger' : 'primary'}
         variant="uiBody"
-        weight="800"
+        weight="600"
       >
         {row.label}
       </AppText>

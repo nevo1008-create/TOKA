@@ -8,7 +8,7 @@ import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { currentPlayer } from '../data/mock';
-import { colors, radius, shadows, spacing } from '../theme';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby, LobbyParticipant, Player } from '../types';
 
 export type InviteSource = 'community' | 'leaderboard' | 'lobby' | 'player' | 'profile';
@@ -930,8 +930,8 @@ const styles = StyleSheet.create({
   searchInput: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.semibold,
     fontSize: 14,
-    fontWeight: '600',
     lineHeight: 18,
     padding: 0,
   },

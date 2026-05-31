@@ -290,4 +290,12 @@ export const notifications: Notification[] = [
     lobbyId: 'l2',
     read: false,
   },
+  {
+    id: 'n3',
+    type: 'room_invite',
+    title: 'Maya invited you',
+    body: 'Women evening game is open for approval. Review the room details.',
+    lobbyId: 'l3',
+    read: false,
+  },
 ];

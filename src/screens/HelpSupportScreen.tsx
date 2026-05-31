@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
-import { colors, radius, shadows, spacing } from '../theme';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 
 type HelpSupportScreenProps = {
   onBack: () => void;
@@ -434,8 +434,8 @@ const styles = StyleSheet.create({
   searchInput: {
     color: colors.ink,
     flex: 1,
+    fontFamily: fontFamilies.manrope.bold,
     fontSize: 16,
-    fontWeight: '700',
     lineHeight: 22,
     minWidth: 0,
     padding: 0,

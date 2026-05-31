@@ -11,24 +11,28 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { ProgressBar } from '../components/ProgressBar';
-import { notifications, players } from '../data/mock';
+import { players } from '../data/mock';
 import { colors, radius, shadows, spacing } from '../theme';
 import type { Player } from '../types';
 
 type ProfileScreenProps = {
+  notificationCount: number;
   onBack?: () => void;
   onEditProfile?: () => void;
   onInvitePlayer: (playerId: string) => void;
   onOpenMenu?: () => void;
+  onOpenNotifications: () => void;
   onViewPlayerProfile?: (player: Player) => void;
   player: Player;
 };
 
 export function ProfileScreen({
+  notificationCount,
   onBack,
   onEditProfile,
   onInvitePlayer,
   onOpenMenu,
+  onOpenNotifications,
   onViewPlayerProfile,
   player,
 }: ProfileScreenProps) {
@@ -87,9 +91,10 @@ export function ProfileScreen({
       />
       <HomeHeader
         compact
-        notificationCount={notifications.length}
+        notificationCount={notificationCount}
         onBack={onBack}
         onMenuPress={onOpenMenu}
+        onNotificationsPress={onOpenNotifications}
         player={player}
       />
 

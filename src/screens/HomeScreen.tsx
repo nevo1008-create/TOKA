@@ -8,7 +8,7 @@ import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerStatusStrip } from '../components/home/ProgressCard';
 import { QuickActionRow } from '../components/home/QuickActionRow';
-import { colors, spacing } from '../theme';
+import { colors, homeTypography, spacing } from '../theme';
 import type { Lobby, Notification, Player } from '../types';
 
 type HomeScreenProps = {
@@ -20,6 +20,7 @@ type HomeScreenProps = {
   onOpenMenu: () => void;
   onOpenGames: () => void;
   onOpenLobby: (lobby: Lobby) => void;
+  onOpenNotifications: () => void;
 };
 
 export function HomeScreen({
@@ -31,6 +32,7 @@ export function HomeScreen({
   onOpenMenu,
   onOpenGames,
   onOpenLobby,
+  onOpenNotifications,
 }: HomeScreenProps) {
   const featuredLobby = lobbies[0];
   const nearbyLeagueLobby = lobbies[1] ?? featuredLobby;
@@ -59,7 +61,13 @@ export function HomeScreen({
         <View style={[styles.palmFrond, styles.palmFrondTwo]} />
         <View style={[styles.palmFrond, styles.palmFrondThree]} />
       </View>
-      <HomeHeader notificationCount={notifications.length} onMenuPress={onOpenMenu} player={currentPlayer} />
+      <HomeHeader
+        notificationCount={notifications.length}
+        onMenuPress={onOpenMenu}
+        onNotificationsPress={onOpenNotifications}
+        player={currentPlayer}
+        useHomeTypography
+      />
 
       <View style={styles.content}>
         <View style={styles.hero}>
@@ -98,7 +106,7 @@ export function HomeScreen({
               Nearby Games
             </AppText>
             <Pressable accessibilityRole="button" onPress={onOpenGames} style={styles.mapAction}>
-              <AppText tone="accent" variant="button" weight="800">
+              <AppText style={styles.sectionActionText} tone="accent" variant="button" weight="800">
                 See all
               </AppText>
               <Ionicons color={colors.accentLime} name="chevron-forward" size={20} />
@@ -119,6 +127,7 @@ export function HomeScreen({
                 time="Sat 08:00"
                 title="League morning"
                 variant="morning"
+                useHomeTypography
               />
             ) : null}
             {showNearbyWomenLobby ? (
@@ -134,6 +143,7 @@ export function HomeScreen({
                 time="Sun 19:00"
                 title="Women evening"
                 variant="sunset"
+                useHomeTypography
               />
             ) : null}
           </View>
@@ -161,6 +171,7 @@ export function HomeScreen({
               time="Sat 08:00"
               title="League morning"
               variant="morning"
+              useHomeTypography
             />
           </View>
         </View>
@@ -236,6 +247,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     alignSelf: 'flex-start',
+    ...homeTypography.greeting,
   },
   mapAction: {
     alignItems: 'center',
@@ -257,6 +269,7 @@ const styles = StyleSheet.create({
   nextGameTitle: {
     color: colors.ink,
     textTransform: 'uppercase',
+    ...homeTypography.eyebrow,
   },
   screen: {
     backgroundColor: colors.background,
@@ -270,5 +283,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  sectionTitle: {},
+  sectionActionText: {
+    ...homeTypography.button,
+  },
+  sectionTitle: {
+    ...homeTypography.sectionTitle,
+  },
 });
