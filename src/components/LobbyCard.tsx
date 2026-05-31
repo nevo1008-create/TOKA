@@ -1,8 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { players } from '../data/mock';
+import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { getJoinedParticipants, getWaitlistParticipants } from '../features/lobbies/lobbyRules';
 import { colors, radius, spacing } from '../theme';
-import type { Lobby, LobbyParticipant } from '../types';
+import type { Lobby } from '../types';
 import { Avatar } from './Avatar';
 
 type LobbyCardProps = {
@@ -11,8 +13,8 @@ type LobbyCardProps = {
 };
 
 export function LobbyCard({ lobby, featured = false }: LobbyCardProps) {
-  const activeParticipants = lobby.participants.filter(isActiveParticipant);
-  const waitlistCount = lobby.participants.filter((participant) => participant.role === 'waitlist').length;
+  const activeParticipants = getJoinedParticipants(lobby);
+  const waitlistCount = getWaitlistParticipants(lobby).length;
   const pendingRequests = lobby.joinRequests.filter((request) => request.status === 'pending').length;
   const statusLabel = getStatusLabel(lobby);
 
@@ -22,7 +24,7 @@ export function LobbyCard({ lobby, featured = false }: LobbyCardProps) {
         <View style={styles.statusPill}>
           <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
-        <Text style={styles.cardTime}>{lobby.startsAt}</Text>
+        <Text style={styles.cardTime}>{formatLobbyStart(lobby.startsAt)}</Text>
       </View>
       <Text style={styles.cardTitle}>{lobby.title}</Text>
       <Text style={styles.cardMeta}>
@@ -57,10 +59,6 @@ function Pill({ label }: { label: string }) {
       <Text style={styles.metaPillText}>{label}</Text>
     </View>
   );
-}
-
-function isActiveParticipant(participant: LobbyParticipant) {
-  return participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute';
 }
 
 function getStatusLabel(lobby: Lobby) {

@@ -41,7 +41,7 @@ export type LobbyStatus =
 export type LobbyVisibility = 'public' | 'approval_required' | 'password' | 'invite_link';
 export type RankRuleType = 'exact' | 'range' | 'any';
 export type CapacityMode = 'fixed' | 'flexible';
-export type ParticipantRole = 'admin' | 'joined' | 'substitute' | 'waitlist';
+export type ParticipantRole = 'admin' | 'joined' | 'waitlist';
 export type ParticipantStatus =
   | 'pending'
   | 'approved'
@@ -104,6 +104,7 @@ export type JoinRequest = {
   playerId: string;
   reasons: JoinRequestReason[];
   message?: string;
+  adminDecisionRole?: Extract<ParticipantRole, 'joined' | 'waitlist'>;
   status: 'pending' | 'approved' | 'rejected';
 };
 
@@ -146,6 +147,9 @@ export type Lobby = {
   title: string;
   location: Location;
   locationDescription?: string;
+  /**
+   * ISO datetime string. UI should format this value for display.
+   */
   startsAt: string;
   status: LobbyStatus;
   visibility: LobbyVisibility;
@@ -159,6 +163,9 @@ export type Lobby = {
   genderRule: GenderRule;
   competitiveLevel?: 'casual' | 'balanced' | 'competitive';
   waitlistEnabled: boolean;
+  exceptionRequestsEnabled: boolean;
+  cancellationPenaltyMinutes?: number;
+  accessCode?: string;
   ballNeeded: boolean;
   courtMarksNeeded: boolean;
   note: string;

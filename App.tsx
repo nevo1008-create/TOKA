@@ -7,6 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
 import { currentPlayer, lobbies, notifications, players as playersForInvite } from './src/data/mock';
+import { isLobbyFull } from './src/features/lobbies/lobbyRules';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { CommunityScreen } from './src/screens/CommunityScreen';
 import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
@@ -45,11 +46,7 @@ export default function App() {
 
   const filteredLobbies = useMemo(() => {
     if (selectedFilter === 'Has spots') {
-      return lobbies.filter(
-        (lobby) =>
-          lobby.participants.filter((participant) => participant.role !== 'waitlist').length <
-          lobby.maxPlayers,
-      );
+      return lobbies.filter((lobby) => !isLobbyFull(lobby));
     }
 
     if (selectedFilter === 'Requests') {

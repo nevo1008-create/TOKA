@@ -14,6 +14,8 @@ import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePrevi
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
 import { currentPlayer, notifications, players } from '../data/mock';
+import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { getJoinedParticipants, getWaitlistParticipants, isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, radius, shadows, spacing } from '../theme';
 import type { GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player } from '../types';
 
@@ -40,8 +42,8 @@ export function LobbyDetailsScreen({
   onViewPlayerProfile,
 }: LobbyDetailsScreenProps) {
   const admin = players.find((player) => player.id === lobby.adminId);
-  const activeParticipants = lobby.participants.filter(isActiveParticipant);
-  const waitlistedParticipants = lobby.participants.filter((participant) => participant.role === 'waitlist');
+  const activeParticipants = getJoinedParticipants(lobby);
+  const waitlistedParticipants = getWaitlistParticipants(lobby);
   const currentParticipant = lobby.participants.find((participant) => participant.playerId === currentPlayer.id);
   const playerCount = `${activeParticipants.length} / ${lobby.maxPlayers}`;
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
@@ -95,7 +97,7 @@ export function LobbyDetailsScreen({
 
         <GameInfoStrip
           items={[
-            { icon: 'calendar-outline', label: 'Starts', value: lobby.startsAt, wide: true },
+            { icon: 'calendar-outline', label: 'Starts', value: formatLobbyStart(lobby.startsAt), wide: true },
             { icon: 'cellular', iconColor: colors.accentLime, label: 'Rank', value: getCompactRankLabel(lobby), wide: true },
             { icon: 'people-outline', label: 'Players', value: formatCompactPlayerCount(playerCount) },
             { icon: 'people-circle-outline', iconColor: colors.accentSea, label: 'Gender', value: getGenderLabel(lobby.genderRule), wide: true },
@@ -225,7 +227,7 @@ function RoomHeroCard({
       <View style={styles.heroContent}>
         <View style={styles.heroPills}>
           <StatusPill label={getStatusLabel(lobby)} tone="lime" />
-          <StatusPill icon="time-outline" label={lobby.startsAt} tone="gold" />
+          <StatusPill icon="time-outline" label={formatLobbyStart(lobby.startsAt)} tone="gold" />
         </View>
 
         <View style={styles.titleBlock}>
@@ -448,7 +450,7 @@ function RolePill({ role }: { role: LobbyParticipant['role'] }) {
   return (
     <View style={[styles.rolePill, isAdmin ? styles.rolePillLime : styles.rolePillGold]}>
       <AppText tone={isAdmin ? 'accent' : 'warning'} variant="caption" weight="800">
-        {role === 'substitute' ? 'Sub' : 'Admin'}
+        Admin
       </AppText>
     </View>
   );
@@ -504,7 +506,7 @@ function BeachVisual({ seed }: { seed: number }) {
 }
 
 function isActiveParticipant(participant: LobbyParticipant) {
-  return participant.role === 'admin' || participant.role === 'joined' || participant.role === 'substitute';
+  return isJoinedParticipant(participant);
 }
 
 function formatCompactPlayerCount(playerCount: string) {
