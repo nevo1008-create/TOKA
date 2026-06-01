@@ -1,4 +1,4 @@
-import { playerLevels, type JoinRequestReason, type Lobby, type LobbyParticipant, type Player } from '../../types';
+import { playerLevels, type ChatChannel, type JoinRequestReason, type Lobby, type LobbyParticipant, type Player } from '../../types';
 import { getMinutesBetweenLobbyStarts, getMinutesUntilLobbyStart } from './lobbyDateTime';
 
 export const commitmentConflictWindowMinutes = 90;
@@ -108,6 +108,21 @@ export function getJoinedParticipants(lobby: Lobby) {
 
 export function getWaitlistParticipants(lobby: Lobby) {
   return lobby.participants.filter(isWaitlistParticipant);
+}
+
+export function canPlayerAccessChatChannel(lobby: Lobby, playerId: string, channel: ChatChannel) {
+  if (channel.type === 'all') {
+    return true;
+  }
+
+  const participant = getPlayerParticipant(lobby, playerId);
+  const isHost = lobby.adminId === playerId || participant?.role === 'admin';
+
+  return Boolean(isHost || (participant && isJoinedParticipant(participant)));
+}
+
+export function getVisibleChatChannels(lobby: Lobby, playerId: string) {
+  return lobby.chatChannels.filter((channel) => canPlayerAccessChatChannel(lobby, playerId, channel));
 }
 
 export function getLobbySpotsRemaining(lobby: Lobby) {

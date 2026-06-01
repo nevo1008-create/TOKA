@@ -5,9 +5,9 @@ import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, type StylePr
 
 import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
-import { currentPlayer } from '../data/mock';
+import type { CreateLobbyDraft } from '../features/lobbies/lobbyCreateTypes';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { GenderRule, LobbyVisibility, PlayerLevel, RankRuleType } from '../types';
+import type { GenderRule, LobbyVisibility, Player, PlayerLevel, RankRuleType } from '../types';
 
 type CreateLobbyScreenProps = {
   notificationCount: number;
@@ -15,25 +15,10 @@ type CreateLobbyScreenProps = {
   onCreateLobby: (draft: CreateLobbyDraft) => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
+  player: Player;
 };
 
 type RankPickerField = 'exact' | 'max' | 'min';
-
-export type CreateLobbyDraft = {
-  title: string;
-  locationName: string;
-  locationCity: string;
-  meetingPoint: string;
-  playerCounts: number[];
-  startsAt: string;
-  maxPlayers: number;
-  rankRuleType: RankRuleType;
-  rankMin?: PlayerLevel;
-  rankMax?: PlayerLevel;
-  rankExact?: PlayerLevel;
-  genderRule: GenderRule;
-  visibility: LobbyVisibility;
-};
 
 export function CreateLobbyScreen({
   notificationCount,
@@ -41,6 +26,7 @@ export function CreateLobbyScreen({
   onCreateLobby,
   onOpenMenu,
   onOpenNotifications,
+  player,
 }: CreateLobbyScreenProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [title, setTitle] = useState('Sunset Footvolley');
@@ -130,7 +116,7 @@ export function CreateLobbyScreen({
         notificationCount={notificationCount}
         onMenuPress={onOpenMenu}
         onNotificationsPress={onOpenNotifications}
-        player={currentPlayer}
+        player={player}
       />
 
       <View style={styles.content}>

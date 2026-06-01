@@ -13,7 +13,6 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
-import { currentPlayer, players } from '../data/mock';
 import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
 import {
   getJoinGameDecision,
@@ -29,6 +28,7 @@ import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, Lob
 
 type LobbyDetailsScreenProps = {
   allLobbies: Lobby[];
+  currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
   lobbyIndex: number;
@@ -45,6 +45,7 @@ type LobbyDetailsScreenProps = {
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
+  players: Player[];
 };
 
 type LobbyProfilePreviewSelection = {
@@ -70,6 +71,7 @@ type LobbySectionAction = {
 
 export function LobbyDetailsScreen({
   allLobbies,
+  currentPlayer,
   hasPrivateAccess,
   lobby,
   lobbyIndex,
@@ -86,6 +88,7 @@ export function LobbyDetailsScreen({
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
   onViewPlayerProfile,
+  players,
 }: LobbyDetailsScreenProps) {
   const admin = players.find((player) => player.id === lobby.adminId);
   const activeParticipants = getJoinedParticipants(lobby);
@@ -111,6 +114,7 @@ export function LobbyDetailsScreen({
   const primaryAction = getLobbyPrimaryAction({
     allLobbies,
     currentParticipant,
+    currentPlayer,
     hasPrivateAccess,
     lobby,
     onJoinGame,
@@ -123,12 +127,14 @@ export function LobbyDetailsScreen({
   });
   const playerSectionAction = getPlayerSectionAction({
     allLobbies,
+    currentPlayer,
     hasPrivateAccess,
     lobby,
     onJoinGame,
   });
   const waitlistSectionAction = getWaitlistSectionAction({
     allLobbies,
+    currentPlayer,
     hasPrivateAccess,
     lobby,
     onJoinWaitlist,
@@ -213,9 +219,11 @@ export function LobbyDetailsScreen({
 
         {isCurrentUserAdmin ? (
           <HostPanel
+            currentPlayerId={currentPlayer.id}
             onApproveWaitlistRequest={onApproveWaitlistRequest}
             onRejectWaitlistRequest={onRejectWaitlistRequest}
             pendingRequests={pendingRequests}
+            players={players}
           />
         ) : null}
 
@@ -240,7 +248,9 @@ export function LobbyDetailsScreen({
           onRatePlayer={(player) => setRatingWizardPlayer(player)}
           onAction={playerSectionAction?.onPress}
           emptyLabel="No players yet."
+          currentPlayerId={currentPlayer.id}
           participants={activeParticipants}
+          players={players}
           showRatingAction={lobby.status === 'rating_open'}
           title="Players"
         />
@@ -253,7 +263,9 @@ export function LobbyDetailsScreen({
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
           emptyLabel="Waitlist is empty."
+          currentPlayerId={currentPlayer.id}
           participants={waitlistedParticipants}
+          players={players}
           title="Waitlist"
         />
 
@@ -289,16 +301,18 @@ export function LobbyDetailsScreen({
           profilePreviewSelection
             ? getLobbyProfilePreviewPrimaryAction(
                 profilePreviewSelection,
+                currentPlayer,
                 isCurrentUserAdmin,
                 onViewPlayerProfile,
               )
             : undefined
         }
-        rating={profilePreviewPlayer ? getPlayerRating(profilePreviewPlayer) : undefined}
+        rating={profilePreviewPlayer ? getPlayerRating(profilePreviewPlayer, currentPlayer.id) : undefined}
         secondaryAction={
           profilePreviewSelection
             ? getLobbyProfilePreviewSecondaryAction(
                 profilePreviewSelection,
+                currentPlayer,
                 currentPlayer.friendIds.includes(profilePreviewSelection.player.id),
                 isCurrentUserAdmin,
                 onInvite,
@@ -311,7 +325,7 @@ export function LobbyDetailsScreen({
         visible={Boolean(profilePreviewSelection)}
       />
       <RatePlayerWizard
-        behaviorRating={ratingWizardPlayer ? Number(getPlayerRating(ratingWizardPlayer)) : undefined}
+        behaviorRating={ratingWizardPlayer ? Number(getPlayerRating(ratingWizardPlayer, currentPlayer.id)) : undefined}
         currentRank={ratingWizardPlayer?.level ?? currentPlayer.level}
         isFriend={Boolean(
           ratingWizardPlayer &&
@@ -523,24 +537,28 @@ function ParticipantsSection({
   actionIcon,
   actionLabel,
   count,
+  currentPlayerId,
   emptyLabel,
   onAction,
   onOpenActions,
   onOpenProfile,
   onRatePlayer,
   participants,
+  players,
   showRatingAction = false,
   title,
 }: {
   actionIcon?: keyof typeof Ionicons.glyphMap;
   actionLabel?: string;
   count: number;
+  currentPlayerId: string;
   emptyLabel: string;
   onAction?: () => void;
   onOpenActions: (player: Player) => void;
   onOpenProfile: (player: Player, participant: LobbyParticipant) => void;
   onRatePlayer?: (player: Player) => void;
   participants: LobbyParticipant[];
+  players: Player[];
   showRatingAction?: boolean;
   title: string;
 }) {
@@ -578,6 +596,7 @@ function ParticipantsSection({
                 onRatePlayer={() => onRatePlayer?.(player)}
                 participant={participant}
                 player={player}
+                rating={getPlayerRating(player, currentPlayerId)}
                 showRatingAction={showRatingAction}
               />
             ) : null;
@@ -601,6 +620,7 @@ function ParticipantRow({
   onRatePlayer,
   participant,
   player,
+  rating,
   showRatingAction,
 }: {
   onMore: () => void;
@@ -608,6 +628,7 @@ function ParticipantRow({
   onRatePlayer?: () => void;
   participant: LobbyParticipant;
   player: Player;
+  rating: string;
   showRatingAction?: boolean;
 }) {
   return (
@@ -628,20 +649,24 @@ function ParticipantRow({
             }
           : undefined
       }
-      rating={getPlayerRating(player)}
+      rating={rating}
       statusIcon={participant.role === 'admin' ? 'shield-checkmark' : 'star'}
     />
   );
 }
 
 function HostPanel({
+  currentPlayerId,
   onApproveWaitlistRequest,
   onRejectWaitlistRequest,
   pendingRequests,
+  players,
 }: {
+  currentPlayerId: string;
   onApproveWaitlistRequest: (playerId: string) => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   pendingRequests: Lobby['joinRequests'];
+  players: Player[];
 }) {
   return (
     <View style={styles.hostPanel}>
@@ -674,6 +699,7 @@ function HostPanel({
             return player ? (
               <View key={request.id} style={styles.requestCard}>
                 <HostRequestRow
+                  currentPlayerId={currentPlayerId}
                   onApprove={() => onApproveWaitlistRequest(request.playerId)}
                   onReject={() => onRejectWaitlistRequest(request.playerId)}
                   player={player}
@@ -698,10 +724,12 @@ function HostPanel({
 }
 
 function HostRequestRow({
+  currentPlayerId,
   onApprove,
   onReject,
   player,
 }: {
+  currentPlayerId: string;
   onApprove: () => void;
   onReject: () => void;
   player: Player;
@@ -731,7 +759,7 @@ function HostRequestRow({
             <View style={styles.hostRequestChip}>
               <Ionicons color={colors.accentGoldDark} name="star" size={9} />
               <AppText tone="primary" variant="caption" weight="800">
-                {getPlayerRating(player)}
+                {getPlayerRating(player, currentPlayerId)}
               </AppText>
             </View>
             <View style={[styles.hostRequestChip, styles.hostRequestPointsChip]}>
@@ -779,16 +807,20 @@ export function LobbyFloatingChatButton({ lobby, onPress }: { lobby: Lobby; onPr
 }
 
 export function LobbyChatSheet({
+  currentPlayer,
   lobby,
   messages,
   onClose,
   onSendMessage,
+  players,
   visible,
 }: {
+  currentPlayer: Player;
   lobby: Lobby;
   messages: ChatMessage[];
   onClose: () => void;
   onSendMessage: (channelId: string, body: string) => void;
+  players: Player[];
   visible: boolean;
 }) {
   const [activeChannelId, setActiveChannelId] = useState(lobby.chatChannels[0]?.id ?? '');
@@ -873,7 +905,9 @@ export function LobbyChatSheet({
 
           <ScrollView contentContainerStyle={styles.chatMessageList} showsVerticalScrollIndicator={false}>
             {channelMessages.length > 0 ? (
-              channelMessages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
+              channelMessages.map((message) => (
+                <ChatMessageBubble currentPlayer={currentPlayer} key={message.id} message={message} players={players} />
+              ))
             ) : (
               <View style={styles.chatEmptyState}>
                 <Ionicons color={colors.accentSea} name="chatbox-ellipses-outline" size={24} />
@@ -908,7 +942,15 @@ export function LobbyChatSheet({
   );
 }
 
-function ChatMessageBubble({ message }: { message: ChatMessage }) {
+function ChatMessageBubble({
+  currentPlayer,
+  message,
+  players,
+}: {
+  currentPlayer: Player;
+  message: ChatMessage;
+  players: Player[];
+}) {
   const player = players.find((candidate) => candidate.id === message.playerId);
   const isMine = message.playerId === currentPlayer.id;
 
@@ -1107,6 +1149,7 @@ function getCompactRankLabel(lobby: Lobby) {
 function getLobbyPrimaryAction({
   allLobbies,
   currentParticipant,
+  currentPlayer,
   hasPrivateAccess,
   lobby,
   onJoinGame,
@@ -1116,6 +1159,7 @@ function getLobbyPrimaryAction({
 }: {
   allLobbies: Lobby[];
   currentParticipant?: LobbyParticipant;
+  currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
   onJoinGame: () => void;
@@ -1271,17 +1315,19 @@ function getLobbyPrimaryAction({
 
 function getPlayerSectionAction({
   allLobbies,
+  currentPlayer,
   hasPrivateAccess,
   lobby,
   onJoinGame,
 }: {
   allLobbies: Lobby[];
+  currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
   onJoinGame: () => void;
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
-  const activeCurrentParticipant = getActiveCurrentParticipant(lobby);
+  const activeCurrentParticipant = getActiveCurrentParticipant(lobby, currentPlayer.id);
 
   if (
     activeCurrentParticipant?.role === 'admin' ||
@@ -1308,17 +1354,19 @@ function getPlayerSectionAction({
 
 function getWaitlistSectionAction({
   allLobbies,
+  currentPlayer,
   hasPrivateAccess,
   lobby,
   onJoinWaitlist,
 }: {
   allLobbies: Lobby[];
+  currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
   onJoinWaitlist: () => void;
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
-  const activeCurrentParticipant = getActiveCurrentParticipant(lobby);
+  const activeCurrentParticipant = getActiveCurrentParticipant(lobby, currentPlayer.id);
 
   if (activeCurrentParticipant?.role === 'admin' || relationship === 'waitlist' || lobby.status === 'rating_open') {
     return undefined;
@@ -1338,10 +1386,10 @@ function getWaitlistSectionAction({
     : undefined;
 }
 
-function getActiveCurrentParticipant(lobby: Lobby) {
+function getActiveCurrentParticipant(lobby: Lobby, currentPlayerId: string) {
   return lobby.participants.find(
     (participant) =>
-      participant.playerId === currentPlayer.id &&
+      participant.playerId === currentPlayerId &&
       (participant.status === 'approved' || participant.status === 'attended'),
   );
 }
@@ -1370,12 +1418,12 @@ function formatRequestReasons(reasons: Lobby['joinRequests'][number]['reasons'])
     .join(' / ');
 }
 
-function getPlayerRating(player: Player) {
+function getPlayerRating(player: Player, currentPlayerId: string) {
   if (player.id === 'p3') {
     return '4.0';
   }
 
-  if (player.id === 'p4' || player.id === currentPlayer.id) {
+  if (player.id === 'p4' || player.id === currentPlayerId) {
     return '3.6';
   }
 
@@ -1409,6 +1457,7 @@ function getLobbyPlayerActions(
 
 function getLobbyProfilePreviewPrimaryAction(
   selection: LobbyProfilePreviewSelection,
+  currentPlayer: Player,
   isCurrentUserAdmin: boolean,
   onViewPlayerProfile: (player: Player) => void,
 ) {
@@ -1427,6 +1476,7 @@ function getLobbyProfilePreviewPrimaryAction(
 
 function getLobbyProfilePreviewSecondaryAction(
   selection: LobbyProfilePreviewSelection,
+  currentPlayer: Player,
   isFriend: boolean,
   isCurrentUserAdmin: boolean,
   onInvite: () => void,

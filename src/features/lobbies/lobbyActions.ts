@@ -153,14 +153,7 @@ export function approveJoinRequest(
 export function rejectJoinRequest(lobby: Lobby, playerId: string): Lobby {
   return {
     ...lobby,
-    joinRequests: lobby.joinRequests.map((request) =>
-      request.playerId === playerId
-        ? {
-            ...request,
-            status: 'rejected',
-          }
-        : request,
-    ),
+    joinRequests: lobby.joinRequests.filter((request) => playerId !== request.playerId),
   };
 }
 
@@ -175,16 +168,15 @@ export function leaveLobby(lobby: Lobby, playerId: string, now = new Date()): Lo
       : participant,
   );
   const nextHost = lobby.adminId === playerId
-    ? nextParticipants.find(
-        (participant) =>
-          participant.playerId !== playerId &&
-          participant.role === 'joined' &&
-          isParticipationCurrent(participant),
-      )
+    ? getNextHostParticipant(nextParticipants, playerId)
     : undefined;
+  const hasCurrentParticipants = nextParticipants.some(
+    (participant) => participant.playerId !== playerId && isParticipationCurrent(participant),
+  );
 
   return {
     ...lobby,
+    status: hasCurrentParticipants ? lobby.status : 'closed',
     adminId: nextHost?.playerId ?? lobby.adminId,
     participants: nextHost
       ? nextParticipants.map((participant) =>
@@ -197,6 +189,23 @@ export function leaveLobby(lobby: Lobby, playerId: string, now = new Date()): Lo
         )
       : nextParticipants,
   };
+}
+
+function getNextHostParticipant(participants: LobbyParticipant[], leavingPlayerId: string) {
+  return (
+    participants.find(
+      (participant) =>
+        participant.playerId !== leavingPlayerId &&
+        participant.role === 'joined' &&
+        isParticipationCurrent(participant),
+    ) ??
+    participants.find(
+      (participant) =>
+        participant.playerId !== leavingPlayerId &&
+        participant.role === 'waitlist' &&
+        isParticipationCurrent(participant),
+    )
+  );
 }
 
 function isParticipationCurrent(participant: LobbyParticipant) {
