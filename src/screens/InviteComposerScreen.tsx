@@ -7,7 +7,6 @@ import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
-import { currentPlayer } from '../data/mock';
 import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -22,6 +21,7 @@ export type InviteComposerParams = {
 };
 
 type InviteComposerScreenProps = {
+  currentPlayer: Player;
   lobbies: Lobby[];
   onBack: () => void;
   onCreateGame: () => void;
@@ -32,6 +32,7 @@ type InviteComposerScreenProps = {
 type InviteMode = 'both-known' | 'lobby-known' | 'neutral' | 'player-known';
 
 export function InviteComposerScreen({
+  currentPlayer,
   lobbies,
   onBack,
   onCreateGame,
@@ -41,7 +42,7 @@ export function InviteComposerScreen({
   const targetPlayer = players.find((player) => player.id === params.inviteTargetPlayerId);
   const targetLobby = lobbies.find((lobby) => lobby.id === params.inviteTargetLobbyId);
   const mode = getInviteMode(Boolean(targetPlayer), Boolean(targetLobby));
-  const userLobbies = useMemo(() => getUserInviteLobbies(lobbies), [lobbies]);
+  const userLobbies = useMemo(() => getUserInviteLobbies(lobbies, currentPlayer.id), [currentPlayer.id, lobbies]);
   const [selectedLobbyId, setSelectedLobbyId] = useState(targetLobby?.id);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(targetPlayer ? [targetPlayer.id] : []);
   const [invitedPlayerIdsByLobby, setInvitedPlayerIdsByLobby] = useState<Record<string, string[]>>({});
@@ -137,7 +138,7 @@ export function InviteComposerScreen({
 
         {targetPlayer ? (
           <InvitePlayerContextCard
-            context={getPlayerContext(targetPlayer)}
+            context={getPlayerContext(targetPlayer, currentPlayer)}
             locked
             player={targetPlayer}
             rating={getPlayerRating(targetPlayer)}
@@ -209,6 +210,7 @@ export function InviteComposerScreen({
 
                 return (
                   <InvitePlayerOption
+                    currentPlayer={currentPlayer}
                     inviteState={playerState}
                     key={player.id}
                     onPress={() => togglePlayer(player.id)}
@@ -337,12 +339,14 @@ function InviteGameOption({
 }
 
 function InvitePlayerOption({
+  currentPlayer,
   inviteState,
   onPress,
   player,
   rating,
   selected,
 }: {
+  currentPlayer: Player;
   inviteState: 'available' | 'invited' | 'joined';
   onPress: () => void;
   player: Player;
@@ -354,7 +358,7 @@ function InvitePlayerOption({
 
   return (
     <PlayerRow
-      context={getPlayerContext(player)}
+      context={getPlayerContext(player, currentPlayer)}
       initials={player.initials}
       level={player.level}
       location={player.area}
@@ -567,11 +571,11 @@ function getSuccessMessage(lobby: Lobby, selectedPlayers: Player[]) {
   return `${selectedPlayers.length} invites sent to ${lobby.location.name}`;
 }
 
-function getUserInviteLobbies(lobbies: Lobby[]) {
+function getUserInviteLobbies(lobbies: Lobby[], currentPlayerId: string) {
   return lobbies.filter((lobby) =>
     lobby.participants.some(
       (participant) =>
-        participant.playerId === currentPlayer.id &&
+        participant.playerId === currentPlayerId &&
         isJoinedParticipant(participant),
     ),
   );
@@ -673,7 +677,7 @@ function getPlayerRating(player: Player) {
   return '3.2';
 }
 
-function getPlayerContext(player: Player) {
+function getPlayerContext(player: Player, currentPlayer: Player) {
   if (player.friendIds.includes(currentPlayer.id) || currentPlayer.friendIds.includes(player.id)) {
     return `${player.area} regular`;
   }

@@ -7,13 +7,13 @@ import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
-import { currentPlayer, players } from '../data/mock';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { Lobby } from '../types';
+import type { Lobby, Player } from '../types';
 
 type GamesScreenProps = {
+  currentPlayer: Player;
   initialSection?: GameSection;
   lobbies: Lobby[];
   notificationCount: number;
@@ -21,6 +21,7 @@ type GamesScreenProps = {
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onOpenLobby: (lobby: Lobby) => void;
+  players: Player[];
   selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
 };
@@ -143,12 +144,14 @@ export function getLobbyImageUrl(index: number) {
 }
 
 export function GamesScreen({
+  currentPlayer,
   initialSection = 'Find Games',
   lobbies,
   notificationCount,
   onOpenMenu,
   onOpenNotifications,
   onOpenLobby,
+  players,
   selectedFilter,
   setSelectedFilter,
 }: GamesScreenProps) {
@@ -203,13 +206,15 @@ export function GamesScreen({
 
         {activeSection === 'Find Games' ? (
           <SearchGamesView
+            currentPlayer={currentPlayer}
             lobbies={lobbies}
             onOpenLobby={onOpenLobby}
+            players={players}
             selectedFilter={selectedFilter}
             setSelectedFilter={setSelectedFilter}
           />
         ) : (
-          <MyGamesView lobbies={lobbies} onOpenLobby={onOpenLobby} />
+          <MyGamesView currentPlayer={currentPlayer} lobbies={lobbies} onOpenLobby={onOpenLobby} players={players} />
         )}
       </View>
     </View>
@@ -217,13 +222,17 @@ export function GamesScreen({
 }
 
 function SearchGamesView({
+  currentPlayer,
   lobbies,
   onOpenLobby,
+  players,
   selectedFilter,
   setSelectedFilter,
 }: {
+  currentPlayer: Player;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
+  players: Player[];
   selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
 }) {
@@ -294,7 +303,7 @@ function SearchGamesView({
   const staticLobbyIds = new Set(gameCards.map((game) => game.lobbyId).filter(Boolean));
   const createdLobbyCards = lobbies
     .filter((lobby) => !staticLobbyIds.has(lobby.id) && isLobbyDiscoverable(lobby))
-    .map((lobby, index) => getGameCardFromLobby(lobby, index));
+    .map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players));
   const visibleGameCards = [
     ...createdLobbyCards,
     ...gameCards.filter((game) => {
@@ -409,6 +418,7 @@ function SearchGamesView({
 
           return (
             <GameCard
+              currentPlayerId={currentPlayer.id}
               game={game}
               key={`${game.title}-${index}`}
               lobby={lobby}
@@ -593,14 +603,24 @@ function GenderFilterPanel({
   );
 }
 
-function MyGamesView({ lobbies, onOpenLobby }: { lobbies: Lobby[]; onOpenLobby: (lobby: Lobby) => void }) {
+function MyGamesView({
+  currentPlayer,
+  lobbies,
+  onOpenLobby,
+  players,
+}: {
+  currentPlayer: Player;
+  lobbies: Lobby[];
+  onOpenLobby: (lobby: Lobby) => void;
+  players: Player[];
+}) {
   const activeGames = lobbies
-    .filter((lobby) => isCurrentPlayerInLobby(lobby) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
+    .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
     .map((lobby, index) => {
-      const participant = getCurrentPlayerAnyParticipant(lobby);
+      const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
 
       return {
-        ...getGameCardFromLobby(lobby, index),
+        ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
         actionLabel: 'Open game',
         imageBadgeLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
         statusLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
@@ -608,9 +628,9 @@ function MyGamesView({ lobbies, onOpenLobby }: { lobbies: Lobby[]; onOpenLobby: 
       };
     });
   const finishedGames = lobbies
-    .filter((lobby) => isCurrentPlayerInLobby(lobby) && (lobby.status === 'rating_open' || lobby.status === 'completed' || lobby.status === 'closed'))
+    .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'rating_open' || lobby.status === 'completed' || lobby.status === 'closed'))
     .map((lobby, index) => ({
-      ...getGameCardFromLobby(lobby, index),
+      ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
       actionLabel: lobby.status === 'rating_open' ? 'Rate players' : 'View recap',
       statusLabel: lobby.status === 'rating_open' ? 'Rating open' : 'Finished',
       statusTone: lobby.status === 'rating_open' ? 'gold' as const : 'muted' as const,
@@ -684,8 +704,18 @@ function GameHistorySection({
   );
 }
 
-function GameCard({ game, lobby, onPress }: { game: GameListItem; lobby?: Lobby; onPress: () => void }) {
-  const currentParticipant = lobby ? getCurrentPlayerParticipant(lobby) : undefined;
+function GameCard({
+  currentPlayerId,
+  game,
+  lobby,
+  onPress,
+}: {
+  currentPlayerId: string;
+  game: GameListItem;
+  lobby?: Lobby;
+  onPress: () => void;
+}) {
+  const currentParticipant = lobby ? getCurrentPlayerParticipant(lobby, currentPlayerId) : undefined;
   const statusBadgeLabel =
     currentParticipant?.role === 'admin'
       ? 'Host'
@@ -719,14 +749,14 @@ function getGameLobby(lobbies: Lobby[], game: GameListItem) {
     : lobbies[game.lobbyIndex % Math.max(lobbies.length, 1)];
 }
 
-function getGameCardFromLobby(lobby: Lobby, index: number): GameListItem {
+function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: string, players: Player[]): GameListItem {
   const activeParticipants = lobby.participants.filter(isJoinedParticipant);
-  const currentParticipant = getCurrentPlayerParticipant(lobby);
+  const currentParticipant = getCurrentPlayerParticipant(lobby, currentPlayerId);
   const spotsLeft = Math.max(lobby.maxPlayers - activeParticipants.length, 0);
 
   return {
     audience: getGenderAudience(lobby),
-    avatars: activeParticipants.slice(0, 3).map((participant) => getPlayerInitials(participant.playerId)),
+    avatars: activeParticipants.slice(0, 3).map((participant) => getPlayerInitials(participant.playerId, players)),
     badgeLabel: currentParticipant?.role === 'admin' ? 'Host' : undefined,
     badgeTone: currentParticipant?.role === 'admin' ? 'lime' : undefined,
     distance: lobby.location.distanceKm ? `${lobby.location.distanceKm.toFixed(1)} km` : 'New',
@@ -742,7 +772,7 @@ function getGameCardFromLobby(lobby: Lobby, index: number): GameListItem {
   };
 }
 
-function getPlayerInitials(playerId: string) {
+function getPlayerInitials(playerId: string, players: Player[]) {
   return players.find((player) => player.id === playerId)?.initials ?? 'PL';
 }
 
@@ -913,20 +943,20 @@ function formatPlayersCount(playersLabel: string) {
   return playersLabel.replace(/\s*players$/i, '').trim();
 }
 
-function getCurrentPlayerParticipant(lobby: Lobby) {
-  return lobby.participants.find((participant) => participant.playerId === currentPlayer.id && participant.status === 'approved');
+function getCurrentPlayerParticipant(lobby: Lobby, currentPlayerId: string) {
+  return lobby.participants.find((participant) => participant.playerId === currentPlayerId && participant.status === 'approved');
 }
 
-function getCurrentPlayerAnyParticipant(lobby: Lobby) {
+function getCurrentPlayerAnyParticipant(lobby: Lobby, currentPlayerId: string) {
   return lobby.participants.find(
     (participant) =>
-      participant.playerId === currentPlayer.id &&
+      participant.playerId === currentPlayerId &&
       (participant.status === 'approved' || participant.status === 'attended'),
   );
 }
 
-function isCurrentPlayerInLobby(lobby: Lobby) {
-  return Boolean(getCurrentPlayerAnyParticipant(lobby));
+function isCurrentPlayerInLobby(lobby: Lobby, currentPlayerId: string) {
+  return Boolean(getCurrentPlayerAnyParticipant(lobby, currentPlayerId));
 }
 
 function isActiveLobbyParticipant(participant: Lobby['participants'][number]) {

@@ -7,7 +7,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -15,29 +15,15 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
-import {
-  chatMessages as mockChatMessages,
-  currentPlayer,
-  lobbies as mockLobbies,
-  notifications,
-  players as playersForInvite,
-} from './src/data/mock';
-import {
-  approveJoinRequest,
-  joinGame,
-  joinWaitlist,
-  leaveLobby,
-  rejectJoinRequest,
-  requestWaitlistApproval,
-} from './src/features/lobbies/lobbyActions';
-import { getMinutesUntilLobbyStart } from './src/features/lobbies/lobbyDateTime';
-import { defaultCancellationPenaltyMinutes, isJoinedParticipant, isLobbyFull } from './src/features/lobbies/lobbyRules';
+import { currentPlayer, players as playersForInvite } from './src/data/mock';
+import type { CreateLobbyDraft } from './src/features/lobbies/lobbyCreateTypes';
+import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { CommunityScreen } from './src/screens/CommunityScreen';
 import { CommunityGuidelinesScreen } from './src/screens/CommunityGuidelinesScreen';
-import { CreateLobbyScreen, type CreateLobbyDraft } from './src/screens/CreateLobbyScreen';
+import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { GamesScreen } from './src/screens/GamesScreen';
 import { HelpSupportScreen } from './src/screens/HelpSupportScreen';
@@ -50,7 +36,7 @@ import { ReportProblemScreen } from './src/screens/ReportProblemScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
 import { colors, spacing } from './src/theme';
-import type { ChatMessage, Lobby, Notification, Player } from './src/types';
+import type { Lobby, Notification, Player } from './src/types';
 
 export default function App() {
   const [homeFontsLoaded] = useFonts({
@@ -64,10 +50,7 @@ export default function App() {
   const [authFlow, setAuthFlow] = useState<'app' | 'auth' | 'onboarding'>('auth');
   const [authEmail, setAuthEmail] = useState('');
   const [profilePlayer, setProfilePlayer] = useState<Player>(currentPlayer);
-  const [lobbyItems, setLobbyItems] = useState<Lobby[]>(mockLobbies);
-  const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
-  const [chatMessageItems, setChatMessageItems] = useState<ChatMessage[]>(mockChatMessages);
-  const [notificationItems, setNotificationItems] = useState<Notification[]>(notifications);
+  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite);
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isAddFriendsOpen, setIsAddFriendsOpen] = useState(false);
@@ -84,29 +67,12 @@ export default function App() {
   const [isLobbyChatOpen, setIsLobbyChatOpen] = useState(false);
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  const unreadNotifications = notificationItems.filter((notification) => !notification.read);
-  const unreadNotificationCount = unreadNotifications.length;
-  const selectedLobby = selectedLobbyId
-    ? lobbyItems.find((lobby) => lobby.id === selectedLobbyId) ?? null
-    : null;
-  const selectedLobbyIndex = selectedLobby
-    ? Math.max(
-        lobbyItems.findIndex((lobby) => lobby.id === selectedLobby.id),
-        0,
-      )
-    : 0;
-
-  const filteredLobbies = useMemo(() => {
-    if (selectedFilter === 'Has spots') {
-      return lobbyItems.filter((lobby) => !isLobbyFull(lobby));
-    }
-
-    if (selectedFilter === 'Requests') {
-      return lobbyItems.filter((lobby) => lobby.joinRequests.length > 0);
-    }
-
-    return lobbyItems;
-  }, [lobbyItems, selectedFilter]);
+  const unreadNotifications = lobbyStore.unreadNotifications;
+  const unreadNotificationCount = lobbyStore.unreadNotificationCount;
+  const selectedLobby = selectedLobbyId ? lobbyStore.getLobbyById(selectedLobbyId) : null;
+  const visibleSelectedLobby = selectedLobby ? lobbyStore.getVisibleLobby(selectedLobby) : null;
+  const selectedLobbyIndex = selectedLobby ? lobbyStore.getLobbyIndex(selectedLobby.id) : 0;
+  const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
@@ -463,10 +429,6 @@ export default function App() {
     setIsNotificationsOpen(true);
   }
 
-  function updateLobbyItem(nextLobby: Lobby) {
-    setLobbyItems((current) => current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby)));
-  }
-
   function showLobbyActionMessages(messages: string[]) {
     if (messages.length === 0) {
       return;
@@ -475,63 +437,18 @@ export default function App() {
     Alert.alert('Game update', messages.join('\n'));
   }
 
-  function addLobbyNotification(notification: Omit<Notification, 'id' | 'read'>) {
-    setNotificationItems((current) => [
-      {
-        ...notification,
-        id: `n-${Date.now()}-${current.length}`,
-        read: false,
-      },
-      ...current,
-    ]);
-  }
-
   function handleJoinGame(lobby: Lobby) {
-    const result = joinGame(lobby, profilePlayer, {
-      accessCode: verifiedPrivateLobbyIds.includes(lobby.id) ? lobby.accessCode : undefined,
-      allLobbies: lobbyItems,
-    });
-
-    if (result.success) {
-      updateLobbyItem(result.lobby);
-      return;
-    }
-
+    const result = lobbyStore.joinGame(lobby);
     showLobbyActionMessages(result.messages);
   }
 
   function handleJoinWaitlist(lobby: Lobby) {
-    const participant = lobby.participants.find((candidate) => candidate.playerId === profilePlayer.id);
-    const isActiveInRoom = participant && (participant.status === 'approved' || participant.status === 'attended');
-    const penaltyMinutes = lobby.cancellationPenaltyMinutes ?? defaultCancellationPenaltyMinutes;
-    const isLateMoveFromJoined =
-      participant &&
-      isJoinedParticipant(participant) &&
-      getMinutesUntilLobbyStart(lobby.startsAt) < penaltyMinutes;
-
     const moveToWaitlist = () => {
-      const result = joinWaitlist(lobby, profilePlayer, {
-        accessCode: verifiedPrivateLobbyIds.includes(lobby.id) ? lobby.accessCode : undefined,
-        allLobbies: lobbyItems,
-      });
-
-      if (result.success) {
-        updateLobbyItem(result.lobby);
-        if (!isActiveInRoom) {
-          addLobbyNotification({
-            body: `You are now on the waitlist for ${lobby.title}.`,
-            lobbyId: lobby.id,
-            title: 'Joined waitlist',
-            type: 'waitlist_update',
-          });
-        }
-        return;
-      }
-
+      const result = lobbyStore.joinWaitlist(lobby);
       showLobbyActionMessages(result.messages);
     };
 
-    if (isLateMoveFromJoined) {
+    if (lobbyStore.shouldConfirmMoveToWaitlist(lobby)) {
       Alert.alert(
         'Late change penalty',
         'Moving to waitlist now may apply a late-change penalty. Continue?',
@@ -547,72 +464,27 @@ export default function App() {
   }
 
   function handleRequestWaitlistApproval(lobby: Lobby) {
-    const result = requestWaitlistApproval(lobby, profilePlayer);
-
-    if (result.success) {
-      updateLobbyItem(result.lobby);
-      const host = playersForInvite.find((player) => player.id === lobby.adminId);
-
-      addLobbyNotification({
-        body: `You can keep viewing ${lobby.title} while ${host?.name ?? 'the host'} reviews your request.`,
-        lobbyId: lobby.id,
-        title: 'Request sent',
-        type: 'waitlist_update',
-      });
-      return;
-    }
-
+    const result = lobbyStore.requestWaitlistApproval(lobby);
     showLobbyActionMessages(result.messages);
   }
 
   function handleApproveWaitlistRequest(lobby: Lobby, playerId: string) {
-    const player = playersForInvite.find((candidate) => candidate.id === playerId);
-
-    if (!player) {
-      showLobbyActionMessages(['Could not find this player in the mock player list.']);
-      return;
-    }
-
-    const result = approveJoinRequest(lobby, player, 'waitlist', {
-      allLobbies: lobbyItems,
-    });
-
-    updateLobbyItem(result.lobby);
-    addLobbyNotification({
-      body: `${player.name} was added to the waitlist for ${lobby.title}.`,
-      lobbyId: lobby.id,
-      title: 'Request approved',
-      type: 'request_approved',
-    });
-    showLobbyActionMessages(result.messages.length > 0 ? result.messages : [`${player.name} approved to waitlist.`]);
+    const result = lobbyStore.approveWaitlistRequest(lobby, playerId);
+    showLobbyActionMessages(result.messages);
   }
 
   function handleRejectJoinRequest(lobby: Lobby, playerId: string) {
-    const player = playersForInvite.find((candidate) => candidate.id === playerId);
-
-    updateLobbyItem(rejectJoinRequest(lobby, playerId));
-    addLobbyNotification({
-      body: `${player?.name ?? 'The player'} will see this as rejected when backend notifications are connected.`,
-      lobbyId: lobby.id,
-      title: 'Request rejected',
-      type: 'request_rejected',
-    });
+    const result = lobbyStore.rejectJoinRequest(lobby, playerId);
+    showLobbyActionMessages(result.messages);
   }
 
   function handleLeaveLobby(lobby: Lobby) {
-    const participant = lobby.participants.find((candidate) => candidate.playerId === profilePlayer.id);
+    const result = lobbyStore.leaveLobby(lobby);
 
-    if (!participant) {
+    if (!result.success) {
       return;
     }
 
-    updateLobbyItem(leaveLobby(lobby, profilePlayer.id));
-    addLobbyNotification({
-      body: `You left ${lobby.title}.`,
-      lobbyId: lobby.id,
-      title: 'Left room',
-      type: 'waitlist_update',
-    });
     setIsLobbyChatOpen(false);
     setSelectedLobbyId(null);
     setGamesInitialSection('My Games');
@@ -620,29 +492,12 @@ export default function App() {
   }
 
   function handleEnterPrivatePin(lobby: Lobby, pin: string) {
-    if (lobby.accessCode !== pin.trim()) {
-      return false;
-    }
-
-    setVerifiedPrivateLobbyIds((current) => (current.includes(lobby.id) ? current : [...current, lobby.id]));
-    return true;
+    return lobbyStore.enterPrivatePin(lobby, pin);
   }
 
   function openLobbyChat(lobby: Lobby) {
     setIsLobbyChatOpen(true);
-    setLobbyItems((current) =>
-      current.map((candidate) =>
-        candidate.id === lobby.id
-          ? {
-              ...candidate,
-              chatChannels: candidate.chatChannels.map((channel) => ({
-                ...channel,
-                unreadCount: 0,
-              })),
-            }
-          : candidate,
-      ),
-    );
+    lobbyStore.markLobbyChatRead(lobby);
   }
 
   function closeLobbyChat() {
@@ -650,112 +505,13 @@ export default function App() {
   }
 
   function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
-    const trimmedBody = body.trim();
-
-    if (!trimmedBody) {
-      return;
-    }
-
-    setChatMessageItems((current) => [
-      ...current,
-      {
-        body: trimmedBody,
-        channelId,
-        createdAt: new Date().toISOString(),
-        id: `m-${lobby.id}-${channelId}-${Date.now()}`,
-        lobbyId: lobby.id,
-        playerId: profilePlayer.id,
-      },
-    ]);
+    lobbyStore.sendLobbyChatMessage(lobby, channelId, body);
   }
 
   function handleCreateLobby(draft: CreateLobbyDraft) {
-    const lobbyId = `lobby-${Date.now()}`;
-    const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
-    const nextLobby: Lobby = {
-      adminId: profilePlayer.id,
-      accessCode: draft.visibility === 'password' ? '4321' : undefined,
-      ballNeeded: profilePlayer.hasBall,
-      cancellationPenaltyMinutes: defaultCancellationPenaltyMinutes,
-      capacityMode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
-      chatChannels: [
-        {
-          id: `${lobbyId}-all`,
-          lobbyId,
-          participantRoles: ['admin', 'joined', 'waitlist'],
-          title: 'All lobby',
-          type: 'all',
-          unreadCount: 0,
-        },
-        {
-          id: `${lobbyId}-active`,
-          lobbyId,
-          participantRoles: ['admin', 'joined'],
-          title: 'Host and active players',
-          type: 'admin_joined',
-          unreadCount: 0,
-        },
-      ],
-      competitiveLevel: 'balanced',
-      courtMarksNeeded: profilePlayer.hasCourtMarks,
-      exceptionRequestsEnabled: true,
-      genderRule: draft.genderRule,
-      id: lobbyId,
-      joinRequests: [],
-      location: {
-        area: 'Central Israel',
-        city: draft.locationCity,
-        description: draft.meetingPoint,
-        distanceKm: 2.4,
-        id: `${lobbyId}-location`,
-        name: draft.locationName,
-      },
-      locationDescription: draft.meetingPoint,
-      maxPlayers: Math.max(...selectedPlayerCounts),
-      minPlayers: Math.min(...selectedPlayerCounts),
-      note: draft.visibility === 'password'
-        ? `Private game. PIN: 4321. ${draft.meetingPoint}`
-        : draft.meetingPoint,
-      participants: [
-        {
-          bringsBall: profilePlayer.hasBall,
-          bringsCourtMarks: profilePlayer.hasCourtMarks,
-          playerId: profilePlayer.id,
-          role: 'admin',
-          status: 'approved',
-        },
-      ],
-      rankExact: draft.rankExact,
-      rankMax: draft.rankMax,
-      rankMin: draft.rankMin,
-      rankRuleType: draft.rankRuleType,
-      startsAt: draft.startsAt,
-      status: 'open',
-      title: draft.title,
-      visibility: draft.visibility,
-      waitlistEnabled: true,
-    };
+    const nextLobby = lobbyStore.createLobby(draft);
 
-    setLobbyItems((current) => [nextLobby, ...current]);
-    setChatMessageItems((current) => [
-      ...current,
-      {
-        body: 'Game created. Use this chat to coordinate with players.',
-        channelId: `${lobbyId}-all`,
-        createdAt: new Date().toISOString(),
-        id: `${lobbyId}-welcome`,
-        lobbyId,
-        playerId: profilePlayer.id,
-      },
-    ]);
-    addLobbyNotification({
-      body: `${draft.title} is live and visible in Games.`,
-      lobbyId,
-      title: 'Game created',
-      type: 'lobby_changed',
-    });
-    setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, lobbyId] : current));
-    setSelectedLobbyId(lobbyId);
+    setSelectedLobbyId(nextLobby.id);
     setIsLobbyChatOpen(false);
     setActiveTab('games');
   }
@@ -765,22 +521,15 @@ export default function App() {
   }
 
   function markAllNotificationsRead() {
-    setNotificationItems((current) =>
-      current.map((notification) => ({
-        ...notification,
-        read: true,
-      })),
-    );
+    lobbyStore.markAllNotificationsRead();
   }
 
   function handleNotificationPress(notification: Notification) {
-    setNotificationItems((current) =>
-      current.map((item) => (item.id === notification.id ? { ...item, read: true } : item)),
-    );
+    lobbyStore.markNotificationRead(notification.id);
     setIsNotificationsOpen(false);
 
     if (notification.lobbyId) {
-      const lobby = lobbyItems.find((candidate) => candidate.id === notification.lobbyId);
+      const lobby = lobbyStore.getLobbyById(notification.lobbyId);
 
       if (lobby) {
         openLobbyDetails(lobby);
@@ -870,7 +619,8 @@ export default function App() {
               <TermsOfServiceScreen onBack={closeLegalScreen} onReportProblem={openReportProblem} />
             ) : inviteParams ? (
               <InviteComposerScreen
-                lobbies={lobbyItems}
+                currentPlayer={profilePlayer}
+                lobbies={lobbyStore.lobbies}
                 onBack={closeInviteComposer}
                 onCreateGame={openCreateGameFromInvite}
                 params={inviteParams}
@@ -899,11 +649,12 @@ export default function App() {
                   {activeTab === 'games' && (
                     selectedLobby ? (
                       <LobbyDetailsScreen
+                        currentPlayer={profilePlayer}
                         lobby={selectedLobby}
                         lobbyIndex={selectedLobbyIndex}
                         notificationCount={unreadNotificationCount}
-                        allLobbies={lobbyItems}
-                        hasPrivateAccess={verifiedPrivateLobbyIds.includes(selectedLobby.id)}
+                        allLobbies={lobbyStore.lobbies}
+                        hasPrivateAccess={lobbyStore.hasPrivateAccess(selectedLobby.id)}
                         onBack={() => {
                           setIsLobbyChatOpen(false);
                           setSelectedLobbyId(null);
@@ -924,9 +675,11 @@ export default function App() {
                         onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                         onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
                         onViewPlayerProfile={openViewedProfile}
+                        players={playersForInvite}
                       />
                     ) : (
                       <GamesScreen
+                        currentPlayer={profilePlayer}
                         initialSection={gamesInitialSection}
                         lobbies={filteredLobbies}
                         notificationCount={unreadNotificationCount}
@@ -934,6 +687,7 @@ export default function App() {
                         onOpenMenu={openSideMenu}
                         onOpenNotifications={openNotifications}
                         onOpenLobby={openLobbyDetails}
+                        players={playersForInvite}
                         selectedFilter={selectedFilter}
                         setSelectedFilter={setSelectedFilter}
                       />
@@ -946,6 +700,7 @@ export default function App() {
                       onCreateLobby={handleCreateLobby}
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
+                      player={profilePlayer}
                     />
                   )}
                   {activeTab === 'community' && (
@@ -971,14 +726,16 @@ export default function App() {
                   )}
                 </ScrollView>
                 <BottomNav activeTab={activeTab} onChange={handleTabChange} />
-                {activeTab === 'games' && selectedLobby && selectedLobby.status !== 'rating_open' ? (
+                {activeTab === 'games' && selectedLobby && visibleSelectedLobby && selectedLobby.status !== 'rating_open' ? (
                   <>
-                    <LobbyFloatingChatButton lobby={selectedLobby} onPress={() => openLobbyChat(selectedLobby)} />
+                    <LobbyFloatingChatButton lobby={visibleSelectedLobby} onPress={() => openLobbyChat(selectedLobby)} />
                     <LobbyChatSheet
-                      lobby={selectedLobby}
-                      messages={chatMessageItems.filter((message) => message.lobbyId === selectedLobby.id)}
+                      currentPlayer={profilePlayer}
+                      lobby={visibleSelectedLobby}
+                      messages={lobbyStore.getVisibleLobbyMessages(selectedLobby)}
                       onClose={closeLobbyChat}
                       onSendMessage={(channelId, body) => sendLobbyChatMessage(selectedLobby, channelId, body)}
+                      players={playersForInvite}
                       visible={isLobbyChatOpen}
                     />
                   </>
@@ -1007,8 +764,8 @@ export default function App() {
               visible={isSideMenuOpen}
             />
             <NotificationPanel
-              lobbies={lobbyItems}
-              notifications={notificationItems}
+              lobbies={lobbyStore.lobbies}
+              notifications={lobbyStore.notifications}
               onClose={closeNotifications}
               onMarkAllRead={markAllNotificationsRead}
               onNotificationPress={handleNotificationPress}

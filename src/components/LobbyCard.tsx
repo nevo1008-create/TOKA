@@ -1,18 +1,18 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { players } from '../data/mock';
 import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { getJoinedParticipants, getWaitlistParticipants } from '../features/lobbies/lobbyRules';
 import { colors, radius, spacing } from '../theme';
-import type { Lobby } from '../types';
+import type { Lobby, Player } from '../types';
 import { Avatar } from './Avatar';
 
 type LobbyCardProps = {
   lobby: Lobby;
   featured?: boolean;
+  players: Player[];
 };
 
-export function LobbyCard({ lobby, featured = false }: LobbyCardProps) {
+export function LobbyCard({ lobby, featured = false, players }: LobbyCardProps) {
   const activeParticipants = getJoinedParticipants(lobby);
   const waitlistCount = getWaitlistParticipants(lobby).length;
   const pendingRequests = lobby.joinRequests.filter((request) => request.status === 'pending').length;
