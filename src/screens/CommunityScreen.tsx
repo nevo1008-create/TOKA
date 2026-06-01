@@ -260,11 +260,11 @@ export function CommunityScreen({
                       onPressProfile={() => openProfile(player, context)}
                       primaryAction={
                         context === 'request'
-                          ? { label: 'Accept' }
+                          ? { icon: 'checkmark', iconOnly: true, label: 'Accept' }
                           : undefined
                       }
                       rating={player.rating}
-                      secondaryAction={context === 'request' ? { label: 'Decline' } : undefined}
+                      secondaryAction={context === 'request' ? { icon: 'close', iconOnly: true, label: 'Decline' } : undefined}
                       statusIcon={player.badge === 'shield' ? 'shield-checkmark' : 'star'}
                       style={context === 'request' ? styles.friendRequestPlayerRow : undefined}
                     />
@@ -989,17 +989,11 @@ function ReceivedRequestCard({ index, player }: { index: number; player: Communi
       </View>
 
       <View style={styles.requestActions}>
-        <Pressable accessibilityRole="button" style={[styles.requestActionButton, styles.requestApproveButton]}>
-          <Ionicons color={colors.ink} name="checkmark" size={13} />
-          <AppText tone="inverse" variant="caption" weight="800">
-            Approve
-          </AppText>
+        <Pressable accessibilityLabel="Accept" accessibilityRole="button" style={[styles.requestActionButton, styles.requestApproveButton]}>
+          <Ionicons color={colors.ink} name="checkmark" size={15} />
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.requestActionButton}>
-          <Ionicons color={colors.muted} name="close" size={13} />
-          <AppText tone="muted" variant="caption" weight="800">
-            Deny
-          </AppText>
+        <Pressable accessibilityLabel="Decline" accessibilityRole="button" style={styles.requestActionButton}>
+          <Ionicons color={colors.muted} name="close" size={15} />
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.requestIconAction}>
           <Ionicons color={colors.muted} name="person-circle-outline" size={14} />
@@ -1474,10 +1468,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 3,
     justifyContent: 'center',
+    height: 30,
     minHeight: 28,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 0,
+    width: 30,
   },
   requestActions: {
     alignItems: 'center',
@@ -1487,7 +1482,6 @@ const styles = StyleSheet.create({
   requestApproveButton: {
     backgroundColor: colors.accentLime,
     borderColor: colors.accentLime,
-    flex: 1,
   },
   requestAvatar: {
     alignItems: 'center',

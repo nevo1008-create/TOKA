@@ -134,7 +134,7 @@ export function HomeScreen({
               <NearbyGameCard
                 audience="Women"
                 distance="49.5 km"
-                level="C-D"
+                level="C/D"
                 location="Aqueduct Beach"
                 onPress={() => (nearbyWomenLobby ? onOpenLobby(nearbyWomenLobby) : onOpenGames())}
                 players="1 / 6"

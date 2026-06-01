@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Avatar } from '../components/Avatar';
@@ -15,18 +15,35 @@ import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
 import { currentPlayer, players } from '../data/mock';
 import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
-import { getJoinedParticipants, getWaitlistParticipants, isJoinedParticipant } from '../features/lobbies/lobbyRules';
-import { colors, radius, shadows, spacing } from '../theme';
-import type { GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player } from '../types';
+import {
+  getJoinGameDecision,
+  getJoinWaitlistDecision,
+  getJoinedParticipants,
+  getLobbyAccessDecision,
+  getPlayerLobbyRelationship,
+  getWaitlistParticipants,
+  isJoinedParticipant,
+} from '../features/lobbies/lobbyRules';
+import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
+import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player } from '../types';
 
 type LobbyDetailsScreenProps = {
+  allLobbies: Lobby[];
+  hasPrivateAccess: boolean;
   lobby: Lobby;
   lobbyIndex: number;
   notificationCount: number;
+  onApproveWaitlistRequest: (playerId: string) => void;
   onBack: () => void;
+  onEnterPrivatePin: (pin: string) => boolean;
   onInvite: () => void;
+  onJoinGame: () => void;
+  onJoinWaitlist: () => void;
+  onLeaveLobby: () => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
+  onRequestWaitlistApproval: () => void;
+  onRejectWaitlistRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
 };
 
@@ -35,29 +52,93 @@ type LobbyProfilePreviewSelection = {
   player: Player;
 };
 
+type LobbyPrimaryAction = {
+  disabled: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  label: string;
+  onPress?: () => void;
+  textTone: 'accent' | 'danger' | 'inverse' | 'muted' | 'primary' | 'subtle' | 'warning';
+  tone: 'green' | 'muted' | 'rating';
+};
+
+type LobbySectionAction = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+};
+
 export function LobbyDetailsScreen({
+  allLobbies,
+  hasPrivateAccess,
   lobby,
   lobbyIndex,
   notificationCount,
+  onApproveWaitlistRequest,
   onBack,
+  onEnterPrivatePin,
   onInvite,
+  onJoinGame,
+  onJoinWaitlist,
+  onLeaveLobby,
   onOpenMenu,
   onOpenNotifications,
+  onRequestWaitlistApproval,
+  onRejectWaitlistRequest,
   onViewPlayerProfile,
 }: LobbyDetailsScreenProps) {
   const admin = players.find((player) => player.id === lobby.adminId);
   const activeParticipants = getJoinedParticipants(lobby);
   const waitlistedParticipants = getWaitlistParticipants(lobby);
-  const currentParticipant = lobby.participants.find((participant) => participant.playerId === currentPlayer.id);
+  const currentParticipant = lobby.participants.find(
+    (participant) =>
+      participant.playerId === currentPlayer.id &&
+      (participant.status === 'approved' || participant.status === 'attended'),
+  );
+  const pendingRequests = lobby.joinRequests.filter((request) => request.status === 'pending');
   const playerCount = `${activeParticipants.length} / ${lobby.maxPlayers}`;
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
   const [profilePreviewSelection, setProfilePreviewSelection] = useState<LobbyProfilePreviewSelection | null>(null);
   const [ratingWizardPlayer, setRatingWizardPlayer] = useState<Player | null>(null);
   const [localFriendIds, setLocalFriendIds] = useState<string[]>([]);
+  const [isPinEntryOpen, setIsPinEntryOpen] = useState(false);
+  const [pinCode, setPinCode] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
   const profilePreviewPlayer = profilePreviewSelection?.player;
-  const isCurrentUserAdmin = lobby.adminId === currentPlayer.id;
+  const isCurrentUserAdmin = currentParticipant?.role === 'admin';
   const isRatingOpen = lobby.status === 'rating_open';
+  const primaryAction = getLobbyPrimaryAction({
+    allLobbies,
+    currentParticipant,
+    hasPrivateAccess,
+    lobby,
+    onJoinGame,
+    onJoinWaitlist,
+    onOpenPinEntry: () => {
+      setPinError(null);
+      setIsPinEntryOpen(true);
+    },
+    onRequestWaitlistApproval,
+  });
+  const playerSectionAction = getPlayerSectionAction({
+    allLobbies,
+    hasPrivateAccess,
+    lobby,
+    onJoinGame,
+  });
+  const waitlistSectionAction = getWaitlistSectionAction({
+    allLobbies,
+    hasPrivateAccess,
+    lobby,
+    onJoinWaitlist,
+  });
+  const canLeaveRoom =
+    currentParticipant &&
+    (currentParticipant.status === 'approved' || currentParticipant.status === 'attended') &&
+    lobby.status !== 'rating_open' &&
+    lobby.status !== 'completed' &&
+    lobby.status !== 'closed';
 
   function openProfile(player: Player, participant = lobby.participants.find((candidate) => candidate.playerId === player.id)) {
     setProfilePreviewSelection({ participant, player });
@@ -72,6 +153,17 @@ export function LobbyDetailsScreen({
       name: player.name,
     });
     setActionSheetActions(getLobbyPlayerActions(player, isFriend, () => openProfile(player), onInvite, !isRatingOpen));
+  }
+
+  function submitPin() {
+    if (onEnterPrivatePin(pinCode)) {
+      setPinCode('');
+      setPinError(null);
+      setIsPinEntryOpen(false);
+      return;
+    }
+
+    setPinError('That PIN does not match this private game.');
   }
 
   return (
@@ -103,6 +195,7 @@ export function LobbyDetailsScreen({
           lobbyIndex={lobbyIndex}
           onInvite={onInvite}
           playerCount={playerCount}
+          primaryAction={primaryAction}
         />
 
         <GameInfoStrip
@@ -114,22 +207,52 @@ export function LobbyDetailsScreen({
           ]}
         />
 
+        {canLeaveRoom ? (
+          <RoomMembershipPanel participant={currentParticipant} onLeave={onLeaveLobby} />
+        ) : null}
+
+        {isCurrentUserAdmin ? (
+          <HostPanel
+            onApproveWaitlistRequest={onApproveWaitlistRequest}
+            onRejectWaitlistRequest={onRejectWaitlistRequest}
+            pendingRequests={pendingRequests}
+          />
+        ) : null}
+
+        {isPinEntryOpen ? (
+          <PrivatePinPanel
+            error={pinError}
+            onChangePin={(value) => {
+              setPinCode(value.replace(/\D/g, '').slice(0, 4));
+              setPinError(null);
+            }}
+            onSubmit={submitPin}
+            pin={pinCode}
+          />
+        ) : null}
+
         <ParticipantsSection
-          actionLabel={isRatingOpen ? undefined : 'Invite'}
+          actionIcon={playerSectionAction?.icon}
+          actionLabel={isRatingOpen ? undefined : playerSectionAction?.label}
           count={activeParticipants.length}
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
           onRatePlayer={(player) => setRatingWizardPlayer(player)}
-          onAction={onInvite}
+          onAction={playerSectionAction?.onPress}
+          emptyLabel="No players yet."
           participants={activeParticipants}
           showRatingAction={lobby.status === 'rating_open'}
           title="Players"
         />
 
         <ParticipantsSection
+          actionIcon={waitlistSectionAction?.icon}
+          actionLabel={isRatingOpen ? undefined : waitlistSectionAction?.label}
           count={waitlistedParticipants.length}
+          onAction={waitlistSectionAction?.onPress}
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
+          emptyLabel="Waitlist is empty."
           participants={waitlistedParticipants}
           title="Waitlist"
         />
@@ -213,6 +336,7 @@ function RoomHeroCard({
   lobbyIndex,
   onInvite,
   playerCount,
+  primaryAction,
 }: {
   admin?: Player;
   currentParticipant?: LobbyParticipant;
@@ -220,8 +344,8 @@ function RoomHeroCard({
   lobbyIndex: number;
   onInvite: () => void;
   playerCount: string;
+  primaryAction: LobbyPrimaryAction;
 }) {
-  const primaryAction = getLobbyPrimaryAction(lobby, Boolean(currentParticipant && isActiveParticipant(currentParticipant)));
   const showShareAction = lobby.status !== 'rating_open';
 
   return (
@@ -276,6 +400,7 @@ function RoomHeroCard({
           <Pressable
             accessibilityRole="button"
             disabled={primaryAction.disabled}
+            onPress={primaryAction.onPress}
             style={[
               styles.primaryButton,
               primaryAction.tone === 'muted' && styles.joinedButton,
@@ -303,9 +428,102 @@ function RoomHeroCard({
   );
 }
 
+function PrivatePinPanel({
+  error,
+  onChangePin,
+  onSubmit,
+  pin,
+}: {
+  error: string | null;
+  onChangePin: (value: string) => void;
+  onSubmit: () => void;
+  pin: string;
+}) {
+  return (
+    <View style={styles.pinPanel}>
+      <View style={styles.pinHeader}>
+        <View style={styles.pinIcon}>
+          <Ionicons color={colors.primaryDark} name="lock-closed-outline" size={15} />
+        </View>
+        <View style={styles.pinCopy}>
+          <AppText variant="uiBody" weight="800">
+            Private game PIN
+          </AppText>
+          <AppText tone="muted" variant="metadata" weight="600">
+            Enter the 4-digit code from the host or invite.
+          </AppText>
+        </View>
+      </View>
+
+      <View style={styles.pinRow}>
+        <TextInput
+          keyboardType="number-pad"
+          maxLength={4}
+          onChangeText={onChangePin}
+          placeholder="0000"
+          placeholderTextColor={colors.subtle}
+          style={styles.pinInput}
+          value={pin}
+        />
+        <Pressable
+          accessibilityRole="button"
+          disabled={pin.length !== 4}
+          onPress={onSubmit}
+          style={[styles.pinSubmit, pin.length !== 4 && styles.pinSubmitDisabled]}
+        >
+          <AppText align="center" tone="inverse" variant="button" weight="800">
+            Unlock
+          </AppText>
+        </Pressable>
+      </View>
+      {error ? (
+        <AppText tone="danger" variant="metadata" weight="700">
+          {error}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+function RoomMembershipPanel({ onLeave, participant }: { onLeave: () => void; participant: LobbyParticipant }) {
+  const isHost = participant.role === 'admin';
+  const statusLabel = isHost
+    ? 'You are the host.'
+    : participant.role === 'waitlist'
+      ? 'You are on the waitlist.'
+      : 'You are in players.';
+  const buttonLabel = isHost ? 'Leave game' : 'Leave';
+
+  return (
+    <View style={styles.membershipPanel}>
+      <View style={styles.membershipCopy}>
+        <View style={styles.membershipIcon}>
+          <Ionicons color={colors.primaryDark} name={participant.role === 'waitlist' ? 'time-outline' : 'checkmark-circle-outline'} size={15} />
+        </View>
+        <View style={styles.membershipText}>
+          <AppText numberOfLines={1} variant="uiBody" weight="800">
+            {statusLabel}
+          </AppText>
+          <AppText numberOfLines={1} tone="muted" variant="metadata" weight="600">
+            Leave the room completely when your plans change.
+          </AppText>
+        </View>
+      </View>
+      <Pressable accessibilityRole="button" onPress={onLeave} style={styles.leaveRoomButton}>
+        <Ionicons color={colors.danger} name="exit-outline" size={16} />
+        <AppText tone="danger" variant="button" weight="800">
+          {buttonLabel}
+        </AppText>
+      </Pressable>
+    </View>
+  );
+}
+
 function ParticipantsSection({
+  actionIcon,
   actionLabel,
   count,
+  emptyLabel,
   onAction,
   onOpenActions,
   onOpenProfile,
@@ -314,8 +532,10 @@ function ParticipantsSection({
   showRatingAction = false,
   title,
 }: {
+  actionIcon?: keyof typeof Ionicons.glyphMap;
   actionLabel?: string;
   count: number;
+  emptyLabel: string;
   onAction?: () => void;
   onOpenActions: (player: Player) => void;
   onOpenProfile: (player: Player, participant: LobbyParticipant) => void;
@@ -337,7 +557,7 @@ function ParticipantsSection({
         </View>
         {actionLabel ? (
           <Pressable accessibilityRole="button" onPress={onAction} style={styles.sectionAction}>
-            <Ionicons color={colors.accentLime} name="person-add-outline" size={15} />
+            <Ionicons color={colors.accentLime} name={actionIcon ?? 'log-in-outline'} size={15} />
             <AppText tone="accent" variant="button" weight="800">
               {actionLabel}
             </AppText>
@@ -346,21 +566,30 @@ function ParticipantsSection({
       </View>
 
       <View style={styles.participantList}>
-        {participants.map((participant) => {
-          const player = players.find((candidate) => candidate.id === participant.playerId);
+        {participants.length > 0 ? (
+          participants.map((participant) => {
+            const player = players.find((candidate) => candidate.id === participant.playerId);
 
-          return player ? (
-            <ParticipantRow
-              key={`${participant.playerId}-${participant.role}`}
-              onMore={() => onOpenActions(player)}
-              onPressProfile={() => onOpenProfile(player, participant)}
-              onRatePlayer={() => onRatePlayer?.(player)}
-              participant={participant}
-              player={player}
-              showRatingAction={showRatingAction}
-            />
-          ) : null;
-        })}
+            return player ? (
+              <ParticipantRow
+                key={`${participant.playerId}-${participant.role}`}
+                onMore={() => onOpenActions(player)}
+                onPressProfile={() => onOpenProfile(player, participant)}
+                onRatePlayer={() => onRatePlayer?.(player)}
+                participant={participant}
+                player={player}
+                showRatingAction={showRatingAction}
+              />
+            ) : null;
+          })
+        ) : (
+          <View style={styles.participantEmptyState}>
+            <Ionicons color={colors.subtle} name="people-outline" size={15} />
+            <AppText tone="muted" variant="metadata" weight="700">
+              {emptyLabel}
+            </AppText>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -405,11 +634,138 @@ function ParticipantRow({
   );
 }
 
-export function LobbyFloatingChatButton({ lobby }: { lobby: Lobby }) {
+function HostPanel({
+  onApproveWaitlistRequest,
+  onRejectWaitlistRequest,
+  pendingRequests,
+}: {
+  onApproveWaitlistRequest: (playerId: string) => void;
+  onRejectWaitlistRequest: (playerId: string) => void;
+  pendingRequests: Lobby['joinRequests'];
+}) {
+  return (
+    <View style={styles.hostPanel}>
+      <View style={styles.hostPanelHeader}>
+        <View style={styles.hostPanelTitleRow}>
+          <View style={styles.hostPanelIcon}>
+            <Ionicons color={colors.primaryDark} name="shield-checkmark-outline" size={16} />
+          </View>
+          <View style={styles.hostPanelCopy}>
+            <AppText variant="uiBody" weight="800">
+              Host panel
+            </AppText>
+            <AppText tone="muted" variant="metadata" weight="600">
+              Approvals go to the waitlist first.
+            </AppText>
+          </View>
+        </View>
+        <View style={styles.requestCountPill}>
+          <AppText align="center" tone="accent" variant="caption" weight="800">
+            {pendingRequests.length}
+          </AppText>
+        </View>
+      </View>
+
+      {pendingRequests.length > 0 ? (
+        <View style={styles.requestList}>
+          {pendingRequests.map((request) => {
+            const player = players.find((candidate) => candidate.id === request.playerId);
+
+            return player ? (
+              <View key={request.id} style={styles.requestCard}>
+                <HostRequestRow
+                  onApprove={() => onApproveWaitlistRequest(request.playerId)}
+                  onReject={() => onRejectWaitlistRequest(request.playerId)}
+                  player={player}
+                />
+                <View style={styles.requestReasonLine}>
+                  <Ionicons color={colors.accentSea} name="information-circle-outline" size={13} />
+                  <AppText numberOfLines={1} tone="muted" variant="metadata" weight="600">
+                    {formatRequestReasons(request.reasons)} request
+                  </AppText>
+                </View>
+              </View>
+            ) : null;
+          })}
+        </View>
+      ) : (
+        <AppText tone="muted" variant="metadata" weight="600">
+          No pending waitlist requests.
+        </AppText>
+      )}
+    </View>
+  );
+}
+
+function HostRequestRow({
+  onApprove,
+  onReject,
+  player,
+}: {
+  onApprove: () => void;
+  onReject: () => void;
+  player: Player;
+}) {
+  return (
+    <View style={styles.hostRequestRow}>
+      <View style={styles.hostRequestInfo}>
+        <View style={styles.hostRequestAvatar}>
+          <AppText align="center" variant="titleSmall" weight="800">
+            {player.initials}
+          </AppText>
+          <View style={styles.hostRequestStatusBadge}>
+            <Ionicons color={colors.ink} name="hourglass" size={9} />
+          </View>
+        </View>
+
+        <View style={styles.hostRequestCopy}>
+          <AppText numberOfLines={1} variant="titleSmall" weight="800">
+            {player.name}
+          </AppText>
+          <View style={styles.hostRequestChips}>
+            <View style={styles.hostRequestChip}>
+              <AppText tone="primary" variant="caption" weight="800">
+                {player.level}
+              </AppText>
+            </View>
+            <View style={styles.hostRequestChip}>
+              <Ionicons color={colors.accentGoldDark} name="star" size={9} />
+              <AppText tone="primary" variant="caption" weight="800">
+                {getPlayerRating(player)}
+              </AppText>
+            </View>
+            <View style={[styles.hostRequestChip, styles.hostRequestPointsChip]}>
+              <Ionicons color={colors.accentGoldDark} name="flash-outline" size={9} />
+              <AppText numberOfLines={1} tone="primary" variant="caption" weight="800">
+                {player.tocaPoints} pts
+              </AppText>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.hostRequestActions}>
+        <Pressable accessibilityLabel="Reject request" accessibilityRole="button" onPress={onReject} style={styles.hostRequestIconButton}>
+          <Ionicons color={colors.muted} name="close" size={16} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Approve request"
+          accessibilityRole="button"
+          onPress={onApprove}
+          style={[styles.hostRequestIconButton, styles.hostRequestApproveButton]}
+        >
+          <Ionicons color={colors.textOnGreen} name="checkmark" size={16} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+export function LobbyFloatingChatButton({ lobby, onPress }: { lobby: Lobby; onPress: () => void }) {
   const unreadCount = lobby.chatChannels.reduce((total, channel) => total + channel.unreadCount, 0);
 
   return (
-    <Pressable accessibilityRole="button" style={styles.floatingChatButton}>
+    <Pressable accessibilityLabel="Open lobby chat" accessibilityRole="button" onPress={onPress} style={styles.floatingChatButton}>
       <Ionicons color={colors.textOnGreen} name="chatbubbles-outline" size={23} />
       {unreadCount > 0 ? (
         <View style={styles.floatingChatBadge}>
@@ -420,6 +776,171 @@ export function LobbyFloatingChatButton({ lobby }: { lobby: Lobby }) {
       ) : null}
     </Pressable>
   );
+}
+
+export function LobbyChatSheet({
+  lobby,
+  messages,
+  onClose,
+  onSendMessage,
+  visible,
+}: {
+  lobby: Lobby;
+  messages: ChatMessage[];
+  onClose: () => void;
+  onSendMessage: (channelId: string, body: string) => void;
+  visible: boolean;
+}) {
+  const [activeChannelId, setActiveChannelId] = useState(lobby.chatChannels[0]?.id ?? '');
+  const [draft, setDraft] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const activeChannel = lobby.chatChannels.find((channel) => channel.id === activeChannelId) ?? lobby.chatChannels[0];
+  const channelMessages = activeChannel
+    ? messages.filter((message) => message.channelId === activeChannel.id)
+    : [];
+
+  useEffect(() => {
+    setActiveChannelId(lobby.chatChannels[0]?.id ?? '');
+    setDraft('');
+    setIsExpanded(false);
+  }, [lobby.id, lobby.chatChannels]);
+
+  function sendMessage() {
+    if (!activeChannel || !draft.trim()) {
+      return;
+    }
+
+    onSendMessage(activeChannel.id, draft);
+    setDraft('');
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.chatModalRoot}>
+        <Pressable accessibilityLabel="Close lobby chat" accessibilityRole="button" onPress={onClose} style={styles.chatBackdrop} />
+
+        <View style={[styles.chatSheet, isExpanded && styles.chatSheetExpanded]}>
+          <View style={styles.chatHandle} />
+
+          <View style={styles.chatHeader}>
+            <View style={styles.chatTitleWrap}>
+              <View style={styles.chatIcon}>
+                <Ionicons color={colors.primaryDark} name="chatbubbles-outline" size={17} />
+              </View>
+              <View style={styles.chatTitleCopy}>
+                <AppText numberOfLines={1} variant="titleSmall" weight="900">
+                  Lobby chat
+                </AppText>
+                <AppText numberOfLines={1} tone="muted" variant="metadata" weight="600">
+                  {lobby.title}
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.chatHeaderActions}>
+              <Pressable
+                accessibilityLabel={isExpanded ? 'Collapse chat' : 'Expand chat'}
+                accessibilityRole="button"
+                onPress={() => setIsExpanded((current) => !current)}
+                style={styles.chatIconButton}
+              >
+                <Ionicons color={colors.ink} name={isExpanded ? 'contract-outline' : 'expand-outline'} size={17} />
+              </Pressable>
+              <Pressable accessibilityLabel="Close chat" accessibilityRole="button" onPress={onClose} style={styles.chatIconButton}>
+                <Ionicons color={colors.ink} name="close" size={17} />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.chatTabs}>
+            {lobby.chatChannels.map((channel) => {
+              const isActive = channel.id === activeChannel?.id;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={channel.id}
+                  onPress={() => setActiveChannelId(channel.id)}
+                  style={[styles.chatTab, isActive && styles.chatTabActive]}
+                >
+                  <AppText align="center" tone={isActive ? 'accent' : 'muted'} variant="caption" weight="900">
+                    {getChatChannelLabel(channel)}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <ScrollView contentContainerStyle={styles.chatMessageList} showsVerticalScrollIndicator={false}>
+            {channelMessages.length > 0 ? (
+              channelMessages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
+            ) : (
+              <View style={styles.chatEmptyState}>
+                <Ionicons color={colors.accentSea} name="chatbox-ellipses-outline" size={24} />
+                <AppText align="center" tone="muted" variant="metadata" weight="600">
+                  No messages in this channel yet.
+                </AppText>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.chatComposer}>
+            <TextInput
+              multiline
+              onChangeText={setDraft}
+              placeholder="Write a message"
+              placeholderTextColor={colors.subtle}
+              style={styles.chatInput}
+              value={draft}
+            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={!draft.trim()}
+              onPress={sendMessage}
+              style={[styles.chatSendButton, !draft.trim() && styles.chatSendButtonDisabled]}
+            >
+              <Ionicons color={colors.textOnGreen} name="send" size={16} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ChatMessageBubble({ message }: { message: ChatMessage }) {
+  const player = players.find((candidate) => candidate.id === message.playerId);
+  const isMine = message.playerId === currentPlayer.id;
+
+  return (
+    <View style={[styles.chatBubbleRow, isMine && styles.chatBubbleRowMine]}>
+      {!isMine && player ? <Avatar player={player} size={30} /> : null}
+      <View style={[styles.chatBubble, isMine && styles.chatBubbleMine]}>
+        <View style={styles.chatBubbleMeta}>
+          <AppText numberOfLines={1} tone={isMine ? 'inverse' : 'primary'} variant="caption" weight="900">
+            {isMine ? 'You' : player?.name ?? 'Player'}
+          </AppText>
+          <AppText tone={isMine ? 'inverse' : 'subtle'} variant="caption" weight="700">
+            {formatChatTime(message.createdAt)}
+          </AppText>
+        </View>
+        <AppText tone={isMine ? 'inverse' : 'primary'} variant="bodySmall" weight="600">
+          {message.body}
+        </AppText>
+      </View>
+    </View>
+  );
+}
+
+function getChatChannelLabel(channel: ChatChannel) {
+  return channel.type === 'admin_joined' ? 'Players only' : 'All lobby';
+}
+
+function formatChatTime(createdAt: string) {
+  return new Date(createdAt).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function StatusPill({
@@ -460,7 +981,7 @@ function RolePill({ role }: { role: LobbyParticipant['role'] }) {
   return (
     <View style={[styles.rolePill, isAdmin ? styles.rolePillLime : styles.rolePillGold]}>
       <AppText tone={isAdmin ? 'accent' : 'warning'} variant="caption" weight="800">
-        Admin
+        Host
       </AppText>
     </View>
   );
@@ -572,7 +1093,7 @@ function getRankLabel(lobby: Lobby) {
     return lobby.rankExact ?? 'Exact';
   }
 
-  return `${lobby.rankMin} to ${lobby.rankMax}`;
+  return `${lobby.rankMin}/${lobby.rankMax}`;
 }
 
 function getCompactRankLabel(lobby: Lobby) {
@@ -583,26 +1104,25 @@ function getCompactRankLabel(lobby: Lobby) {
   return getRankLabel(lobby);
 }
 
-function getPrimaryAction(lobby: Lobby) {
-  if (lobby.status === 'full') {
-    return lobby.waitlistEnabled ? 'Join waitlist' : 'View details';
-  }
-
-  if (lobby.visibility !== 'public') {
-    return lobby.waitlistEnabled ? 'Join waitlist' : 'Request access';
-  }
-
-  return 'Join game';
-}
-
-function getLobbyPrimaryAction(lobby: Lobby, isJoined: boolean): {
-  disabled: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconColor: string;
-  label: string;
-  textTone: 'accent' | 'danger' | 'inverse' | 'muted' | 'primary' | 'subtle' | 'warning';
-  tone: 'green' | 'muted' | 'rating';
-} {
+function getLobbyPrimaryAction({
+  allLobbies,
+  currentParticipant,
+  hasPrivateAccess,
+  lobby,
+  onJoinGame,
+  onJoinWaitlist,
+  onOpenPinEntry,
+  onRequestWaitlistApproval,
+}: {
+  allLobbies: Lobby[];
+  currentParticipant?: LobbyParticipant;
+  hasPrivateAccess: boolean;
+  lobby: Lobby;
+  onJoinGame: () => void;
+  onJoinWaitlist: () => void;
+  onOpenPinEntry: () => void;
+  onRequestWaitlistApproval: () => void;
+}): LobbyPrimaryAction {
   if (lobby.status === 'rating_open') {
     return {
       disabled: false,
@@ -625,7 +1145,59 @@ function getLobbyPrimaryAction(lobby: Lobby, isJoined: boolean): {
     };
   }
 
-  if (isJoined) {
+  if (currentParticipant?.role === 'admin') {
+    return {
+      disabled: true,
+      icon: 'shield-checkmark',
+      iconColor: colors.muted,
+      label: 'Host',
+      textTone: 'muted',
+      tone: 'muted',
+    };
+  }
+
+  const accessContext = {
+    accessCode: hasPrivateAccess ? lobby.accessCode : undefined,
+    allLobbies,
+  };
+  const accessDecision = getLobbyAccessDecision(currentPlayer, lobby, accessContext);
+  const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
+
+  if (accessDecision.kind === 'requires_password') {
+    return {
+      disabled: false,
+      icon: 'keypad-outline',
+      iconColor: colors.textOnGreen,
+      label: 'Enter PIN',
+      onPress: onOpenPinEntry,
+      textTone: 'inverse',
+      tone: 'green',
+    };
+  }
+
+  if (relationship === 'pending_approval' && !hasPrivateAccess) {
+    return {
+      disabled: true,
+      icon: 'hourglass-outline',
+      iconColor: colors.muted,
+      label: 'Request pending',
+      textTone: 'muted',
+      tone: 'muted',
+    };
+  }
+
+  if (relationship === 'waitlist') {
+    return {
+      disabled: true,
+      icon: 'time-outline',
+      iconColor: colors.muted,
+      label: 'On waitlist',
+      textTone: 'muted',
+      tone: 'muted',
+    };
+  }
+
+  if (relationship === 'joined' || relationship === 'attended') {
     return {
       disabled: true,
       icon: 'checkmark',
@@ -636,14 +1208,166 @@ function getLobbyPrimaryAction(lobby: Lobby, isJoined: boolean): {
     };
   }
 
+  if (accessDecision.kind === 'request_approval') {
+    return {
+      disabled: false,
+      icon: 'mail-outline',
+      iconColor: colors.textOnGreen,
+      label: 'Request waitlist',
+      onPress: onRequestWaitlistApproval,
+      textTone: 'inverse',
+      tone: 'green',
+    };
+  }
+
+  if (accessDecision.kind === 'locked') {
+    return {
+      disabled: true,
+      icon: 'lock-closed-outline',
+      iconColor: colors.muted,
+      label: 'Locked',
+      textTone: 'muted',
+      tone: 'muted',
+    };
+  }
+
+  const waitlistDecision = getJoinWaitlistDecision(currentPlayer, lobby, accessContext);
+
+  if (waitlistDecision.canJoinWaitlist) {
+    return {
+      disabled: false,
+      icon: 'hourglass-outline',
+      iconColor: colors.textOnGreen,
+      label: waitlistDecision.label,
+      onPress: onJoinWaitlist,
+      textTone: 'inverse',
+      tone: 'green',
+    };
+  }
+
+  const joinDecision = getJoinGameDecision(currentPlayer, lobby, accessContext);
+
+  if (joinDecision.canJoin) {
+    return {
+      disabled: false,
+      icon: 'log-in-outline',
+      iconColor: colors.textOnGreen,
+      label: 'Join players',
+      onPress: onJoinGame,
+      textTone: 'inverse',
+      tone: 'green',
+    };
+  }
+
   return {
-    disabled: false,
-    icon: 'chevron-forward',
-    iconColor: colors.textOnGreen,
-    label: getPrimaryAction(lobby) === 'Join game' ? 'Join' : getPrimaryAction(lobby),
-    textTone: 'inverse',
-    tone: 'green',
+    disabled: true,
+    icon: 'close-circle-outline',
+    iconColor: colors.muted,
+    label: joinDecision.label,
+    textTone: 'muted',
+    tone: 'muted',
   };
+}
+
+function getPlayerSectionAction({
+  allLobbies,
+  hasPrivateAccess,
+  lobby,
+  onJoinGame,
+}: {
+  allLobbies: Lobby[];
+  hasPrivateAccess: boolean;
+  lobby: Lobby;
+  onJoinGame: () => void;
+}): LobbySectionAction | undefined {
+  const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
+  const activeCurrentParticipant = getActiveCurrentParticipant(lobby);
+
+  if (
+    activeCurrentParticipant?.role === 'admin' ||
+    relationship === 'joined' ||
+    relationship === 'attended' ||
+    lobby.status === 'rating_open'
+  ) {
+    return undefined;
+  }
+
+  const joinDecision = getJoinGameDecision(currentPlayer, lobby, {
+    accessCode: hasPrivateAccess ? lobby.accessCode : undefined,
+    allLobbies,
+  });
+
+  return joinDecision.canJoin
+    ? {
+        icon: 'log-in-outline',
+        label: 'Join players',
+        onPress: onJoinGame,
+      }
+    : undefined;
+}
+
+function getWaitlistSectionAction({
+  allLobbies,
+  hasPrivateAccess,
+  lobby,
+  onJoinWaitlist,
+}: {
+  allLobbies: Lobby[];
+  hasPrivateAccess: boolean;
+  lobby: Lobby;
+  onJoinWaitlist: () => void;
+}): LobbySectionAction | undefined {
+  const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
+  const activeCurrentParticipant = getActiveCurrentParticipant(lobby);
+
+  if (activeCurrentParticipant?.role === 'admin' || relationship === 'waitlist' || lobby.status === 'rating_open') {
+    return undefined;
+  }
+
+  const waitlistDecision = getJoinWaitlistDecision(currentPlayer, lobby, {
+    accessCode: hasPrivateAccess ? lobby.accessCode : undefined,
+    allLobbies,
+  });
+
+  return waitlistDecision.canJoinWaitlist
+    ? {
+        icon: 'hourglass-outline',
+        label: 'Join waitlist',
+        onPress: onJoinWaitlist,
+      }
+    : undefined;
+}
+
+function getActiveCurrentParticipant(lobby: Lobby) {
+  return lobby.participants.find(
+    (participant) =>
+      participant.playerId === currentPlayer.id &&
+      (participant.status === 'approved' || participant.status === 'attended'),
+  );
+}
+
+function formatRequestReasons(reasons: Lobby['joinRequests'][number]['reasons']) {
+  if (reasons.length === 0) {
+    return 'Waitlist approval';
+  }
+
+  return reasons
+    .map((reason) => {
+      if (reason === 'gender_exception') {
+        return 'Gender';
+      }
+
+      if (reason === 'level_exception') {
+        return 'Rank';
+      }
+
+      if (reason === 'private_access') {
+        return 'Private game';
+      }
+
+      return 'Approval';
+    })
+    .join(' / ');
 }
 
 function getPlayerRating(player: Player) {
@@ -842,6 +1566,175 @@ const styles = StyleSheet.create({
     zIndex: 20,
     ...shadows.nav,
   },
+  chatBackdrop: {
+    backgroundColor: 'rgba(18, 59, 42, 0.18)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  chatBubble: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: 18,
+    borderTopLeftRadius: 8,
+    borderWidth: 1,
+    flexShrink: 1,
+    gap: spacing.xs,
+    maxWidth: '82%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chatBubbleMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'space-between',
+  },
+  chatBubbleMine: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 8,
+  },
+  chatBubbleRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  chatBubbleRowMine: {
+    justifyContent: 'flex-end',
+  },
+  chatComposer: {
+    alignItems: 'flex-end',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.xs,
+  },
+  chatEmptyState: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.xl,
+  },
+  chatHandle: {
+    alignSelf: 'center',
+    backgroundColor: colors.border,
+    borderRadius: radius.round,
+    height: 4,
+    width: 42,
+  },
+  chatHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  chatHeaderActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  chatIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  chatIconButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  chatInput: {
+    color: colors.ink,
+    flex: 1,
+    fontFamily: fontFamilies.manrope.medium,
+    fontSize: 14,
+    letterSpacing: 0,
+    maxHeight: 88,
+    minHeight: 42,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  chatMessageList: {
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  chatModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  chatSendButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  chatSendButtonDisabled: {
+    opacity: 0.46,
+  },
+  chatSheet: {
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.78)',
+    borderRadius: 26,
+    borderWidth: 1,
+    gap: spacing.md,
+    maxHeight: 500,
+    padding: spacing.lg,
+    ...shadows.hero,
+  },
+  chatSheetExpanded: {
+    maxHeight: '82%',
+  },
+  chatTab: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
+  },
+  chatTabActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  chatTabs: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  chatTitleCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  chatTitleWrap: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
   goldPill: {
     backgroundColor: 'rgba(255, 200, 61, 0.10)',
     borderColor: 'rgba(255, 200, 61, 0.28)',
@@ -874,9 +1767,146 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  hostPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+    ...shadows.soft,
+  },
+  hostPanelCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  hostPanelHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  hostPanelIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  hostPanelTitleRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  hostRequestActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: spacing.xs,
+  },
+  hostRequestApproveButton: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  hostRequestAvatar: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 42,
+  },
+  hostRequestChip: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    minHeight: 18,
+    paddingHorizontal: 6,
+  },
+  hostRequestChips: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 3,
+    minWidth: 0,
+  },
+  hostRequestCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  hostRequestIconButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  hostRequestInfo: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  hostRequestPointsChip: {
+    maxWidth: 66,
+  },
+  hostRequestRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 66,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    ...shadows.soft,
+  },
+  hostRequestStatusBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    borderColor: colors.surfaceRaised,
+    borderRadius: radius.round,
+    borderWidth: 2,
+    bottom: -1,
+    height: 16,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: -1,
+    width: 16,
+  },
   limePill: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
+  },
+  leaveRoomButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(217, 74, 58, 0.24)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
   },
   lobbyTitle: {
     maxWidth: 278,
@@ -899,6 +1929,40 @@ const styles = StyleSheet.create({
   noteText: {
     color: colors.muted,
     maxWidth: 286,
+  },
+  membershipCopy: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  membershipIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  membershipPanel: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    ...shadows.soft,
+  },
+  membershipText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   onlineDot: {
     backgroundColor: colors.accentLime,
@@ -931,6 +1995,76 @@ const styles = StyleSheet.create({
   },
   participantList: {
     gap: spacing.sm,
+  },
+  participantEmptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  pinCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  pinHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  pinIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  pinInput: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: colors.ink,
+    flex: 1,
+    fontFamily: fontFamilies.manrope.bold,
+    fontSize: 18,
+    letterSpacing: 0,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    textAlign: 'center',
+  },
+  pinPanel: {
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+    ...shadows.soft,
+  },
+  pinRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  pinSubmit: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+  },
+  pinSubmitDisabled: {
+    opacity: 0.52,
   },
   participantRow: {
     alignItems: 'center',
@@ -1018,6 +2152,29 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(246, 201, 69, 0.28)',
     borderColor: 'rgba(239, 165, 26, 0.28)',
     borderWidth: 1,
+  },
+  requestCard: {
+    gap: spacing.xs,
+  },
+  requestCountPill: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    minWidth: 28,
+    paddingHorizontal: spacing.xs,
+  },
+  requestList: {
+    gap: spacing.xs,
+  },
+  requestReasonLine: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
   rolePill: {
     borderRadius: radius.round,

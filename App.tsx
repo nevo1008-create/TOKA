@@ -15,27 +15,42 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
-import { currentPlayer, lobbies, notifications, players as playersForInvite } from './src/data/mock';
-import { isLobbyFull } from './src/features/lobbies/lobbyRules';
+import {
+  chatMessages as mockChatMessages,
+  currentPlayer,
+  lobbies as mockLobbies,
+  notifications,
+  players as playersForInvite,
+} from './src/data/mock';
+import {
+  approveJoinRequest,
+  joinGame,
+  joinWaitlist,
+  leaveLobby,
+  rejectJoinRequest,
+  requestWaitlistApproval,
+} from './src/features/lobbies/lobbyActions';
+import { getMinutesUntilLobbyStart } from './src/features/lobbies/lobbyDateTime';
+import { defaultCancellationPenaltyMinutes, isJoinedParticipant, isLobbyFull } from './src/features/lobbies/lobbyRules';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { CommunityScreen } from './src/screens/CommunityScreen';
 import { CommunityGuidelinesScreen } from './src/screens/CommunityGuidelinesScreen';
-import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
+import { CreateLobbyScreen, type CreateLobbyDraft } from './src/screens/CreateLobbyScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { GamesScreen } from './src/screens/GamesScreen';
 import { HelpSupportScreen } from './src/screens/HelpSupportScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { InviteComposerScreen, type InviteComposerParams } from './src/screens/InviteComposerScreen';
-import { LobbyDetailsScreen, LobbyFloatingChatButton } from './src/screens/LobbyDetailsScreen';
+import { LobbyChatSheet, LobbyDetailsScreen, LobbyFloatingChatButton } from './src/screens/LobbyDetailsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { PrivacyPolicyScreen } from './src/screens/PrivacyPolicyScreen';
 import { ReportProblemScreen } from './src/screens/ReportProblemScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
 import { colors, spacing } from './src/theme';
-import type { Lobby, Notification, Player } from './src/types';
+import type { ChatMessage, Lobby, Notification, Player } from './src/types';
 
 export default function App() {
   const [homeFontsLoaded] = useFonts({
@@ -49,6 +64,9 @@ export default function App() {
   const [authFlow, setAuthFlow] = useState<'app' | 'auth' | 'onboarding'>('auth');
   const [authEmail, setAuthEmail] = useState('');
   const [profilePlayer, setProfilePlayer] = useState<Player>(currentPlayer);
+  const [lobbyItems, setLobbyItems] = useState<Lobby[]>(mockLobbies);
+  const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
+  const [chatMessageItems, setChatMessageItems] = useState<ChatMessage[]>(mockChatMessages);
   const [notificationItems, setNotificationItems] = useState<Notification[]>(notifications);
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -63,28 +81,32 @@ export default function App() {
   const [gamesInitialSection, setGamesInitialSection] = useState<'Find Games' | 'My Games'>('Find Games');
   const [selectedFilter, setSelectedFilter] = useState('All Games');
   const [inviteParams, setInviteParams] = useState<InviteComposerParams | null>(null);
-  const [selectedLobby, setSelectedLobby] = useState<Lobby | null>(null);
+  const [isLobbyChatOpen, setIsLobbyChatOpen] = useState(false);
+  const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = notificationItems.filter((notification) => !notification.read);
   const unreadNotificationCount = unreadNotifications.length;
+  const selectedLobby = selectedLobbyId
+    ? lobbyItems.find((lobby) => lobby.id === selectedLobbyId) ?? null
+    : null;
   const selectedLobbyIndex = selectedLobby
     ? Math.max(
-        lobbies.findIndex((lobby) => lobby.id === selectedLobby.id),
+        lobbyItems.findIndex((lobby) => lobby.id === selectedLobby.id),
         0,
       )
     : 0;
 
   const filteredLobbies = useMemo(() => {
     if (selectedFilter === 'Has spots') {
-      return lobbies.filter((lobby) => !isLobbyFull(lobby));
+      return lobbyItems.filter((lobby) => !isLobbyFull(lobby));
     }
 
     if (selectedFilter === 'Requests') {
-      return lobbies.filter((lobby) => lobby.joinRequests.length > 0);
+      return lobbyItems.filter((lobby) => lobby.joinRequests.length > 0);
     }
 
-    return lobbies;
-  }, [selectedFilter]);
+    return lobbyItems;
+  }, [lobbyItems, selectedFilter]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
@@ -101,7 +123,7 @@ export default function App() {
     isReportProblemOpen,
     legalScreen,
     isSideMenuOpen,
-    selectedLobby?.id,
+    selectedLobbyId,
     viewedProfilePlayer?.id,
   ]);
 
@@ -117,7 +139,8 @@ export default function App() {
     setIsReportProblemOpen(false);
     setLegalScreen(null);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setActiveTab(tab);
   }
 
@@ -134,7 +157,8 @@ export default function App() {
     setIsReportProblemOpen(false);
     setLegalScreen(null);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setActiveTab('games');
   }
 
@@ -150,7 +174,8 @@ export default function App() {
     setIsReportProblemOpen(false);
     setLegalScreen(null);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setActiveTab('create');
   }
 
@@ -184,6 +209,7 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(params);
+    setIsLobbyChatOpen(false);
     setLegalScreen(null);
   }
 
@@ -205,7 +231,8 @@ export default function App() {
     setIsCommunityGuidelinesOpen(false);
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
-    setSelectedLobby(null);
+    setSelectedLobbyId(null);
+    setIsLobbyChatOpen(false);
     setViewedProfilePlayer(player);
     setLegalScreen(null);
   }
@@ -223,7 +250,8 @@ export default function App() {
     setIsCommunityGuidelinesOpen(false);
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
-    setSelectedLobby(null);
+    setSelectedLobbyId(null);
+    setIsLobbyChatOpen(false);
     setIsEditProfileOpen(true);
     setLegalScreen(null);
   }
@@ -247,7 +275,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setSelectedLobbyId(null);
+    setIsLobbyChatOpen(false);
     setActiveTab('create');
     setLegalScreen(null);
   }
@@ -262,7 +291,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(lobby);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(lobby.id);
     setActiveTab('games');
     setLegalScreen(null);
   }
@@ -287,7 +317,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setSelectedLobbyId(null);
+    setIsLobbyChatOpen(false);
     setActiveTab('profile');
     setLegalScreen(null);
   }
@@ -304,7 +335,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setActiveTab('games');
     setLegalScreen(null);
   }
@@ -319,7 +351,8 @@ export default function App() {
     setIsCommunityGuidelinesOpen(false);
     setIsHelpSupportOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setIsReportProblemOpen(true);
     setLegalScreen(null);
   }
@@ -338,7 +371,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setIsAboutUsOpen(true);
     setLegalScreen(null);
   }
@@ -357,7 +391,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setIsCommunityGuidelinesOpen(true);
     setLegalScreen(null);
   }
@@ -376,7 +411,8 @@ export default function App() {
     setIsCommunityGuidelinesOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setIsHelpSupportOpen(true);
     setLegalScreen(null);
   }
@@ -396,7 +432,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setLegalScreen('privacy');
   }
 
@@ -411,7 +448,8 @@ export default function App() {
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
     setInviteParams(null);
-    setSelectedLobby(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
     setLegalScreen('terms');
   }
 
@@ -421,7 +459,305 @@ export default function App() {
 
   function openNotifications() {
     setIsSideMenuOpen(false);
+    setIsLobbyChatOpen(false);
     setIsNotificationsOpen(true);
+  }
+
+  function updateLobbyItem(nextLobby: Lobby) {
+    setLobbyItems((current) => current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby)));
+  }
+
+  function showLobbyActionMessages(messages: string[]) {
+    if (messages.length === 0) {
+      return;
+    }
+
+    Alert.alert('Game update', messages.join('\n'));
+  }
+
+  function addLobbyNotification(notification: Omit<Notification, 'id' | 'read'>) {
+    setNotificationItems((current) => [
+      {
+        ...notification,
+        id: `n-${Date.now()}-${current.length}`,
+        read: false,
+      },
+      ...current,
+    ]);
+  }
+
+  function handleJoinGame(lobby: Lobby) {
+    const result = joinGame(lobby, profilePlayer, {
+      accessCode: verifiedPrivateLobbyIds.includes(lobby.id) ? lobby.accessCode : undefined,
+      allLobbies: lobbyItems,
+    });
+
+    if (result.success) {
+      updateLobbyItem(result.lobby);
+      return;
+    }
+
+    showLobbyActionMessages(result.messages);
+  }
+
+  function handleJoinWaitlist(lobby: Lobby) {
+    const participant = lobby.participants.find((candidate) => candidate.playerId === profilePlayer.id);
+    const isActiveInRoom = participant && (participant.status === 'approved' || participant.status === 'attended');
+    const penaltyMinutes = lobby.cancellationPenaltyMinutes ?? defaultCancellationPenaltyMinutes;
+    const isLateMoveFromJoined =
+      participant &&
+      isJoinedParticipant(participant) &&
+      getMinutesUntilLobbyStart(lobby.startsAt) < penaltyMinutes;
+
+    const moveToWaitlist = () => {
+      const result = joinWaitlist(lobby, profilePlayer, {
+        accessCode: verifiedPrivateLobbyIds.includes(lobby.id) ? lobby.accessCode : undefined,
+        allLobbies: lobbyItems,
+      });
+
+      if (result.success) {
+        updateLobbyItem(result.lobby);
+        if (!isActiveInRoom) {
+          addLobbyNotification({
+            body: `You are now on the waitlist for ${lobby.title}.`,
+            lobbyId: lobby.id,
+            title: 'Joined waitlist',
+            type: 'waitlist_update',
+          });
+        }
+        return;
+      }
+
+      showLobbyActionMessages(result.messages);
+    };
+
+    if (isLateMoveFromJoined) {
+      Alert.alert(
+        'Late change penalty',
+        'Moving to waitlist now may apply a late-change penalty. Continue?',
+        [
+          { style: 'cancel', text: 'Cancel' },
+          { onPress: moveToWaitlist, text: 'Continue' },
+        ],
+      );
+      return;
+    }
+
+    moveToWaitlist();
+  }
+
+  function handleRequestWaitlistApproval(lobby: Lobby) {
+    const result = requestWaitlistApproval(lobby, profilePlayer);
+
+    if (result.success) {
+      updateLobbyItem(result.lobby);
+      const host = playersForInvite.find((player) => player.id === lobby.adminId);
+
+      addLobbyNotification({
+        body: `You can keep viewing ${lobby.title} while ${host?.name ?? 'the host'} reviews your request.`,
+        lobbyId: lobby.id,
+        title: 'Request sent',
+        type: 'waitlist_update',
+      });
+      return;
+    }
+
+    showLobbyActionMessages(result.messages);
+  }
+
+  function handleApproveWaitlistRequest(lobby: Lobby, playerId: string) {
+    const player = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    if (!player) {
+      showLobbyActionMessages(['Could not find this player in the mock player list.']);
+      return;
+    }
+
+    const result = approveJoinRequest(lobby, player, 'waitlist', {
+      allLobbies: lobbyItems,
+    });
+
+    updateLobbyItem(result.lobby);
+    addLobbyNotification({
+      body: `${player.name} was added to the waitlist for ${lobby.title}.`,
+      lobbyId: lobby.id,
+      title: 'Request approved',
+      type: 'request_approved',
+    });
+    showLobbyActionMessages(result.messages.length > 0 ? result.messages : [`${player.name} approved to waitlist.`]);
+  }
+
+  function handleRejectJoinRequest(lobby: Lobby, playerId: string) {
+    const player = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    updateLobbyItem(rejectJoinRequest(lobby, playerId));
+    addLobbyNotification({
+      body: `${player?.name ?? 'The player'} will see this as rejected when backend notifications are connected.`,
+      lobbyId: lobby.id,
+      title: 'Request rejected',
+      type: 'request_rejected',
+    });
+  }
+
+  function handleLeaveLobby(lobby: Lobby) {
+    const participant = lobby.participants.find((candidate) => candidate.playerId === profilePlayer.id);
+
+    if (!participant) {
+      return;
+    }
+
+    updateLobbyItem(leaveLobby(lobby, profilePlayer.id));
+    addLobbyNotification({
+      body: `You left ${lobby.title}.`,
+      lobbyId: lobby.id,
+      title: 'Left room',
+      type: 'waitlist_update',
+    });
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setGamesInitialSection('My Games');
+    setActiveTab('games');
+  }
+
+  function handleEnterPrivatePin(lobby: Lobby, pin: string) {
+    if (lobby.accessCode !== pin.trim()) {
+      return false;
+    }
+
+    setVerifiedPrivateLobbyIds((current) => (current.includes(lobby.id) ? current : [...current, lobby.id]));
+    return true;
+  }
+
+  function openLobbyChat(lobby: Lobby) {
+    setIsLobbyChatOpen(true);
+    setLobbyItems((current) =>
+      current.map((candidate) =>
+        candidate.id === lobby.id
+          ? {
+              ...candidate,
+              chatChannels: candidate.chatChannels.map((channel) => ({
+                ...channel,
+                unreadCount: 0,
+              })),
+            }
+          : candidate,
+      ),
+    );
+  }
+
+  function closeLobbyChat() {
+    setIsLobbyChatOpen(false);
+  }
+
+  function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
+    const trimmedBody = body.trim();
+
+    if (!trimmedBody) {
+      return;
+    }
+
+    setChatMessageItems((current) => [
+      ...current,
+      {
+        body: trimmedBody,
+        channelId,
+        createdAt: new Date().toISOString(),
+        id: `m-${lobby.id}-${channelId}-${Date.now()}`,
+        lobbyId: lobby.id,
+        playerId: profilePlayer.id,
+      },
+    ]);
+  }
+
+  function handleCreateLobby(draft: CreateLobbyDraft) {
+    const lobbyId = `lobby-${Date.now()}`;
+    const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
+    const nextLobby: Lobby = {
+      adminId: profilePlayer.id,
+      accessCode: draft.visibility === 'password' ? '4321' : undefined,
+      ballNeeded: profilePlayer.hasBall,
+      cancellationPenaltyMinutes: defaultCancellationPenaltyMinutes,
+      capacityMode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
+      chatChannels: [
+        {
+          id: `${lobbyId}-all`,
+          lobbyId,
+          participantRoles: ['admin', 'joined', 'waitlist'],
+          title: 'All lobby',
+          type: 'all',
+          unreadCount: 0,
+        },
+        {
+          id: `${lobbyId}-active`,
+          lobbyId,
+          participantRoles: ['admin', 'joined'],
+          title: 'Host and active players',
+          type: 'admin_joined',
+          unreadCount: 0,
+        },
+      ],
+      competitiveLevel: 'balanced',
+      courtMarksNeeded: profilePlayer.hasCourtMarks,
+      exceptionRequestsEnabled: true,
+      genderRule: draft.genderRule,
+      id: lobbyId,
+      joinRequests: [],
+      location: {
+        area: 'Central Israel',
+        city: draft.locationCity,
+        description: draft.meetingPoint,
+        distanceKm: 2.4,
+        id: `${lobbyId}-location`,
+        name: draft.locationName,
+      },
+      locationDescription: draft.meetingPoint,
+      maxPlayers: Math.max(...selectedPlayerCounts),
+      minPlayers: Math.min(...selectedPlayerCounts),
+      note: draft.visibility === 'password'
+        ? `Private game. PIN: 4321. ${draft.meetingPoint}`
+        : draft.meetingPoint,
+      participants: [
+        {
+          bringsBall: profilePlayer.hasBall,
+          bringsCourtMarks: profilePlayer.hasCourtMarks,
+          playerId: profilePlayer.id,
+          role: 'admin',
+          status: 'approved',
+        },
+      ],
+      rankExact: draft.rankExact,
+      rankMax: draft.rankMax,
+      rankMin: draft.rankMin,
+      rankRuleType: draft.rankRuleType,
+      startsAt: draft.startsAt,
+      status: 'open',
+      title: draft.title,
+      visibility: draft.visibility,
+      waitlistEnabled: true,
+    };
+
+    setLobbyItems((current) => [nextLobby, ...current]);
+    setChatMessageItems((current) => [
+      ...current,
+      {
+        body: 'Game created. Use this chat to coordinate with players.',
+        channelId: `${lobbyId}-all`,
+        createdAt: new Date().toISOString(),
+        id: `${lobbyId}-welcome`,
+        lobbyId,
+        playerId: profilePlayer.id,
+      },
+    ]);
+    addLobbyNotification({
+      body: `${draft.title} is live and visible in Games.`,
+      lobbyId,
+      title: 'Game created',
+      type: 'lobby_changed',
+    });
+    setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, lobbyId] : current));
+    setSelectedLobbyId(lobbyId);
+    setIsLobbyChatOpen(false);
+    setActiveTab('games');
   }
 
   function closeNotifications() {
@@ -444,7 +780,7 @@ export default function App() {
     setIsNotificationsOpen(false);
 
     if (notification.lobbyId) {
-      const lobby = lobbies.find((candidate) => candidate.id === notification.lobbyId);
+      const lobby = lobbyItems.find((candidate) => candidate.id === notification.lobbyId);
 
       if (lobby) {
         openLobbyDetails(lobby);
@@ -534,7 +870,7 @@ export default function App() {
               <TermsOfServiceScreen onBack={closeLegalScreen} onReportProblem={openReportProblem} />
             ) : inviteParams ? (
               <InviteComposerScreen
-                lobbies={lobbies}
+                lobbies={lobbyItems}
                 onBack={closeInviteComposer}
                 onCreateGame={openCreateGameFromInvite}
                 params={inviteParams}
@@ -566,15 +902,27 @@ export default function App() {
                         lobby={selectedLobby}
                         lobbyIndex={selectedLobbyIndex}
                         notificationCount={unreadNotificationCount}
-                        onBack={() => setSelectedLobby(null)}
+                        allLobbies={lobbyItems}
+                        hasPrivateAccess={verifiedPrivateLobbyIds.includes(selectedLobby.id)}
+                        onBack={() => {
+                          setIsLobbyChatOpen(false);
+                          setSelectedLobbyId(null);
+                        }}
+                        onEnterPrivatePin={(pin) => handleEnterPrivatePin(selectedLobby, pin)}
                         onInvite={() =>
                           openInviteComposer({
                             inviteTargetLobbyId: selectedLobby.id,
                             source: 'lobby',
                           })
                         }
+                        onJoinGame={() => handleJoinGame(selectedLobby)}
+                        onJoinWaitlist={() => handleJoinWaitlist(selectedLobby)}
+                        onLeaveLobby={() => handleLeaveLobby(selectedLobby)}
                         onOpenMenu={openSideMenu}
                         onOpenNotifications={openNotifications}
+                        onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
+                        onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
+                        onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
                         onViewPlayerProfile={openViewedProfile}
                       />
                     ) : (
@@ -585,7 +933,7 @@ export default function App() {
                         onBack={() => setActiveTab('home')}
                         onOpenMenu={openSideMenu}
                         onOpenNotifications={openNotifications}
-                        onOpenLobby={setSelectedLobby}
+                        onOpenLobby={openLobbyDetails}
                         selectedFilter={selectedFilter}
                         setSelectedFilter={setSelectedFilter}
                       />
@@ -595,6 +943,7 @@ export default function App() {
                     <CreateLobbyScreen
                       notificationCount={unreadNotificationCount}
                       onCancel={() => setActiveTab('home')}
+                      onCreateLobby={handleCreateLobby}
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
                     />
@@ -623,7 +972,16 @@ export default function App() {
                 </ScrollView>
                 <BottomNav activeTab={activeTab} onChange={handleTabChange} />
                 {activeTab === 'games' && selectedLobby && selectedLobby.status !== 'rating_open' ? (
-                  <LobbyFloatingChatButton lobby={selectedLobby} />
+                  <>
+                    <LobbyFloatingChatButton lobby={selectedLobby} onPress={() => openLobbyChat(selectedLobby)} />
+                    <LobbyChatSheet
+                      lobby={selectedLobby}
+                      messages={chatMessageItems.filter((message) => message.lobbyId === selectedLobby.id)}
+                      onClose={closeLobbyChat}
+                      onSendMessage={(channelId, body) => sendLobbyChatMessage(selectedLobby, channelId, body)}
+                      visible={isLobbyChatOpen}
+                    />
+                  </>
                 ) : null}
               </>
             )}
@@ -649,7 +1007,7 @@ export default function App() {
               visible={isSideMenuOpen}
             />
             <NotificationPanel
-              lobbies={lobbies}
+              lobbies={lobbyItems}
               notifications={notificationItems}
               onClose={closeNotifications}
               onMarkAllRead={markAllNotificationsRead}

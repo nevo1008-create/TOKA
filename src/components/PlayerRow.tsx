@@ -8,6 +8,8 @@ type IconName = keyof typeof Ionicons.glyphMap;
 
 export type PlayerRowAction = {
   disabled?: boolean;
+  icon?: IconName;
+  iconOnly?: boolean;
   label: string;
   onPress?: () => void;
   variant?: 'muted' | 'primary' | 'warning';
@@ -96,31 +98,46 @@ export function PlayerRow({
       <View style={styles.actions}>
         {primaryAction ? (
           <Pressable
+            accessibilityLabel={primaryAction.label}
             accessibilityRole="button"
             disabled={primaryAction.disabled}
             onPress={primaryAction.onPress}
             style={[
               styles.primaryButton,
+              primaryAction.iconOnly && styles.iconActionButton,
               primaryAction.variant === 'warning' && styles.warningPrimaryButton,
               (primaryAction.variant === 'muted' || primaryAction.disabled) && styles.mutedPrimaryButton,
             ]}
           >
-            <AppText
-              align="center"
-              numberOfLines={1}
-              tone={getActionTextTone(primaryAction)}
-              variant="metadata"
-              weight="700"
-            >
-              {primaryAction.label}
-            </AppText>
+            {primaryAction.icon ? (
+              <Ionicons color={getActionIconColor(primaryAction)} name={primaryAction.icon} size={16} />
+            ) : null}
+            {primaryAction.iconOnly ? null : (
+              <AppText
+                align="center"
+                numberOfLines={1}
+                tone={getActionTextTone(primaryAction)}
+                variant="metadata"
+                weight="700"
+              >
+                {primaryAction.label}
+              </AppText>
+            )}
           </Pressable>
         ) : null}
         {secondaryAction ? (
-          <Pressable accessibilityRole="button" onPress={secondaryAction.onPress} style={styles.secondaryButton}>
-            <AppText align="center" tone="muted" variant="metadata" weight="600">
-              {secondaryAction.label}
-            </AppText>
+          <Pressable
+            accessibilityLabel={secondaryAction.label}
+            accessibilityRole="button"
+            onPress={secondaryAction.onPress}
+            style={[styles.secondaryButton, secondaryAction.iconOnly && styles.iconActionButton]}
+          >
+            {secondaryAction.icon ? <Ionicons color={colors.muted} name={secondaryAction.icon} size={16} /> : null}
+            {secondaryAction.iconOnly ? null : (
+              <AppText align="center" tone="muted" variant="metadata" weight="600">
+                {secondaryAction.label}
+              </AppText>
+            )}
           </Pressable>
         ) : null}
         {onMore ? (
@@ -143,6 +160,18 @@ function getActionTextTone(action: PlayerRowAction) {
   }
 
   return 'inverse';
+}
+
+function getActionIconColor(action: PlayerRowAction) {
+  if (action.variant === 'muted' || action.disabled) {
+    return colors.primaryDark;
+  }
+
+  if (action.variant === 'warning') {
+    return colors.ink;
+  }
+
+  return colors.textOnGreen;
 }
 
 const styles = StyleSheet.create({
@@ -181,6 +210,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     minWidth: 0,
+  },
+  iconActionButton: {
+    height: 32,
+    minHeight: 32,
+    minWidth: 32,
+    paddingHorizontal: 0,
+    width: 32,
   },
   levelChip: {
     backgroundColor: colors.surfaceMuted,

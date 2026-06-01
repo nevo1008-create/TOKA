@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { colors, radius, shadows, spacing } from '../theme';
 import type { Lobby, Notification } from '../types';
 import { AppText } from './AppText';
@@ -134,7 +135,7 @@ function NotificationRow({
           <View style={styles.contextLine}>
             <Ionicons color={colors.accentSea} name="location" size={12} />
             <AppText numberOfLines={1} tone="muted" variant="caption" weight="700">
-              {lobby.location.name} · {lobby.startsAt}
+              {lobby.location.name} · {formatLobbyStart(lobby.startsAt)}
             </AppText>
           </View>
         ) : null}
