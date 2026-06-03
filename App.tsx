@@ -9,13 +9,16 @@ import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import type { User } from '@supabase/supabase-js';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
-import { currentPlayer, players as playersForInvite } from './src/data/mock';
+import { currentPlayer as mockCurrentPlayer, players as mockPlayers } from './src/data/mock';
+import { getCurrentSession, signInOrSignUpWithEmail } from './src/features/auth/authRepository';
+import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
 import type { CreateLobbyDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
@@ -47,9 +50,13 @@ export default function App() {
     Manrope_800ExtraBold,
   });
   const [activeTab, setActiveTab] = useState<Tab>('home');
-  const [authFlow, setAuthFlow] = useState<'app' | 'auth' | 'onboarding'>('auth');
+  const [authFlow, setAuthFlow] = useState<'app' | 'auth' | 'loading' | 'onboarding'>('loading');
   const [authEmail, setAuthEmail] = useState('');
-  const [profilePlayer, setProfilePlayer] = useState<Player>(currentPlayer);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
+  const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
   const lobbyStore = useLobbyStore(profilePlayer, playersForInvite);
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -75,6 +82,26 @@ export default function App() {
   const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
 
   useEffect(() => {
+    async function bootstrapSession() {
+      try {
+        const session = await getCurrentSession();
+
+        if (!session?.user) {
+          setAuthFlow('auth');
+          return;
+        }
+
+        await continueWithAuthenticatedUser(session.user);
+      } catch (error) {
+        console.warn('Could not restore Supabase session.', error);
+        setAuthFlow('auth');
+      }
+    }
+
+    void bootstrapSession();
+  }, []);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
   }, [
     activeTab,
@@ -92,6 +119,37 @@ export default function App() {
     selectedLobbyId,
     viewedProfilePlayer?.id,
   ]);
+
+  async function refreshPlayersDirectory(currentPlayerOverride?: Player) {
+    try {
+      const nextPlayers = await listPlayers();
+      const current = currentPlayerOverride ?? profilePlayer;
+      const hasCurrentPlayer = nextPlayers.some((player) => player.id === current.id);
+
+      setPlayersForInvite(hasCurrentPlayer ? nextPlayers : [current, ...nextPlayers]);
+    } catch (error) {
+      console.warn('Could not load Supabase player directory.', error);
+      setPlayersForInvite(mockPlayers);
+    }
+  }
+
+  async function continueWithAuthenticatedUser(user: User) {
+    setAuthUser(user);
+    setAuthEmail(user.email ?? '');
+
+    const existingPlayer = await getPlayerByAuthUserId(user.id);
+
+    if (existingPlayer) {
+      setProfilePlayer(existingPlayer);
+      await refreshPlayersDirectory(existingPlayer);
+      setAuthFlow('app');
+      setActiveTab('home');
+      return;
+    }
+
+    setProfilePlayer(getOnboardingFallbackPlayer(user));
+    setAuthFlow('onboarding');
+  }
 
   function handleTabChange(tab: Tab) {
     setIsSideMenuOpen(false);
@@ -226,10 +284,26 @@ export default function App() {
     setIsEditProfileOpen(false);
   }
 
-  function saveProfile(nextPlayer: Player) {
-    setProfilePlayer(nextPlayer);
-    setIsEditProfileOpen(false);
-    setActiveTab('profile');
+  async function saveProfile(nextPlayer: Player) {
+    if (!authUser) {
+      setProfilePlayer(nextPlayer);
+      setIsEditProfileOpen(false);
+      setActiveTab('profile');
+      return;
+    }
+
+    try {
+      const savedPlayer = await upsertPlayerForUser(authUser, nextPlayer);
+
+      setProfilePlayer(savedPlayer);
+      await refreshPlayersDirectory(savedPlayer);
+      setIsEditProfileOpen(false);
+      setActiveTab('profile');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save profile changes.';
+
+      Alert.alert('Profile update failed', message);
+    }
   }
 
   function openCreateGameFromInvite() {
@@ -437,15 +511,23 @@ export default function App() {
     Alert.alert('Game update', messages.join('\n'));
   }
 
-  function handleJoinGame(lobby: Lobby) {
-    const result = lobbyStore.joinGame(lobby);
-    showLobbyActionMessages(result.messages);
+  async function handleJoinGame(lobby: Lobby) {
+    try {
+      const result = await lobbyStore.joinGame(lobby);
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
   function handleJoinWaitlist(lobby: Lobby) {
-    const moveToWaitlist = () => {
-      const result = lobbyStore.joinWaitlist(lobby);
-      showLobbyActionMessages(result.messages);
+    const moveToWaitlist = async () => {
+      try {
+        const result = await lobbyStore.joinWaitlist(lobby);
+        showLobbyActionMessages(result.messages);
+      } catch (error) {
+        showActionError(error);
+      }
     };
 
     if (lobbyStore.shouldConfirmMoveToWaitlist(lobby)) {
@@ -463,23 +545,42 @@ export default function App() {
     moveToWaitlist();
   }
 
-  function handleRequestWaitlistApproval(lobby: Lobby) {
-    const result = lobbyStore.requestWaitlistApproval(lobby);
-    showLobbyActionMessages(result.messages);
+  async function handleRequestWaitlistApproval(lobby: Lobby) {
+    try {
+      const result = await lobbyStore.requestWaitlistApproval(lobby);
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
-  function handleApproveWaitlistRequest(lobby: Lobby, playerId: string) {
-    const result = lobbyStore.approveWaitlistRequest(lobby, playerId);
-    showLobbyActionMessages(result.messages);
+  async function handleApproveWaitlistRequest(lobby: Lobby, playerId: string) {
+    try {
+      const result = await lobbyStore.approveWaitlistRequest(lobby, playerId);
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
-  function handleRejectJoinRequest(lobby: Lobby, playerId: string) {
-    const result = lobbyStore.rejectJoinRequest(lobby, playerId);
-    showLobbyActionMessages(result.messages);
+  async function handleRejectJoinRequest(lobby: Lobby, playerId: string) {
+    try {
+      const result = await lobbyStore.rejectJoinRequest(lobby, playerId);
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
-  function handleLeaveLobby(lobby: Lobby) {
-    const result = lobbyStore.leaveLobby(lobby);
+  async function handleLeaveLobby(lobby: Lobby) {
+    let result;
+
+    try {
+      result = await lobbyStore.leaveLobby(lobby);
+    } catch (error) {
+      showActionError(error);
+      return;
+    }
 
     if (!result.success) {
       return;
@@ -489,6 +590,12 @@ export default function App() {
     setSelectedLobbyId(null);
     setGamesInitialSection('My Games');
     setActiveTab('games');
+  }
+
+  function showActionError(error: unknown) {
+    const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+
+    Alert.alert('Game update failed', message);
   }
 
   function handleEnterPrivatePin(lobby: Lobby, pin: string) {
@@ -505,15 +612,19 @@ export default function App() {
   }
 
   function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
-    lobbyStore.sendLobbyChatMessage(lobby, channelId, body);
+    void lobbyStore.sendLobbyChatMessage(lobby, channelId, body).catch(showActionError);
   }
 
-  function handleCreateLobby(draft: CreateLobbyDraft) {
-    const nextLobby = lobbyStore.createLobby(draft);
+  async function handleCreateLobby(draft: CreateLobbyDraft) {
+    try {
+      const nextLobby = await lobbyStore.createLobby(draft);
 
-    setSelectedLobbyId(nextLobby.id);
-    setIsLobbyChatOpen(false);
-    setActiveTab('games');
+      setSelectedLobbyId(nextLobby.id);
+      setIsLobbyChatOpen(false);
+      setActiveTab('games');
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
   function closeNotifications() {
@@ -521,11 +632,11 @@ export default function App() {
   }
 
   function markAllNotificationsRead() {
-    lobbyStore.markAllNotificationsRead();
+    void lobbyStore.markAllNotificationsRead().catch(showActionError);
   }
 
   function handleNotificationPress(notification: Notification) {
-    lobbyStore.markNotificationRead(notification.id);
+    void lobbyStore.markNotificationRead(notification.id).catch(showActionError);
     setIsNotificationsOpen(false);
 
     if (notification.lobbyId) {
@@ -545,18 +656,57 @@ export default function App() {
     Alert.alert(label, `${label} will be connected in a later pass.`);
   }
 
-  function startOnboarding(email: string) {
-    setAuthEmail(email);
-    setAuthFlow('onboarding');
+  async function continueAuth(credentials: { email: string; password: string }) {
+    setAuthError(null);
+    setIsAuthLoading(true);
+
+    try {
+      const result = await signInOrSignUpWithEmail(credentials.email, credentials.password);
+
+      if (result.needsEmailConfirmation || !result.session?.user) {
+        Alert.alert('Check your email', 'Supabase requires email confirmation before you can enter TOCA.');
+        return;
+      }
+
+      await continueWithAuthenticatedUser(result.session.user);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not sign in. Please try again.';
+
+      setAuthError(message);
+    } finally {
+      setIsAuthLoading(false);
+    }
   }
 
-  function finishOnboarding(nextPlayer: Player) {
-    setProfilePlayer(nextPlayer);
-    setAuthFlow('app');
-    setActiveTab('home');
+  async function finishOnboarding(nextPlayer: Player) {
+    if (!authUser) {
+      setAuthError('Missing authenticated user. Please sign in again.');
+      setAuthFlow('auth');
+      return;
+    }
+
+    try {
+      const savedPlayer = await upsertPlayerForUser(authUser, {
+        ...nextPlayer,
+        id: profilePlayer.id,
+      });
+
+      setProfilePlayer(savedPlayer);
+      await refreshPlayersDirectory(savedPlayer);
+      setAuthFlow('app');
+      setActiveTab('home');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save your profile.';
+
+      Alert.alert('Profile setup failed', message);
+    }
   }
 
   if (!homeFontsLoaded) {
+    return null;
+  }
+
+  if (authFlow === 'loading') {
     return null;
   }
 
@@ -572,7 +722,11 @@ export default function App() {
             style={styles.appShell}
           >
             {authFlow === 'auth' ? (
-              <AuthScreen onContinue={startOnboarding} />
+              <AuthScreen
+                errorMessage={authError}
+                isLoading={isAuthLoading}
+                onContinue={continueAuth}
+              />
             ) : authFlow === 'onboarding' ? (
               <SignupWizardScreen
                 email={authEmail}
@@ -778,6 +932,32 @@ export default function App() {
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+function getOnboardingFallbackPlayer(user: User): Player {
+  const emailName = user.email?.split('@')[0] ?? 'Player';
+  const name = emailName
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Player';
+
+  return {
+    ...mockCurrentPlayer,
+    area: '',
+    friendIds: [],
+    gamesPlayed: 0,
+    id: user.id,
+    initials: name
+      .split(' ')
+      .map((part) => part.charAt(0))
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'PL',
+    name,
+    rankStatus: 'self_declared',
+    tocaPoints: 0,
+  };
 }
 
 const styles = StyleSheet.create({

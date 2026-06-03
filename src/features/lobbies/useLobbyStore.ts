@@ -1,21 +1,29 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   chatMessages as mockChatMessages,
   lobbies as mockLobbies,
   notifications as mockNotifications,
 } from '../../data/mock';
-import type { ChatMessage, Lobby, Notification, Player } from '../../types';
+import { listLobbyMessages, sendLobbyMessage as persistLobbyMessage } from '../chat/chatRepository';
 import {
-  approveJoinRequest,
-  joinGame as applyJoinGame,
-  joinWaitlist as applyJoinWaitlist,
-  leaveLobby as applyLeaveLobby,
-  rejectJoinRequest as applyRejectJoinRequest,
-  requestWaitlistApproval as applyRequestWaitlistApproval,
-} from './lobbyActions';
+  listNotifications,
+  markNotificationRead as persistNotificationRead,
+  markNotificationsRead,
+} from '../notifications/notificationRepository';
+import type { ChatMessage, Lobby, Notification, Player } from '../../types';
 import type { CreateLobbyDraft } from './lobbyCreateTypes';
 import { getMinutesUntilLobbyStart } from './lobbyDateTime';
+import {
+  approveWaitlistRequest as persistApproveWaitlistRequest,
+  createLobby as persistCreateLobby,
+  joinGame as persistJoinGame,
+  joinWaitlist as persistJoinWaitlist,
+  leaveLobby as persistLeaveLobby,
+  listLobbies,
+  rejectJoinRequest as persistRejectJoinRequest,
+  requestWaitlistApproval as persistRequestWaitlistApproval,
+} from './lobbyRepository';
 import {
   defaultCancellationPenaltyMinutes,
   getVisibleChatChannels,
@@ -29,10 +37,33 @@ export type LobbyStoreActionResult = {
 };
 
 export function useLobbyStore(currentPlayer: Player, players: Player[]) {
-  const [lobbies, setLobbies] = useState<Lobby[]>(mockLobbies);
+  const [lobbies, setLobbies] = useState<Lobby[]>([]);
   const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(mockChatMessages);
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const refreshLobbyData = useCallback(async () => {
+    try {
+      const [nextLobbies, nextMessages, nextNotifications] = await Promise.all([
+        listLobbies(),
+        listLobbyMessages(),
+        listNotifications(currentPlayer.id),
+      ]);
+
+      setLobbies(nextLobbies);
+      setChatMessages(nextMessages);
+      setNotifications(nextNotifications);
+    } catch (error) {
+      console.warn('Falling back to mock lobby data after Supabase load failed.', error);
+      setLobbies(mockLobbies);
+      setChatMessages(mockChatMessages);
+      setNotifications(mockNotifications);
+    }
+  }, [currentPlayer.id]);
+
+  useEffect(() => {
+    void refreshLobbyData();
+  }, [refreshLobbyData]);
 
   const unreadNotifications = useMemo(
     () => notifications.filter((notification) => !notification.read),
@@ -87,32 +118,23 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     );
   }
 
-  function joinGame(lobby: Lobby): LobbyStoreActionResult {
-    const result = applyJoinGame(lobby, currentPlayer, {
-      accessCode: hasPrivateAccess(lobby.id) ? lobby.accessCode : undefined,
-      allLobbies: lobbies,
-    });
+  async function joinGame(lobby: Lobby): Promise<LobbyStoreActionResult> {
+    const result = await persistJoinGame(lobby, currentPlayer, lobbies);
 
     if (result.success) {
-      updateLobbyItem(result.lobby);
+      await refreshLobbyData();
     }
 
-    return {
-      messages: result.messages,
-      success: result.success,
-    };
+    return result;
   }
 
-  function joinWaitlist(lobby: Lobby): LobbyStoreActionResult {
+  async function joinWaitlist(lobby: Lobby): Promise<LobbyStoreActionResult> {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
     const isActiveInRoom = participant && (participant.status === 'approved' || participant.status === 'attended');
-    const result = applyJoinWaitlist(lobby, currentPlayer, {
-      accessCode: hasPrivateAccess(lobby.id) ? lobby.accessCode : undefined,
-      allLobbies: lobbies,
-    });
+    const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies);
 
     if (result.success) {
-      updateLobbyItem(result.lobby);
+      await refreshLobbyData();
 
       if (!isActiveInRoom) {
         addLobbyNotification({
@@ -124,17 +146,14 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
       }
     }
 
-    return {
-      messages: result.messages,
-      success: result.success,
-    };
+    return result;
   }
 
-  function requestWaitlistApproval(lobby: Lobby): LobbyStoreActionResult {
-    const result = applyRequestWaitlistApproval(lobby, currentPlayer);
+  async function requestWaitlistApproval(lobby: Lobby): Promise<LobbyStoreActionResult> {
+    const result = await persistRequestWaitlistApproval(lobby, currentPlayer);
 
     if (result.success) {
-      updateLobbyItem(result.lobby);
+      await refreshLobbyData();
       const host = players.find((player) => player.id === lobby.adminId);
 
       addLobbyNotification({
@@ -145,58 +164,60 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
       });
     }
 
-    return {
-      messages: result.messages,
-      success: result.success,
-    };
+    return result;
   }
 
-  function approveWaitlistRequest(lobby: Lobby, playerId: string): LobbyStoreActionResult {
+  async function approveWaitlistRequest(lobby: Lobby, playerId: string): Promise<LobbyStoreActionResult> {
     const player = players.find((candidate) => candidate.id === playerId);
 
     if (!player) {
       return {
-        messages: ['Could not find this player in the mock player list.'],
+        messages: ['Could not find this player in the player list.'],
         success: false,
       };
     }
 
-    const result = approveJoinRequest(lobby, player, 'waitlist', {
-      allLobbies: lobbies,
-    });
+    const result = await persistApproveWaitlistRequest(lobby, player, currentPlayer.id);
 
-    updateLobbyItem(result.lobby);
-    addLobbyNotification({
-      body: `${player.name} was added to the waitlist for ${lobby.title}.`,
-      lobbyId: lobby.id,
-      title: 'Request approved',
-      type: 'request_approved',
-    });
+    if (result.success) {
+      await refreshLobbyData();
+      addLobbyNotification({
+        body: `${player.name} was added to the waitlist for ${lobby.title}.`,
+        lobbyId: lobby.id,
+        title: 'Request approved',
+        type: 'request_approved',
+      });
+    }
 
-    return {
-      messages: result.messages.length > 0 ? result.messages : [`${player.name} approved to waitlist.`],
-      success: true,
-    };
+    return result;
   }
 
-  function rejectJoinRequest(lobby: Lobby, playerId: string): LobbyStoreActionResult {
+  async function rejectJoinRequest(lobby: Lobby, playerId: string): Promise<LobbyStoreActionResult> {
     const player = players.find((candidate) => candidate.id === playerId);
 
-    updateLobbyItem(applyRejectJoinRequest(lobby, playerId));
-    addLobbyNotification({
-      body: `${player?.name ?? 'The player'} will see this as rejected when backend notifications are connected.`,
-      lobbyId: lobby.id,
-      title: 'Request rejected',
-      type: 'request_rejected',
-    });
+    if (!player) {
+      return {
+        messages: ['Could not find this player in the player list.'],
+        success: false,
+      };
+    }
 
-    return {
-      messages: [],
-      success: true,
-    };
+    const result = await persistRejectJoinRequest(lobby, player, currentPlayer.id);
+
+    if (result.success) {
+      await refreshLobbyData();
+      addLobbyNotification({
+        body: `${player.name} will see this as rejected.`,
+        lobbyId: lobby.id,
+        title: 'Request rejected',
+        type: 'request_rejected',
+      });
+    }
+
+    return result;
   }
 
-  function leaveLobby(lobby: Lobby): LobbyStoreActionResult {
+  async function leaveLobby(lobby: Lobby): Promise<LobbyStoreActionResult> {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
 
     if (!participant) {
@@ -206,18 +227,19 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
       };
     }
 
-    updateLobbyItem(applyLeaveLobby(lobby, currentPlayer.id));
-    addLobbyNotification({
-      body: `You left ${lobby.title}.`,
-      lobbyId: lobby.id,
-      title: 'Left room',
-      type: 'waitlist_update',
-    });
+    const result = await persistLeaveLobby(lobby, currentPlayer);
 
-    return {
-      messages: [],
-      success: true,
-    };
+    if (result.success) {
+      await refreshLobbyData();
+      addLobbyNotification({
+        body: `You left ${lobby.title}.`,
+        lobbyId: lobby.id,
+        title: 'Left room',
+        type: 'waitlist_update',
+      });
+    }
+
+    return result;
   }
 
   function markLobbyChatRead(lobby: Lobby) {
@@ -236,24 +258,15 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     );
   }
 
-  function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
+  async function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
     const trimmedBody = body.trim();
 
     if (!trimmedBody) {
       return;
     }
 
-    setChatMessages((current) => [
-      ...current,
-      {
-        body: trimmedBody,
-        channelId,
-        createdAt: new Date().toISOString(),
-        id: `m-${lobby.id}-${channelId}-${Date.now()}`,
-        lobbyId: lobby.id,
-        playerId: currentPlayer.id,
-      },
-    ]);
+    await persistLobbyMessage(lobby.id, channelId, currentPlayer.id, trimmedBody);
+    setChatMessages(await listLobbyMessages());
   }
 
   function getLobbyMessages(lobbyId: string) {
@@ -273,97 +286,23 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     return chatMessages.filter((message) => message.lobbyId === lobby.id && visibleChannelIds.has(message.channelId));
   }
 
-  function createLobby(draft: CreateLobbyDraft) {
-    const lobbyId = `lobby-${Date.now()}`;
-    const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
-    const nextLobby: Lobby = {
-      adminId: currentPlayer.id,
-      accessCode: draft.visibility === 'password' ? '4321' : undefined,
-      ballNeeded: currentPlayer.hasBall,
-      cancellationPenaltyMinutes: defaultCancellationPenaltyMinutes,
-      capacityMode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
-      chatChannels: [
-        {
-          id: `${lobbyId}-all`,
-          lobbyId,
-          participantRoles: ['admin', 'joined', 'waitlist'],
-          title: 'All lobby',
-          type: 'all',
-          unreadCount: 0,
-        },
-        {
-          id: `${lobbyId}-active`,
-          lobbyId,
-          participantRoles: ['admin', 'joined'],
-          title: 'Host and active players',
-          type: 'admin_joined',
-          unreadCount: 0,
-        },
-      ],
-      competitiveLevel: 'balanced',
-      courtMarksNeeded: currentPlayer.hasCourtMarks,
-      exceptionRequestsEnabled: true,
-      genderRule: draft.genderRule,
-      id: lobbyId,
-      joinRequests: [],
-      location: {
-        area: 'Central Israel',
-        city: draft.locationCity,
-        description: draft.meetingPoint,
-        distanceKm: 2.4,
-        id: `${lobbyId}-location`,
-        name: draft.locationName,
-      },
-      locationDescription: draft.meetingPoint,
-      maxPlayers: Math.max(...selectedPlayerCounts),
-      minPlayers: Math.min(...selectedPlayerCounts),
-      note: draft.visibility === 'password'
-        ? `Private game. PIN: 4321. ${draft.meetingPoint}`
-        : draft.meetingPoint,
-      participants: [
-        {
-          bringsBall: currentPlayer.hasBall,
-          bringsCourtMarks: currentPlayer.hasCourtMarks,
-          playerId: currentPlayer.id,
-          role: 'admin',
-          status: 'approved',
-        },
-      ],
-      rankExact: draft.rankExact,
-      rankMax: draft.rankMax,
-      rankMin: draft.rankMin,
-      rankRuleType: draft.rankRuleType,
-      startsAt: draft.startsAt,
-      status: 'open',
-      title: draft.title,
-      visibility: draft.visibility,
-      waitlistEnabled: true,
-    };
+  async function createLobby(draft: CreateLobbyDraft) {
+    const nextLobby = await persistCreateLobby(draft, currentPlayer);
 
-    setLobbies((current) => [nextLobby, ...current]);
-    setChatMessages((current) => [
-      ...current,
-      {
-        body: 'Game created. Use this chat to coordinate with players.',
-        channelId: `${lobbyId}-all`,
-        createdAt: new Date().toISOString(),
-        id: `${lobbyId}-welcome`,
-        lobbyId,
-        playerId: currentPlayer.id,
-      },
-    ]);
+    await refreshLobbyData();
     addLobbyNotification({
       body: `${draft.title} is live and visible in Games.`,
-      lobbyId,
+      lobbyId: nextLobby.id,
       title: 'Game created',
       type: 'lobby_changed',
     });
-    setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, lobbyId] : current));
+    setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, nextLobby.id] : current));
 
     return nextLobby;
   }
 
-  function markAllNotificationsRead() {
+  async function markAllNotificationsRead() {
+    await markNotificationsRead(notifications.map((notification) => notification.id));
     setNotifications((current) =>
       current.map((notification) => ({
         ...notification,
@@ -372,7 +311,8 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     );
   }
 
-  function markNotificationRead(notificationId: string) {
+  async function markNotificationRead(notificationId: string) {
+    await persistNotificationRead(notificationId);
     setNotifications((current) =>
       current.map((item) => (item.id === notificationId ? { ...item, read: true } : item)),
     );
@@ -382,15 +322,11 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     setNotifications((current) => [
       {
         ...notification,
-        id: `n-${Date.now()}-${current.length}`,
+        id: `local-${Date.now()}-${current.length}`,
         read: false,
       },
       ...current,
     ]);
-  }
-
-  function updateLobbyItem(nextLobby: Lobby) {
-    setLobbies((current) => current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby)));
   }
 
   return {
