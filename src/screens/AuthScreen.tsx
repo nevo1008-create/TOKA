@@ -8,12 +8,14 @@ import { AppText } from '../components/AppText';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 
 type AuthScreenProps = {
-  onContinue: (email: string) => void;
+  errorMessage?: string | null;
+  isLoading?: boolean;
+  onContinue: (credentials: { email: string; password: string }) => void;
 };
 
 type SocialProvider = 'Apple' | 'Facebook' | 'Google';
 
-export function AuthScreen({ onContinue }: AuthScreenProps) {
+export function AuthScreen({ errorMessage, isLoading = false, onContinue }: AuthScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const canContinue = email.trim().length > 0 && password.trim().length > 0;
@@ -23,12 +25,14 @@ export function AuthScreen({ onContinue }: AuthScreenProps) {
       return;
     }
 
-    onContinue(email.trim());
+    onContinue({
+      email: email.trim(),
+      password,
+    });
   }
 
   function continueWithSocial(provider: SocialProvider) {
-    Alert.alert(`${provider} sign in`, 'Social sign in will be connected later. Continuing to the setup flow for now.');
-    onContinue('');
+    Alert.alert(`${provider} sign in`, 'Social sign in will be connected later. Use email and password for now.');
   }
 
   return (
@@ -90,14 +94,20 @@ export function AuthScreen({ onContinue }: AuthScreenProps) {
 
         <Pressable
           accessibilityRole="button"
-          disabled={!canContinue}
+          disabled={!canContinue || isLoading}
           onPress={continueWithEmail}
-          style={[styles.primaryButton, !canContinue && styles.primaryButtonDisabled]}
+          style={[styles.primaryButton, (!canContinue || isLoading) && styles.primaryButtonDisabled]}
         >
           <AppText align="center" tone="inverse" variant="button" weight="700">
-            Continue
+            {isLoading ? 'Connecting...' : 'Continue'}
           </AppText>
         </Pressable>
+
+        {errorMessage ? (
+          <AppText align="center" tone="danger" variant="metadata" weight="700">
+            {errorMessage}
+          </AppText>
+        ) : null}
 
         <View style={styles.dividerRow}>
           <View style={styles.divider} />
