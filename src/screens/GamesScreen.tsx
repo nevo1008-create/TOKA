@@ -1,17 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, ScrollView, StyleSheet, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
+import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
 import { israelPlaces } from '../data/israelPlaces';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import { playerLevels, type Lobby, type Location, type Player, type PlayerLevel } from '../types';
+import type { Lobby, Location, Player, PlayerLevel } from '../types';
 
 type GamesScreenProps = {
   currentPlayer: Player;
@@ -56,7 +57,7 @@ const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffi
   { id: 'Gender', icon: 'male-female-outline', suffix: true },
 ];
 
-const levelOptions = [...playerLevels];
+const levelOptions = rankOptions;
 const genderOptions: GenderFilter[] = ['Everyone', 'Male', 'Female'];
 
 const gameSections = ['Find Games', 'My Games'] as const;
@@ -492,84 +493,6 @@ function LevelRangePanel({
   onToChange: (index: number) => void;
   toIndex: number;
 }) {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const currentFromIndex = useRef(fromIndex);
-  const currentToIndex = useRef(toIndex);
-  const trackWidthRef = useRef(trackWidth);
-  const dragStartFromIndex = useRef(fromIndex);
-  const dragStartToIndex = useRef(toIndex);
-  const fromPercent = getLevelPercent(fromIndex);
-  const toPercent = getLevelPercent(toIndex);
-  currentFromIndex.current = fromIndex;
-  currentToIndex.current = toIndex;
-  trackWidthRef.current = trackWidth;
-  const fromResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onStartShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          dragStartFromIndex.current = currentFromIndex.current;
-        },
-        onPanResponderMove: (_event, gestureState) => {
-          const availableTrackWidth = trackWidthRef.current;
-
-          if (!availableTrackWidth) {
-            return;
-          }
-
-          const stepWidth = availableTrackWidth / (levelOptions.length - 1);
-          const nextIndex = clampLevelIndex(
-            dragStartFromIndex.current + Math.round(gestureState.dx / stepWidth),
-            0,
-            currentToIndex.current,
-          );
-
-          if (nextIndex !== currentFromIndex.current) {
-            onFromChange(nextIndex);
-          }
-        },
-      }),
-    [onFromChange],
-  );
-  const toResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onStartShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          dragStartToIndex.current = currentToIndex.current;
-        },
-        onPanResponderMove: (_event, gestureState) => {
-          const availableTrackWidth = trackWidthRef.current;
-
-          if (!availableTrackWidth) {
-            return;
-          }
-
-          const stepWidth = availableTrackWidth / (levelOptions.length - 1);
-          const nextIndex = clampLevelIndex(
-            dragStartToIndex.current + Math.round(gestureState.dx / stepWidth),
-            currentFromIndex.current,
-            levelOptions.length - 1,
-          );
-
-          if (nextIndex !== currentToIndex.current) {
-            onToChange(nextIndex);
-          }
-        },
-      }),
-    [onToChange],
-  );
-
-  function handleTrackLayout(event: LayoutChangeEvent) {
-    setTrackWidth(event.nativeEvent.layout.width);
-  }
-
   return (
     <View style={styles.filterPanel}>
       <View style={styles.panelHeader}>
@@ -577,33 +500,11 @@ function LevelRangePanel({
           Rank range
         </AppText>
         <AppText tone="muted" variant="metadata" weight="700">
-          {formatLevelRange(fromIndex, toIndex)}
+          {formatRankRange(fromIndex, toIndex)}
         </AppText>
       </View>
 
-      <View onLayout={handleTrackLayout} style={styles.levelBar}>
-        <View style={styles.levelTrackLine} />
-        <View pointerEvents="none" style={styles.levelTicks}>
-          {levelOptions.map((level) => (
-            <View key={level} style={styles.levelTick} />
-          ))}
-        </View>
-        <View
-          style={[
-            styles.levelTrackFill,
-            {
-              left: `${fromPercent}%`,
-              right: `${100 - toPercent}%`,
-            },
-          ]}
-        />
-        <View {...fromResponder.panHandlers} style={[styles.levelThumbTouchArea, { left: `${fromPercent}%` }]}>
-          <View style={styles.levelThumb} />
-        </View>
-        <View {...toResponder.panHandlers} style={[styles.levelThumbTouchArea, { left: `${toPercent}%` }]}>
-          <View style={[styles.levelThumb, styles.levelThumbRight]} />
-        </View>
-      </View>
+      <RankRangeBar fromIndex={fromIndex} onFromChange={onFromChange} onToChange={onToChange} toIndex={toIndex} />
     </View>
   );
 }
@@ -1034,7 +935,7 @@ function getLobbyLevelRangeIndexes(lobby: Lobby) {
 }
 
 function getLevelIndex(level?: PlayerLevel) {
-  return level ? Math.max(levelOptions.indexOf(level), 0) : 0;
+  return level ? Math.max(getRankIndex(level), 0) : 0;
 }
 
 function doesLobbyMatchSearch(lobby: Lobby, searchQuery: string, players: Player[]) {
@@ -1274,18 +1175,7 @@ function isActiveLobbyParticipant(participant: Lobby['participants'][number]) {
 }
 
 function formatLevelRange(fromIndex: number, toIndex: number) {
-  const from = levelOptions[fromIndex];
-  const to = levelOptions[toIndex];
-
-  return from === to ? from : `${from}/${to}`;
-}
-
-function getLevelPercent(index: number) {
-  return (index / (levelOptions.length - 1)) * 100;
-}
-
-function clampLevelIndex(index: number, min: number, max: number) {
-  return Math.min(Math.max(index, min), max);
+  return formatRankRange(fromIndex, toIndex);
 }
 
 const styles = StyleSheet.create({

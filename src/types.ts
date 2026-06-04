@@ -75,9 +75,14 @@ export type Player = {
   preferredFoot: PreferredFoot;
   side: PlayerSide;
   area: string;
+  avatarFocusX?: number | null;
+  avatarFocusY?: number | null;
+  avatarPath?: string | null;
+  avatarUrl?: string | null;
   initials: string;
   hasBall: boolean;
   hasCourtMarks: boolean;
+  pushNotificationsEnabled?: boolean;
   friendIds: string[];
 };
 

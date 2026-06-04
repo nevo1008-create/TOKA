@@ -10,6 +10,7 @@
     "expo": "~56.0.5",
     "expo-blur": "~56.0.3",
     "expo-font": "~56.0.5",
+    "expo-image-picker": "~56.0.15",
     "expo-linear-gradient": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
@@ -30,7 +31,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "vercel-build": "node scripts/build-auth-pages.mjs"
   },
   "private": true
 }
