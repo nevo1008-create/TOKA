@@ -1,9 +1,13 @@
-import 'react-native-url-polyfill/auto';
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
+import { setupURLPolyfill } from 'react-native-url-polyfill';
 
 import { snackConfig } from './snackConfig';
+
+if (Platform.OS !== 'web') {
+  setupURLPolyfill();
+}
 
 const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL || snackConfig.supabaseUrl;
