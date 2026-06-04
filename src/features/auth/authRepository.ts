@@ -90,6 +90,83 @@ export async function resendSignupVerificationEmail(email: string) {
   }
 }
 
+export async function requestPasswordResetEmail(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const passwordResetRedirectTo = getPasswordResetRedirectUrl();
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    normalizedEmail,
+    passwordResetRedirectTo
+      ? {
+          redirectTo: passwordResetRedirectTo,
+        }
+      : undefined,
+  );
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function preparePasswordResetSession() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get('code');
+
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      throw error;
+    }
+
+    clearPasswordResetUrl();
+    return;
+  }
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+  const errorDescription = hashParams.get('error_description');
+
+  if (errorDescription) {
+    throw new Error(errorDescription);
+  }
+
+  if (accessToken && refreshToken) {
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    clearPasswordResetUrl();
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('This reset link is missing or expired. Please request a new one.');
+  }
+}
+
+export async function updateCurrentUserPassword(password: string) {
+  const { error } = await supabase.auth.updateUser({
+    password,
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function deleteCurrentUserAccount(feedback: string) {
   const {
     data: { user },
@@ -164,4 +241,26 @@ function getEmailVerifiedRedirectUrl() {
   }
 
   return `${window.location.origin}/email-verified`;
+}
+
+function getPasswordResetRedirectUrl() {
+  const configuredUrl = process.env.EXPO_PUBLIC_PASSWORD_RESET_URL?.trim();
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  return `${window.location.origin}/reset-password`;
+}
+
+function clearPasswordResetUrl() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.history.replaceState({}, document.title, `${window.location.origin}/reset-password`);
 }

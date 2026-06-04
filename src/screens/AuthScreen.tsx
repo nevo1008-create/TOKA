@@ -12,17 +12,19 @@ type AuthScreenProps = {
   isLoading?: boolean;
   onClearFeedback?: () => void;
   onContinue: (credentials: { email: string; mode: 'login' | 'signup'; password: string }) => void;
+  onRequestPasswordReset: (email: string) => void;
   onResendVerification?: (email: string) => void;
   successMessage?: string | null;
 };
 
-type AuthMode = 'entry' | 'login' | 'signup';
+type AuthMode = 'entry' | 'login' | 'reset' | 'signup';
 
 export function AuthScreen({
   errorMessage,
   isLoading = false,
   onClearFeedback,
   onContinue,
+  onRequestPasswordReset,
   onResendVerification,
   successMessage,
 }: AuthScreenProps) {
@@ -37,15 +39,17 @@ export function AuthScreen({
   const isPasswordLongEnough = authMode !== 'signup' || password.length >= 8;
   const isConfirmPasswordLongEnough = authMode !== 'signup' || confirmPassword.length >= 8;
   const doPasswordsMatch = authMode !== 'signup' || password === confirmPassword;
+  const isPasswordResetSent = authMode === 'reset' && Boolean(successMessage);
   const isSignupVerificationSent = authMode === 'signup' && Boolean(successMessage);
   const shouldShowDuplicateAccountLogin =
     authMode === 'signup' && errorMessage === 'This email already has an account. Please log in.';
   const shouldShowLoginSignupPrompt = authMode === 'login' && errorMessage === 'Email or password is incorrect.';
-  const canContinue =
-    email.trim().length > 0 &&
-    password.trim().length > 0 &&
-    isPasswordLongEnough &&
-    isConfirmPasswordLongEnough;
+  const canContinue = authMode === 'reset'
+    ? email.trim().length > 0
+    : email.trim().length > 0 &&
+      password.trim().length > 0 &&
+      isPasswordLongEnough &&
+      isConfirmPasswordLongEnough;
 
   function continueWithEmail() {
     if (!canContinue) {
@@ -54,6 +58,12 @@ export function AuthScreen({
 
     if (!isEmailValid) {
       setValidationError('Email is not complete.');
+      return;
+    }
+
+    if (authMode === 'reset') {
+      setValidationError(null);
+      onRequestPasswordReset(email.trim());
       return;
     }
 
@@ -92,6 +102,22 @@ export function AuthScreen({
     setPassword('');
     setConfirmPassword('');
     setAuthMode('signup');
+  }
+
+  function openPasswordReset() {
+    setValidationError(null);
+    onClearFeedback?.();
+    setPassword('');
+    setConfirmPassword('');
+    setAuthMode('reset');
+  }
+
+  function openLoginFromReset() {
+    setValidationError(null);
+    onClearFeedback?.();
+    setPassword('');
+    setConfirmPassword('');
+    setAuthMode('login');
   }
 
   function resendVerification() {
@@ -184,10 +210,10 @@ export function AuthScreen({
               </Pressable>
               <View style={styles.formTitleCopy}>
                 <AppText variant="cardTitle" weight="800">
-                  {authMode === 'login' ? 'Login' : 'Sign up'}
+                  {authMode === 'login' ? 'Login' : authMode === 'reset' ? 'Reset password' : 'Sign up'}
                 </AppText>
                 <AppText tone="muted" variant="metadata" weight="600">
-                  Use email and password for now.
+                  {authMode === 'reset' ? 'We will email you a secure reset link.' : 'Use email and password for now.'}
                 </AppText>
               </View>
             </View>
@@ -212,20 +238,29 @@ export function AuthScreen({
                   </AppText>
                 </View>
               ) : null}
-              <AuthInput
-                icon="lock-closed-outline"
-                onChangeText={(nextPassword) => {
-                  setPassword(nextPassword);
-                  setValidationError(null);
-                  onClearFeedback?.();
-                }}
-                placeholder="Password"
-                rightAccessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
-                rightIcon={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
-                onRightIconPress={() => setIsPasswordVisible((current) => !current)}
-                secureTextEntry={!isPasswordVisible}
-                value={password}
-              />
+              {authMode !== 'reset' ? (
+                <AuthInput
+                  icon="lock-closed-outline"
+                  onChangeText={(nextPassword) => {
+                    setPassword(nextPassword);
+                    setValidationError(null);
+                    onClearFeedback?.();
+                  }}
+                  placeholder="Password"
+                  rightAccessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
+                  rightIcon={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
+                  onRightIconPress={() => setIsPasswordVisible((current) => !current)}
+                  secureTextEntry={!isPasswordVisible}
+                  value={password}
+                />
+              ) : null}
+              {authMode === 'login' ? (
+                <Pressable accessibilityRole="button" onPress={openPasswordReset} style={styles.forgotPasswordButton}>
+                  <AppText align="right" tone="accent" variant="metadata" weight="800">
+                    Forgot password?
+                  </AppText>
+                </Pressable>
+              ) : null}
               {authMode === 'signup' ? (
                 <AuthInput
                   icon="checkmark-circle-outline"
@@ -252,16 +287,21 @@ export function AuthScreen({
 
             <Pressable
               accessibilityRole="button"
-              disabled={!canContinue || isLoading || isSignupVerificationSent}
+              disabled={!canContinue || isLoading || isSignupVerificationSent || isPasswordResetSent}
               onPress={continueWithEmail}
-              style={[styles.primaryButton, (!canContinue || isLoading || isSignupVerificationSent) && styles.primaryButtonDisabled]}
+              style={[
+                styles.primaryButton,
+                (!canContinue || isLoading || isSignupVerificationSent || isPasswordResetSent) && styles.primaryButtonDisabled,
+              ]}
             >
               <AppText align="center" tone="inverse" variant="button" weight="700">
                 {isLoading
                   ? 'Connecting...'
                   : authMode === 'login'
                     ? 'Login'
-                    : 'Send verification to email'}
+                    : authMode === 'reset'
+                      ? 'Send reset link'
+                      : 'Send verification to email'}
               </AppText>
             </Pressable>
 
@@ -269,6 +309,15 @@ export function AuthScreen({
               <AppText align="center" tone="accent" variant="metadata" weight="800">
                 {successMessage}
               </AppText>
+            ) : null}
+
+            {successMessage && authMode === 'reset' ? (
+              <View style={styles.resetNotice}>
+                <Ionicons color={colors.primaryDark} name="mail-open-outline" size={18} />
+                <AppText align="center" tone="accent" variant="metadata" weight="800">
+                  {successMessage}
+                </AppText>
+              </View>
             ) : null}
 
             {isSignupVerificationSent ? (
@@ -293,6 +342,18 @@ export function AuthScreen({
                   </AppText>
                 </Pressable>
               </View>
+            ) : null}
+
+            {isPasswordResetSent ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={openLoginFromReset}
+                style={styles.loginAfterVerificationButton}
+              >
+                <AppText align="center" tone="accent" variant="button" weight="800">
+                  Back to log in
+                </AppText>
+              </Pressable>
             ) : null}
 
             {errorMessage ? (
@@ -553,6 +614,12 @@ const styles = StyleSheet.create({
     gap: spacing.xxs,
     minWidth: 0,
   },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    justifyContent: 'center',
+    minHeight: 30,
+    paddingHorizontal: spacing.xs,
+  },
   input: {
     color: colors.ink,
     flex: 1,
@@ -684,6 +751,15 @@ const styles = StyleSheet.create({
   },
   resendButtonDisabled: {
     opacity: 0.48,
+  },
+  resetNotice: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
   },
   verificationActionStack: {
     gap: spacing.xs,
