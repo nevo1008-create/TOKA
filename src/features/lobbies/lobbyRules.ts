@@ -19,7 +19,7 @@ export type LobbyAccessDecision =
   | {
       canEnterLobby: true;
       kind: 'can_enter';
-      label: 'Open game';
+      label: 'View match';
       reasons: JoinRequestReason[];
     }
   | {
@@ -43,7 +43,7 @@ export type LobbyAccessDecision =
   | {
       canEnterLobby: false;
       kind: 'pending_approval';
-      label: 'Request pending';
+      label: 'Requested access';
       reasons: JoinRequestReason[];
     };
 
@@ -200,7 +200,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'Open game',
+      label: 'View match',
       reasons: [],
     };
   }
@@ -218,7 +218,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'Open game',
+      label: 'View match',
       reasons: [],
     };
   }
@@ -227,7 +227,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: false,
       kind: 'pending_approval',
-      label: 'Request pending',
+      label: 'Requested access',
       reasons: exceptionReasons,
     };
   }
@@ -236,7 +236,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'Open game',
+      label: 'View match',
       reasons: [],
     };
   }
@@ -260,7 +260,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
   return {
     canEnterLobby: true,
     kind: 'can_enter',
-    label: 'Open game',
+    label: 'View match',
     reasons: [],
   };
 }
@@ -281,7 +281,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
     return {
       canJoin: false,
       kind: 'pending_approval',
-      label: 'Request pending',
+      label: 'Requested access',
       reasons: ['Host approval is still pending.'],
     };
   }
@@ -366,7 +366,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
     return {
       canJoinWaitlist: false,
       kind: 'pending_approval',
-      label: 'Request pending',
+      label: 'Requested access',
       reasons: ['Host approval is still pending.'],
     };
   }

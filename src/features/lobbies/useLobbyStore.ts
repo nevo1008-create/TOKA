@@ -16,6 +16,7 @@ import type { CreateLobbyDraft } from './lobbyCreateTypes';
 import { getMinutesUntilLobbyStart } from './lobbyDateTime';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
+  cancelJoinRequest as persistCancelJoinRequest,
   createLobby as persistCreateLobby,
   joinGame as persistJoinGame,
   joinWaitlist as persistJoinWaitlist,
@@ -217,6 +218,22 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     return result;
   }
 
+  async function cancelJoinRequest(lobby: Lobby): Promise<LobbyStoreActionResult> {
+    const result = await persistCancelJoinRequest(lobby, currentPlayer);
+
+    if (result.success) {
+      await refreshLobbyData();
+      addLobbyNotification({
+        body: `Your request for ${lobby.title} was cancelled.`,
+        lobbyId: lobby.id,
+        title: 'Request cancelled',
+        type: 'waitlist_update',
+      });
+    }
+
+    return result;
+  }
+
   async function leaveLobby(lobby: Lobby): Promise<LobbyStoreActionResult> {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
 
@@ -331,6 +348,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
 
   return {
     approveWaitlistRequest,
+    cancelJoinRequest,
     createLobby,
     enterPrivatePin,
     getFilteredLobbies,

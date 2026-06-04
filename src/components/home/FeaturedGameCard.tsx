@@ -69,7 +69,7 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
         <View style={styles.actions}>
           <Pressable onPress={onOpenRoom} style={styles.openButton}>
             <AppText align="center" style={styles.buttonText} tone="inverse" variant="button" weight="800">
-              Open game
+              View match
             </AppText>
           </Pressable>
         </View>

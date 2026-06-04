@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, ScrollView, StyleSheet, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
+import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -26,7 +27,7 @@ type GamesScreenProps = {
   setSelectedFilter: (filter: string) => void;
 };
 
-type FilterId = 'All Games' | 'Location' | 'Rank' | 'Gender';
+type FilterId = 'All Games' | 'Rank' | 'Gender';
 type OpenFilterPanel = 'Rank' | 'Gender' | null;
 type GenderFilter = 'Everyone' | 'Male' | 'Female';
 
@@ -50,94 +51,14 @@ type GameListItem = {
 
 const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffix?: boolean }> = [
   { id: 'All Games', icon: 'football-outline' },
-  { id: 'Location', icon: 'navigate-outline' },
   { id: 'Rank', icon: 'options-outline', suffix: true },
   { id: 'Gender', icon: 'male-female-outline', suffix: true },
 ];
 
-const levelOptions = ['A-', 'A', 'A+', 'B-', 'B', 'B+', 'C-', 'C', 'C+', 'D-', 'D', 'D+', 'E-', 'E', 'E+', 'League'];
 const genderOptions: GenderFilter[] = ['Everyone', 'Male', 'Female'];
 
 const gameSections = ['Find Games', 'My Games'] as const;
 type GameSection = (typeof gameSections)[number];
-
-const gameCards: GameListItem[] = [
-  {
-    audience: 'Everyone',
-    avatars: ['NV', 'OM', 'MY'],
-    badgeLabel: 'Host',
-    badgeTone: 'lime',
-    distance: '2.4 km',
-    gradient: ['#FFF2BD', '#8EDBD2', '#24C45A'],
-    level: 'B/C+',
-    lobbyId: 'l1',
-    lobbyIndex: 0,
-    location: 'Gordon Beach, Tel Aviv',
-    players: '3 / 4 players',
-    spotsLeft: '1 spot left',
-    startsAt: '2026-06-05T16:30:00+03:00',
-    title: 'Friday at Gordon',
-  },
-  {
-    audience: 'Everyone',
-    avatars: ['DN', 'NV', 'OM'],
-    distance: '18.1 km',
-    gradient: ['#F8F1E3', '#F6C945', '#8FCFBC'],
-    level: 'A+',
-    lobbyId: 'l2',
-    lobbyIndex: 1,
-    location: 'Poleg Beach, Netanya',
-    players: '3 / 6 players',
-    spotsLeft: '3 spots left',
-    startsAt: '2026-06-06T08:00:00+03:00',
-    title: 'League morning',
-  },
-  {
-    audience: 'Women',
-    avatars: ['MY'],
-    distance: '49.5 km',
-    gradient: ['#DDF5F1', '#1BB7A8', '#F6C945'],
-    level: 'C/D',
-    lobbyId: 'l3',
-    lobbyIndex: 2,
-    location: 'Aqueduct Beach, Caesarea',
-    metaTag: 'Women',
-    players: '1 / 6 players',
-    spotsLeft: '5 spots left',
-    startsAt: '2026-06-07T19:00:00+03:00',
-    title: 'Women evening',
-  },
-  {
-    audience: 'Everyone',
-    avatars: ['NV', 'OM', 'LB', '+1'],
-    badgeLabel: 'Joined',
-    badgeTone: 'lime',
-    distance: '3.1 km',
-    gradient: ['#EAF5EC', '#24C45A', '#1BB7A8'],
-    level: 'C/B+',
-    lobbyId: 'l4',
-    lobbyIndex: 3,
-    location: 'Hilton Beach, Tel Aviv',
-    players: '3 / 6 players',
-    spotsLeft: '3 spots left',
-    startsAt: '2026-06-07T07:30:00+03:00',
-    title: 'Sunrise challenge',
-  },
-  {
-    audience: 'Everyone',
-    avatars: ['OM', 'MY', 'ES', '+2'],
-    distance: '12.7 km',
-    gradient: ['#FFF9EC', '#F6C945', '#24C45A'],
-    level: 'B+',
-    lobbyId: 'l5',
-    lobbyIndex: 4,
-    location: 'Herzliya Beach, Herzliya',
-    players: '4 / 8 players',
-    spotsLeft: 'Finished',
-    startsAt: '2026-06-08T18:00:00+03:00',
-    title: 'Monday night',
-  },
-];
 
 export function getLobbyImageUrl(index: number) {
   return `gradient-placeholder-${index}`;
@@ -152,7 +73,6 @@ export function GamesScreen({
   onOpenNotifications,
   onOpenLobby,
   players,
-  selectedFilter,
   setSelectedFilter,
 }: GamesScreenProps) {
   const [activeSection, setActiveSection] = useState<GameSection>(initialSection);
@@ -210,7 +130,6 @@ export function GamesScreen({
             lobbies={lobbies}
             onOpenLobby={onOpenLobby}
             players={players}
-            selectedFilter={selectedFilter}
             setSelectedFilter={setSelectedFilter}
           />
         ) : (
@@ -226,45 +145,38 @@ function SearchGamesView({
   lobbies,
   onOpenLobby,
   players,
-  selectedFilter,
   setSelectedFilter,
 }: {
   currentPlayer: Player;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
-  selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
 }) {
   const [openFilterPanel, setOpenFilterPanel] = useState<OpenFilterPanel>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [levelFromIndex, setLevelFromIndex] = useState(0);
-  const [levelToIndex, setLevelToIndex] = useState(levelOptions.length - 1);
+  const [levelToIndex, setLevelToIndex] = useState(rankOptions.length - 1);
   const [genderFilter, setGenderFilter] = useState<GenderFilter | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
 
-  const hasLevelFilter = levelFromIndex !== 0 || levelToIndex !== levelOptions.length - 1;
-  const isLocationActive = selectedFilter === 'Location' || selectedFilter === 'Nearby';
-  const hasAnyFilter = hasLevelFilter || Boolean(genderFilter) || isLocationActive || showPrivate;
-  const levelLabel = hasLevelFilter ? formatLevelRange(levelFromIndex, levelToIndex) : 'Rank';
+  const hasLevelFilter = levelFromIndex !== 0 || levelToIndex !== rankOptions.length - 1;
+  const hasAnyFilter = hasLevelFilter || Boolean(genderFilter) || showPrivate || searchQuery.trim().length > 0;
+  const levelLabel = hasLevelFilter ? formatRankRange(levelFromIndex, levelToIndex) : 'Rank';
 
   function resetFilters() {
     setSelectedFilter('All Games');
     setOpenFilterPanel(null);
     setLevelFromIndex(0);
-    setLevelToIndex(levelOptions.length - 1);
+    setLevelToIndex(rankOptions.length - 1);
     setGenderFilter(null);
     setShowPrivate(false);
+    setSearchQuery('');
   }
 
   function handleFilterPress(filter: FilterId) {
     if (filter === 'All Games') {
       resetFilters();
-      return;
-    }
-
-    if (filter === 'Location') {
-      setSelectedFilter(isLocationActive ? 'All Games' : 'Location');
-      setOpenFilterPanel(null);
       return;
     }
 
@@ -289,10 +201,6 @@ function SearchGamesView({
       return !hasAnyFilter;
     }
 
-    if (filter === 'Location') {
-      return isLocationActive;
-    }
-
     if (filter === 'Rank') {
       return openFilterPanel === 'Rank' || hasLevelFilter;
     }
@@ -300,18 +208,17 @@ function SearchGamesView({
     return openFilterPanel === 'Gender' || Boolean(genderFilter);
   }
 
-  const staticLobbyIds = new Set(gameCards.map((game) => game.lobbyId).filter(Boolean));
-  const createdLobbyCards = lobbies
-    .filter((lobby) => !staticLobbyIds.has(lobby.id) && isLobbyDiscoverable(lobby))
-    .map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players));
-  const visibleGameCards = [
-    ...createdLobbyCards,
-    ...gameCards.filter((game) => {
-      const lobby = getGameLobby(lobbies, game);
-
-      return lobby ? isLobbyDiscoverable(lobby) : true;
+  const visibleLobbies = getUniqueLobbies(lobbies).filter((lobby) =>
+    isLobbyVisibleForFilters(lobby, {
+      genderFilter,
+      levelFromIndex,
+      levelToIndex,
+      players,
+      searchQuery,
+      showPrivate,
     }),
-  ];
+  );
+  const visibleGameCards = visibleLobbies.map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players));
 
   return (
     <>
@@ -321,6 +228,8 @@ function SearchGamesView({
           placeholder="Search beach, host, or game"
           placeholderTextColor={colors.subtle}
           style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
         />
       </View>
 
@@ -414,13 +323,13 @@ function SearchGamesView({
 
       <View style={styles.cardStack}>
         {visibleGameCards.map((game, index) => {
-          const lobby = getGameLobby(lobbies, game);
+          const lobby = visibleLobbies[index];
 
           return (
             <GameCard
               currentPlayerId={currentPlayer.id}
               game={game}
-              key={`${game.title}-${index}`}
+              key={lobby.id}
               lobby={lobby}
               onPress={() => {
                 if (lobby) {
@@ -430,6 +339,14 @@ function SearchGamesView({
             />
           );
         })}
+        {visibleGameCards.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons color={colors.muted} name="search-outline" size={18} />
+            <AppText align="center" tone="muted" variant="metadata" weight="700">
+              No games match these filters.
+            </AppText>
+          </View>
+        ) : null}
       </View>
     </>
   );
@@ -450,84 +367,6 @@ function LevelRangePanel({
   onToChange: (index: number) => void;
   toIndex: number;
 }) {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const currentFromIndex = useRef(fromIndex);
-  const currentToIndex = useRef(toIndex);
-  const trackWidthRef = useRef(trackWidth);
-  const dragStartFromIndex = useRef(fromIndex);
-  const dragStartToIndex = useRef(toIndex);
-  const fromPercent = getLevelPercent(fromIndex);
-  const toPercent = getLevelPercent(toIndex);
-  currentFromIndex.current = fromIndex;
-  currentToIndex.current = toIndex;
-  trackWidthRef.current = trackWidth;
-  const fromResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onStartShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          dragStartFromIndex.current = currentFromIndex.current;
-        },
-        onPanResponderMove: (_event, gestureState) => {
-          const availableTrackWidth = trackWidthRef.current;
-
-          if (!availableTrackWidth) {
-            return;
-          }
-
-          const stepWidth = availableTrackWidth / (levelOptions.length - 1);
-          const nextIndex = clampLevelIndex(
-            dragStartFromIndex.current + Math.round(gestureState.dx / stepWidth),
-            0,
-            currentToIndex.current,
-          );
-
-          if (nextIndex !== currentFromIndex.current) {
-            onFromChange(nextIndex);
-          }
-        },
-      }),
-    [onFromChange],
-  );
-  const toResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onStartShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          dragStartToIndex.current = currentToIndex.current;
-        },
-        onPanResponderMove: (_event, gestureState) => {
-          const availableTrackWidth = trackWidthRef.current;
-
-          if (!availableTrackWidth) {
-            return;
-          }
-
-          const stepWidth = availableTrackWidth / (levelOptions.length - 1);
-          const nextIndex = clampLevelIndex(
-            dragStartToIndex.current + Math.round(gestureState.dx / stepWidth),
-            currentFromIndex.current,
-            levelOptions.length - 1,
-          );
-
-          if (nextIndex !== currentToIndex.current) {
-            onToChange(nextIndex);
-          }
-        },
-      }),
-    [onToChange],
-  );
-
-  function handleTrackLayout(event: LayoutChangeEvent) {
-    setTrackWidth(event.nativeEvent.layout.width);
-  }
-
   return (
     <View style={styles.filterPanel}>
       <View style={styles.panelHeader}>
@@ -535,33 +374,11 @@ function LevelRangePanel({
           Rank range
         </AppText>
         <AppText tone="muted" variant="metadata" weight="700">
-          {formatLevelRange(fromIndex, toIndex)}
+          {formatRankRange(fromIndex, toIndex)}
         </AppText>
       </View>
 
-      <View onLayout={handleTrackLayout} style={styles.levelBar}>
-        <View style={styles.levelTrackLine} />
-        <View pointerEvents="none" style={styles.levelTicks}>
-          {levelOptions.map((level) => (
-            <View key={level} style={styles.levelTick} />
-          ))}
-        </View>
-        <View
-          style={[
-            styles.levelTrackFill,
-            {
-              left: `${fromPercent}%`,
-              right: `${100 - toPercent}%`,
-            },
-          ]}
-        />
-        <View {...fromResponder.panHandlers} style={[styles.levelThumbTouchArea, { left: `${fromPercent}%` }]}>
-          <View style={styles.levelThumb} />
-        </View>
-        <View {...toResponder.panHandlers} style={[styles.levelThumbTouchArea, { left: `${toPercent}%` }]}>
-          <View style={[styles.levelThumb, styles.levelThumbRight]} />
-        </View>
-      </View>
+      <RankRangeBar fromIndex={fromIndex} onFromChange={onFromChange} onToChange={onToChange} toIndex={toIndex} />
     </View>
   );
 }
@@ -621,7 +438,7 @@ function MyGamesView({
 
       return {
         ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
-        actionLabel: 'Open game',
+        actionLabel: 'View match',
         imageBadgeLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
         statusLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
         statusTone: participant?.role === 'waitlist' ? 'gold' as const : 'lime' as const,
@@ -716,17 +533,29 @@ function GameCard({
   onPress: () => void;
 }) {
   const currentParticipant = lobby ? getCurrentPlayerParticipant(lobby, currentPlayerId) : undefined;
+  const hasPendingRequest = lobby
+    ? lobby.joinRequests.some((request) => request.playerId === currentPlayerId && request.status === 'pending')
+    : false;
+  const actionLabel = hasPendingRequest
+    ? 'Requested access'
+    : currentParticipant && isActiveLobbyParticipant(currentParticipant)
+      ? 'Joined'
+      : 'View match';
+  const actionTone = hasPendingRequest || (currentParticipant && isActiveLobbyParticipant(currentParticipant)) ? 'muted' : 'accent';
   const statusBadgeLabel =
     currentParticipant?.role === 'admin'
       ? 'Host'
       : currentParticipant && isActiveLobbyParticipant(currentParticipant)
         ? 'Joined'
+        : hasPendingRequest
+          ? 'Requested'
         : game.spotsLeft;
   const statusBadgeTone = currentParticipant && isActiveLobbyParticipant(currentParticipant) ? 'green' : 'yellow';
 
   return (
     <NearbyGameCard
-      actionLabel="Open game"
+      actionLabel={actionLabel}
+      actionTone={actionTone}
       audience={game.audience}
       distance={game.distance}
       level={game.level}
@@ -747,6 +576,116 @@ function getGameLobby(lobbies: Lobby[], game: GameListItem) {
   return game.lobbyId
     ? lobbies.find((lobby) => lobby.id === game.lobbyId)
     : lobbies[game.lobbyIndex % Math.max(lobbies.length, 1)];
+}
+
+function getUniqueLobbies(lobbies: Lobby[]) {
+  const seenLobbyIds = new Set<string>();
+
+  return lobbies.filter((lobby) => {
+    if (seenLobbyIds.has(lobby.id)) {
+      return false;
+    }
+
+    seenLobbyIds.add(lobby.id);
+    return true;
+  });
+}
+
+function isLobbyVisibleForFilters(
+  lobby: Lobby,
+  {
+    genderFilter,
+    levelFromIndex,
+    levelToIndex,
+    players,
+    searchQuery,
+    showPrivate,
+  }: {
+    genderFilter: GenderFilter | null;
+    levelFromIndex: number;
+    levelToIndex: number;
+    players: Player[];
+    searchQuery: string;
+    showPrivate: boolean;
+  },
+) {
+  if (!isLobbyDiscoverable(lobby)) {
+    return false;
+  }
+
+  if (!showPrivate && (lobby.visibility === 'password' || lobby.visibility === 'invite_link')) {
+    return false;
+  }
+
+  if (!doesLobbyMatchSearch(lobby, players, searchQuery)) {
+    return false;
+  }
+
+  if (!doesLobbyMatchRankRange(lobby, levelFromIndex, levelToIndex)) {
+    return false;
+  }
+
+  if (!doesLobbyMatchGenderFilter(lobby, genderFilter)) {
+    return false;
+  }
+
+  return true;
+}
+
+function doesLobbyMatchSearch(lobby: Lobby, players: Player[], searchQuery: string) {
+  const query = searchQuery.trim().toLocaleLowerCase();
+
+  if (!query) {
+    return true;
+  }
+
+  const host = players.find((player) => player.id === lobby.adminId);
+  const searchableText = [
+    lobby.title,
+    lobby.location.name,
+    lobby.location.city,
+    lobby.location.area,
+    lobby.note,
+    host?.name,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase();
+
+  return searchableText.includes(query);
+}
+
+function doesLobbyMatchRankRange(lobby: Lobby, fromIndex: number, toIndex: number) {
+  if (fromIndex === 0 && toIndex === rankOptions.length - 1) {
+    return true;
+  }
+
+  if (lobby.rankRuleType === 'any') {
+    return true;
+  }
+
+  if (lobby.rankRuleType === 'exact') {
+    const exactIndex = lobby.rankExact ? getRankIndex(lobby.rankExact) : -1;
+
+    return exactIndex >= fromIndex && exactIndex <= toIndex;
+  }
+
+  const minIndex = lobby.rankMin ? getRankIndex(lobby.rankMin) : 0;
+  const maxIndex = lobby.rankMax ? getRankIndex(lobby.rankMax) : rankOptions.length - 1;
+
+  return minIndex <= toIndex && maxIndex >= fromIndex;
+}
+
+function doesLobbyMatchGenderFilter(lobby: Lobby, genderFilter: GenderFilter | null) {
+  if (!genderFilter) {
+    return true;
+  }
+
+  if (genderFilter === 'Everyone') {
+    return lobby.genderRule === 'everyone';
+  }
+
+  return lobby.genderRule === (genderFilter === 'Male' ? 'male' : 'female');
 }
 
 function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: string, players: Player[]): GameListItem {
@@ -963,21 +902,6 @@ function isActiveLobbyParticipant(participant: Lobby['participants'][number]) {
   return isJoinedParticipant(participant);
 }
 
-function formatLevelRange(fromIndex: number, toIndex: number) {
-  const from = levelOptions[fromIndex];
-  const to = levelOptions[toIndex];
-
-  return from === to ? from : `${from}/${to}`;
-}
-
-function getLevelPercent(index: number) {
-  return (index / (levelOptions.length - 1)) * 100;
-}
-
-function clampLevelIndex(index: number, min: number, max: number) {
-  return Math.min(Math.max(index, min), max);
-}
-
 const styles = StyleSheet.create({
   audienceText: {
     maxWidth: 54,
@@ -1024,6 +948,17 @@ const styles = StyleSheet.create({
   extraAvatar: {
     backgroundColor: colors.surfaceAqua,
     borderColor: colors.border,
+  },
+  emptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: spacing.xs,
+    minHeight: 82,
+    justifyContent: 'center',
+    padding: spacing.md,
   },
   filterArea: {
     position: 'relative',
@@ -1158,60 +1093,6 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     flexDirection: 'row',
     gap: spacing.sm,
-  },
-  levelBar: {
-    height: 34,
-    justifyContent: 'center',
-    marginHorizontal: 11,
-    position: 'relative',
-  },
-  levelThumb: {
-    backgroundColor: colors.primary,
-    borderColor: colors.surfaceRaised,
-    borderRadius: radius.round,
-    borderWidth: 2,
-    height: 18,
-    width: 18,
-  },
-  levelThumbRight: {
-    backgroundColor: colors.accentGoldDark,
-  },
-  levelThumbTouchArea: {
-    alignItems: 'center',
-    cursor: 'pointer',
-    height: 34,
-    justifyContent: 'center',
-    marginLeft: -17,
-    position: 'absolute',
-    width: 34,
-    zIndex: 3,
-  },
-  levelTick: {
-    backgroundColor: 'rgba(21, 153, 71, 0.26)',
-    borderRadius: radius.round,
-    height: 8,
-    width: 2,
-  },
-  levelTicks: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    height: 12,
-    justifyContent: 'space-between',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-  },
-  levelTrackFill: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.round,
-    height: 5,
-    position: 'absolute',
-    zIndex: 1,
-  },
-  levelTrackLine: {
-    backgroundColor: 'rgba(216, 232, 212, 0.9)',
-    borderRadius: radius.round,
-    height: 5,
   },
   liveDot: {
     backgroundColor: colors.primary,

@@ -35,6 +35,7 @@ type LobbyDetailsScreenProps = {
   notificationCount: number;
   onApproveWaitlistRequest: (playerId: string) => void;
   onBack: () => void;
+  onCancelJoinRequest: () => void;
   onEnterPrivatePin: (pin: string) => boolean;
   onInvite: () => void;
   onJoinGame: () => void;
@@ -78,6 +79,7 @@ export function LobbyDetailsScreen({
   notificationCount,
   onApproveWaitlistRequest,
   onBack,
+  onCancelJoinRequest,
   onEnterPrivatePin,
   onInvite,
   onJoinGame,
@@ -119,6 +121,7 @@ export function LobbyDetailsScreen({
     lobby,
     onJoinGame,
     onJoinWaitlist,
+    onCancelJoinRequest,
     onOpenPinEntry: () => {
       setPinError(null);
       setIsPinEntryOpen(true);
@@ -1154,6 +1157,7 @@ function getLobbyPrimaryAction({
   lobby,
   onJoinGame,
   onJoinWaitlist,
+  onCancelJoinRequest,
   onOpenPinEntry,
   onRequestWaitlistApproval,
 }: {
@@ -1164,6 +1168,7 @@ function getLobbyPrimaryAction({
   lobby: Lobby;
   onJoinGame: () => void;
   onJoinWaitlist: () => void;
+  onCancelJoinRequest: () => void;
   onOpenPinEntry: () => void;
   onRequestWaitlistApproval: () => void;
 }): LobbyPrimaryAction {
@@ -1221,11 +1226,12 @@ function getLobbyPrimaryAction({
 
   if (relationship === 'pending_approval' && !hasPrivateAccess) {
     return {
-      disabled: true,
-      icon: 'hourglass-outline',
-      iconColor: colors.muted,
-      label: 'Request pending',
-      textTone: 'muted',
+      disabled: false,
+      icon: 'close-circle-outline',
+      iconColor: colors.danger,
+      label: 'Cancel request',
+      onPress: onCancelJoinRequest,
+      textTone: 'danger',
       tone: 'muted',
     };
   }

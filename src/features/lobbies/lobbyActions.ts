@@ -157,6 +157,15 @@ export function rejectJoinRequest(lobby: Lobby, playerId: string): Lobby {
   };
 }
 
+export function cancelJoinRequest(lobby: Lobby, playerId: string): Lobby {
+  return {
+    ...lobby,
+    joinRequests: lobby.joinRequests.filter(
+      (request) => request.playerId !== playerId || request.status !== 'pending',
+    ),
+  };
+}
+
 export function leaveLobby(lobby: Lobby, playerId: string, now = new Date()): Lobby {
   const cancellationStatus = getCancellationStatus(lobby, now);
   const nextParticipants = lobby.participants.map((participant) =>

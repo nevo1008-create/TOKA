@@ -572,6 +572,15 @@ export default function App() {
     }
   }
 
+  async function handleCancelJoinRequest(lobby: Lobby) {
+    try {
+      const result = await lobbyStore.cancelJoinRequest(lobby);
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
   async function handleLeaveLobby(lobby: Lobby) {
     let result;
 
@@ -588,7 +597,7 @@ export default function App() {
 
     setIsLobbyChatOpen(false);
     setSelectedLobbyId(null);
-    setGamesInitialSection('My Games');
+    setGamesInitialSection('Find Games');
     setActiveTab('games');
   }
 
@@ -814,6 +823,7 @@ export default function App() {
                           setSelectedLobbyId(null);
                         }}
                         onEnterPrivatePin={(pin) => handleEnterPrivatePin(selectedLobby, pin)}
+                        onCancelJoinRequest={() => handleCancelJoinRequest(selectedLobby)}
                         onInvite={() =>
                           openInviteComposer({
                             inviteTargetLobbyId: selectedLobby.id,

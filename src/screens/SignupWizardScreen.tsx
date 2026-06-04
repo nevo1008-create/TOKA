@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
+import { RankBar } from '../components/RankRangeBar';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Gender, Player, PlayerLevel, PlayerSide, PreferredFoot } from '../types';
 
@@ -15,7 +16,6 @@ type SignupWizardScreenProps = {
   player: Player;
 };
 
-const rankOptions: PlayerLevel[] = ['C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+', 'League'];
 const beachOptions = ['Gordon Beach', 'Hilton Beach', 'Poleg Beach', 'Aqueduct Beach'];
 const genderOptions: Array<{ label: string; value: Gender }> = [
   { label: 'Male', value: 'male' },
@@ -178,24 +178,7 @@ export function SignupWizardScreen({ email, onBack, onComplete, player }: Signup
             title="Playing profile"
           >
             <Field label="Rank">
-              <View style={styles.rankGrid}>
-                {rankOptions.map((option) => {
-                  const selected = rank === option;
-
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      key={option}
-                      onPress={() => setRank(option)}
-                      style={[styles.rankPill, selected && styles.rankPillSelected]}
-                    >
-                      <AppText align="center" tone={selected ? 'accent' : 'muted'} variant="chip" weight="700">
-                        {option}
-                      </AppText>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <RankBar selectedRank={rank} onSelect={setRank} />
             </Field>
             <Field label="Preferred foot">
               <SegmentedOptions options={footOptions} selectedValue={preferredFoot} onSelect={setPreferredFoot} />
