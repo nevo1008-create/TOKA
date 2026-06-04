@@ -7,7 +7,8 @@ import { colors, radius, shadows, spacing } from '../theme';
 
 type TermsOfServiceScreenProps = {
   onBack: () => void;
-  onReportProblem: () => void;
+  onReportProblem?: () => void;
+  showReportCard?: boolean;
 };
 
 const termsSections: Array<{
@@ -88,7 +89,7 @@ const termsSections: Array<{
   },
 ];
 
-export function TermsOfServiceScreen({ onBack, onReportProblem }: TermsOfServiceScreenProps) {
+export function TermsOfServiceScreen({ onBack, onReportProblem, showReportCard = true }: TermsOfServiceScreenProps) {
   return (
     <View style={styles.screen}>
       <LinearGradient
@@ -158,22 +159,24 @@ export function TermsOfServiceScreen({ onBack, onReportProblem }: TermsOfService
           </View>
         </View>
 
-        <View style={styles.reportCard}>
-          <View style={styles.reportCopy}>
-            <AppText variant="titleSmall" weight="900">
-              Need help with these Terms?
-            </AppText>
-            <AppText tone="muted" variant="metadata" weight="600">
-              Use Report a problem for account, safety, player behavior, or lobby concerns.
-            </AppText>
+        {showReportCard && onReportProblem ? (
+          <View style={styles.reportCard}>
+            <View style={styles.reportCopy}>
+              <AppText variant="titleSmall" weight="900">
+                Need help with these Terms?
+              </AppText>
+              <AppText tone="muted" variant="metadata" weight="600">
+                Use Report a problem for account, safety, player behavior, or lobby concerns.
+              </AppText>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onReportProblem} style={styles.reportButton}>
+              <Ionicons color={colors.textOnGreen} name="flag-outline" size={16} />
+              <AppText tone="inverse" variant="button" weight="900">
+                Report a problem
+              </AppText>
+            </Pressable>
           </View>
-          <Pressable accessibilityRole="button" onPress={onReportProblem} style={styles.reportButton}>
-            <Ionicons color={colors.textOnGreen} name="flag-outline" size={16} />
-            <AppText tone="inverse" variant="button" weight="900">
-              Report a problem
-            </AppText>
-          </Pressable>
-        </View>
+        ) : null}
       </ScrollView>
     </View>
   );

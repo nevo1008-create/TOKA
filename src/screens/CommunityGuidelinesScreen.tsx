@@ -7,7 +7,8 @@ import { colors, radius, shadows, spacing } from '../theme';
 
 type CommunityGuidelinesScreenProps = {
   onBack: () => void;
-  onReportProblem: () => void;
+  onReportProblem?: () => void;
+  showReportCard?: boolean;
 };
 
 const guidelines: Array<{
@@ -61,7 +62,7 @@ const notAllowed = [
   'Manipulating ratings, rankings, or invites',
 ];
 
-export function CommunityGuidelinesScreen({ onBack, onReportProblem }: CommunityGuidelinesScreenProps) {
+export function CommunityGuidelinesScreen({ onBack, onReportProblem, showReportCard = true }: CommunityGuidelinesScreenProps) {
   return (
     <View style={styles.screen}>
       <LinearGradient
@@ -145,22 +146,24 @@ export function CommunityGuidelinesScreen({ onBack, onReportProblem }: Community
           </View>
         </View>
 
-        <View style={styles.reportCard}>
-          <View style={styles.reportCopy}>
-            <AppText variant="titleSmall" weight="900">
-              See something off?
-            </AppText>
-            <AppText tone="muted" variant="metadata" weight="600">
-              Send a quick report so TOCA can review safety, behavior, lobby, or account issues.
-            </AppText>
+        {showReportCard && onReportProblem ? (
+          <View style={styles.reportCard}>
+            <View style={styles.reportCopy}>
+              <AppText variant="titleSmall" weight="900">
+                See something off?
+              </AppText>
+              <AppText tone="muted" variant="metadata" weight="600">
+                Send a quick report so TOCA can review safety, behavior, lobby, or account issues.
+              </AppText>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onReportProblem} style={styles.reportButton}>
+              <Ionicons color={colors.textOnGreen} name="flag-outline" size={16} />
+              <AppText tone="inverse" variant="button" weight="900">
+                Report a problem
+              </AppText>
+            </Pressable>
           </View>
-          <Pressable accessibilityRole="button" onPress={onReportProblem} style={styles.reportButton}>
-            <Ionicons color={colors.textOnGreen} name="flag-outline" size={16} />
-            <AppText tone="inverse" variant="button" weight="900">
-              Report a problem
-            </AppText>
-          </Pressable>
-        </View>
+        ) : null}
       </ScrollView>
     </View>
   );

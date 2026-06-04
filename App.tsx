@@ -17,7 +17,15 @@ import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
 import { currentPlayer as mockCurrentPlayer, players as mockPlayers } from './src/data/mock';
-import { getCurrentSession, signInOrSignUpWithEmail } from './src/features/auth/authRepository';
+import {
+  deleteCurrentUserAccount,
+  getCurrentSession,
+  resendSignupVerificationEmail,
+  signInWithEmail,
+  signOut,
+  signUpWithEmail,
+} from './src/features/auth/authRepository';
+import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
 import type { CreateLobbyDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
@@ -27,7 +35,9 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { CommunityScreen } from './src/screens/CommunityScreen';
 import { CommunityGuidelinesScreen } from './src/screens/CommunityGuidelinesScreen';
 import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
+import { DeleteAccountScreen } from './src/screens/DeleteAccountScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
+import { EmailVerifiedScreen } from './src/screens/EmailVerifiedScreen';
 import { GamesScreen } from './src/screens/GamesScreen';
 import { HelpSupportScreen } from './src/screens/HelpSupportScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -51,8 +61,10 @@ export default function App() {
   });
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [authFlow, setAuthFlow] = useState<'app' | 'auth' | 'loading' | 'onboarding'>('loading');
+  const [isEmailVerifiedRoute] = useState(isEmailVerifiedPath);
   const [authEmail, setAuthEmail] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
@@ -65,6 +77,9 @@ export default function App() {
   const [isCommunityGuidelinesOpen, setIsCommunityGuidelinesOpen] = useState(false);
   const [isHelpSupportOpen, setIsHelpSupportOpen] = useState(false);
   const [isReportProblemOpen, setIsReportProblemOpen] = useState(false);
+  const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [legalScreen, setLegalScreen] = useState<'privacy' | 'terms' | null>(null);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
@@ -114,6 +129,7 @@ export default function App() {
     isHelpSupportOpen,
     isNotificationsOpen,
     isReportProblemOpen,
+    isDeleteAccountOpen,
     legalScreen,
     isSideMenuOpen,
     selectedLobbyId,
@@ -161,6 +177,7 @@ export default function App() {
     setIsCommunityGuidelinesOpen(false);
     setIsHelpSupportOpen(false);
     setIsReportProblemOpen(false);
+    setIsDeleteAccountOpen(false);
     setLegalScreen(null);
     setInviteParams(null);
     setIsLobbyChatOpen(false);
@@ -399,6 +416,30 @@ export default function App() {
 
   function closeReportProblem() {
     setIsReportProblemOpen(false);
+  }
+
+  function openDeleteAccount() {
+    setIsSideMenuOpen(false);
+    setIsNotificationsOpen(false);
+    setViewedProfilePlayer(null);
+    setIsEditProfileOpen(false);
+    setIsAddFriendsOpen(false);
+    setIsAboutUsOpen(false);
+    setIsCommunityGuidelinesOpen(false);
+    setIsHelpSupportOpen(false);
+    setIsReportProblemOpen(false);
+    setSelectedLobbyId(null);
+    setIsLobbyChatOpen(false);
+    setInviteParams(null);
+    setLegalScreen(null);
+    setDeleteAccountError(null);
+    setIsDeleteAccountOpen(true);
+  }
+
+  function closeDeleteAccount() {
+    if (!isDeletingAccount) {
+      setIsDeleteAccountOpen(false);
+    }
   }
 
   function openAboutUs() {
@@ -656,21 +697,112 @@ export default function App() {
     Alert.alert(label, `${label} will be connected in a later pass.`);
   }
 
-  async function continueAuth(credentials: { email: string; password: string }) {
+  function resetAppNavigationState() {
+    setActiveTab('home');
+    setViewedProfilePlayer(null);
+    setIsEditProfileOpen(false);
+    setIsAddFriendsOpen(false);
+    setIsAboutUsOpen(false);
+    setIsCommunityGuidelinesOpen(false);
+    setIsHelpSupportOpen(false);
+    setIsReportProblemOpen(false);
+    setIsDeleteAccountOpen(false);
+    setDeleteAccountError(null);
+    setIsNotificationsOpen(false);
+    setLegalScreen(null);
+    setIsSideMenuOpen(false);
+    setGamesInitialSection('Find Games');
+    setSelectedFilter('All Games');
+    setInviteParams(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+  }
+
+  async function handleLogOut() {
+    setIsSideMenuOpen(false);
+
+    try {
+      await signOut();
+      resetAppNavigationState();
+      setAuthUser(null);
+      setAuthEmail('');
+      setAuthError(null);
+      setAuthNotice(null);
+      setProfilePlayer(mockCurrentPlayer);
+      setPlayersForInvite(mockPlayers);
+      setAuthFlow('auth');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not log out.';
+
+      Alert.alert('Log out failed', message);
+    }
+  }
+
+  async function handleDeleteAccount(feedback: string) {
+    setDeleteAccountError(null);
+    setIsDeletingAccount(true);
+
+    try {
+      await deleteCurrentUserAccount(feedback);
+      resetAppNavigationState();
+      setAuthUser(null);
+      setAuthEmail('');
+      setAuthError(null);
+      setAuthNotice(null);
+      setProfilePlayer(mockCurrentPlayer);
+      setPlayersForInvite(mockPlayers);
+      setAuthFlow('auth');
+      Alert.alert('Account deleted', 'Your TOCA account and data have been deleted.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete your account.';
+
+      setDeleteAccountError(message);
+      Alert.alert('Delete account failed', message);
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  }
+
+  function clearAuthFeedback() {
     setAuthError(null);
+    setAuthNotice(null);
+  }
+
+  async function continueAuth(credentials: { email: string; mode: 'login' | 'signup'; password: string }) {
+    setAuthError(null);
+    setAuthNotice(null);
     setIsAuthLoading(true);
 
     try {
-      const result = await signInOrSignUpWithEmail(credentials.email, credentials.password);
+      const result = credentials.mode === 'login'
+        ? await signInWithEmail(credentials.email, credentials.password)
+        : await signUpWithEmail(credentials.email, credentials.password);
 
       if (result.needsEmailConfirmation || !result.session?.user) {
-        Alert.alert('Check your email', 'Supabase requires email confirmation before you can enter TOCA.');
+        setAuthNotice('Verification sent to email.');
         return;
       }
 
       await continueWithAuthenticatedUser(result.session.user);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not sign in. Please try again.';
+      const message = getAuthErrorMessage(error, credentials.mode);
+
+      setAuthError(message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  }
+
+  async function resendAuthVerification(email: string) {
+    setAuthError(null);
+    setAuthNotice(null);
+    setIsAuthLoading(true);
+
+    try {
+      await resendSignupVerificationEmail(email);
+      setAuthNotice('Verification sent to email.');
+    } catch (error) {
+      const message = getAuthErrorMessage(error, 'signup');
 
       setAuthError(message);
     } finally {
@@ -702,8 +834,32 @@ export default function App() {
     }
   }
 
+  async function uploadOnboardingProfilePhoto(imageUri: string) {
+    if (!authUser) {
+      throw new Error('Missing authenticated user. Please sign in again.');
+    }
+
+    return uploadProfilePhoto(authUser.id, imageUri);
+  }
+
   if (!homeFontsLoaded) {
     return null;
+  }
+
+  if (isEmailVerifiedRoute) {
+    return (
+      <GestureHandlerRootView style={styles.root}>
+        <SafeAreaProvider>
+          <SafeAreaView
+            edges={['top', 'left', 'right']}
+            style={styles.safeArea}
+          >
+            <StatusBar style="dark" />
+            <EmailVerifiedScreen />
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
   }
 
   if (authFlow === 'loading') {
@@ -725,13 +881,17 @@ export default function App() {
               <AuthScreen
                 errorMessage={authError}
                 isLoading={isAuthLoading}
+                onClearFeedback={clearAuthFeedback}
                 onContinue={continueAuth}
+                onResendVerification={resendAuthVerification}
+                successMessage={authNotice}
               />
             ) : authFlow === 'onboarding' ? (
               <SignupWizardScreen
                 email={authEmail}
                 onBack={() => setAuthFlow('auth')}
                 onComplete={finishOnboarding}
+                onUploadProfilePhoto={uploadOnboardingProfilePhoto}
                 player={profilePlayer}
               />
             ) : (
@@ -767,6 +927,13 @@ export default function App() {
               <HelpSupportScreen onBack={closeHelpSupport} onReportProblem={openReportProblem} />
             ) : isReportProblemOpen ? (
               <ReportProblemScreen onBack={closeReportProblem} />
+            ) : isDeleteAccountOpen ? (
+              <DeleteAccountScreen
+                errorMessage={deleteAccountError}
+                isDeleting={isDeletingAccount}
+                onBack={closeDeleteAccount}
+                onDeleteAccount={handleDeleteAccount}
+              />
             ) : legalScreen === 'privacy' ? (
               <PrivacyPolicyScreen onBack={closeLegalScreen} onReportProblem={openReportProblem} />
             ) : legalScreen === 'terms' ? (
@@ -904,9 +1071,11 @@ export default function App() {
               onClose={closeSideMenu}
               onAbout={openAboutUs}
               onCommunityGuidelines={openCommunityGuidelines}
+              onDeleteAccount={openDeleteAccount}
               onEditProfile={openEditProfile}
               onHelpSupport={openHelpSupport}
               onInviteFriends={openAddFriends}
+              onLogOut={handleLogOut}
               onMyGames={openMyGamesFromMenu}
               onNotifications={openNotifications}
               onPrivacyPolicy={openPrivacyPolicy}
@@ -932,6 +1101,35 @@ export default function App() {
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+function isEmailVerifiedPath() {
+  return typeof window !== 'undefined' && window.location.pathname === '/email-verified';
+}
+
+function getAuthErrorMessage(error: unknown, mode: 'login' | 'signup') {
+  const message = error instanceof Error ? error.message : 'Could not continue. Please try again.';
+  const normalizedMessage = message.toLowerCase();
+
+  if (mode === 'login' && normalizedMessage.includes('invalid login credentials')) {
+    return 'Email or password is incorrect.';
+  }
+
+  if (mode === 'login' && normalizedMessage.includes('email not confirmed')) {
+    return 'Please verify your email before logging in.';
+  }
+
+  if (
+    mode === 'signup' &&
+    (normalizedMessage.includes('already has an account') ||
+      normalizedMessage.includes('already registered') ||
+      normalizedMessage.includes('already exists') ||
+      normalizedMessage.includes('user already registered'))
+  ) {
+    return 'This email already has an account. Please log in.';
+  }
+
+  return message;
 }
 
 function getOnboardingFallbackPlayer(user: User): Player {
