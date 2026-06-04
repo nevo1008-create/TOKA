@@ -6,9 +6,10 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { LobbyImageBadge } from '../components/LobbyImageBadge';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
-import { israelPlaces } from '../data/israelPlaces';
+import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlaces';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -50,6 +51,11 @@ type GameListItem = {
   title: string;
 };
 
+type Coordinates = {
+  latitude: number;
+  longitude: number;
+};
+
 const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffix?: boolean }> = [
   { id: 'All Games', icon: 'football-outline' },
   { id: 'Location', icon: 'navigate-outline', suffix: true },
@@ -59,6 +65,11 @@ const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffi
 
 const levelOptions = rankOptions;
 const genderOptions: GenderFilter[] = ['Everyone', 'Male', 'Female'];
+const areaFilterLocations: Location[] = [
+  { area: 'Central', city: 'Area', description: 'area_filter', id: 'area-central', name: 'Central' },
+  { area: 'North', city: 'Area', description: 'area_filter', id: 'area-north', name: 'North' },
+  { area: 'South', city: 'Area', description: 'area_filter', id: 'area-south', name: 'South' },
+];
 
 const gameSections = ['Find Games', 'My Games'] as const;
 type GameSection = (typeof gameSections)[number];
@@ -253,7 +264,7 @@ function SearchGamesView({
   const hasLevelFilter = levelFromIndex !== 0 || levelToIndex !== levelOptions.length - 1;
   const isLocationActive = Boolean(selectedLocationId);
   const hasSearchQuery = Boolean(searchQuery.trim());
-  const hasAnyFilter = hasSearchQuery || hasLevelFilter || Boolean(genderFilter) || isLocationActive || showPrivate;
+  const hasAnyFilter = hasSearchQuery || hasLevelFilter || Boolean(genderFilter) || isLocationActive;
   const levelLabel = hasLevelFilter ? formatLevelRange(levelFromIndex, levelToIndex) : 'Rank';
   const locationLabel = selectedLocation ? selectedLocation.name : 'Location';
 
@@ -265,7 +276,6 @@ function SearchGamesView({
     setLevelFromIndex(0);
     setLevelToIndex(levelOptions.length - 1);
     setGenderFilter(null);
-    setShowPrivate(false);
   }
 
   function handleFilterPress(filter: FilterId) {
@@ -319,28 +329,44 @@ function SearchGamesView({
   const visibleGameCards = useMemo(
     () =>
       getUniqueLobbies(lobbies)
-        .filter((lobby) => isLobbyDiscoverable(lobby))
-        .filter((lobby) =>
-          doesLobbyMatchDiscoveryFilters(lobby, {
-            genderFilter,
-            levelFromIndex,
-            levelToIndex,
-            searchQuery,
-            selectedLocation,
-            showPrivate,
-          }, players),
+        .map((lobby, originalIndex) => ({ lobby, originalIndex }))
+        .filter(({ lobby }) => isLobbyDiscoverable(lobby))
+        .filter(({ lobby }) =>
+          doesLobbyMatchDiscoveryFilters(
+            lobby,
+            {
+              genderFilter,
+              levelFromIndex,
+              levelToIndex,
+              searchQuery,
+              selectedLocation,
+              showPrivate,
+            },
+            players,
+          ),
         )
-        .map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players)),
+        .sort(
+          (left, right) =>
+            getFindGamesSortPriority(left.lobby, currentPlayer.id) -
+              getFindGamesSortPriority(right.lobby, currentPlayer.id) ||
+            left.originalIndex - right.originalIndex,
+        )
+        .map(({ lobby, originalIndex }) => getGameCardFromLobby(lobby, originalIndex, currentPlayer.id, players)),
     [currentPlayer.id, genderFilter, levelFromIndex, levelToIndex, lobbies, players, searchQuery, selectedLocation, showPrivate],
   );
 
+  function closeOpenFilterPanel() {
+    setOpenFilterPanel(null);
+  }
+
   return (
-    <>
+    <View style={styles.searchGamesBody}>
       <View style={styles.searchBox}>
         <Ionicons color={colors.accentSea} name="search" size={18} />
         <TextInput
+          onFocus={closeOpenFilterPanel}
           onChangeText={setSearchQuery}
-          placeholder="Search beach, host, or game"
+          placeholder="Search host, game, or match name"
           placeholderTextColor={colors.subtle}
           style={styles.searchInput}
           value={searchQuery}
@@ -388,7 +414,12 @@ function SearchGamesView({
           <View style={styles.filterPopover}>
             <LevelRangePanel
               fromIndex={levelFromIndex}
+              onClose={closeOpenFilterPanel}
               onFromChange={setLevelFromIndex}
+              onReset={() => {
+                setLevelFromIndex(0);
+                setLevelToIndex(levelOptions.length - 1);
+              }}
               onToChange={setLevelToIndex}
               toIndex={levelToIndex}
             />
@@ -398,6 +429,7 @@ function SearchGamesView({
         {openFilterPanel === 'Location' ? (
           <View style={styles.filterPopover}>
             <LocationFilterPanel
+              currentPlayerArea={currentPlayer.area}
               locations={locationOptions}
               onSelect={(locationId) => {
                 setSelectedLocationId(locationId);
@@ -421,6 +453,15 @@ function SearchGamesView({
           </View>
         ) : null}
       </View>
+
+      {openFilterPanel ? (
+        <Pressable
+          accessibilityLabel="Close filter menu"
+          accessibilityRole="button"
+          onPress={closeOpenFilterPanel}
+          style={styles.filterDismissLayer}
+        />
+      ) : null}
 
       <View style={styles.listHeader}>
         <View style={styles.listTitleRow}>
@@ -474,7 +515,7 @@ function SearchGamesView({
           />
         )}
       </View>
-    </>
+    </View>
   );
 }
 
@@ -482,29 +523,73 @@ function isLobbyDiscoverable(lobby: Lobby) {
   return lobby.status === 'open' || lobby.status === 'full';
 }
 
+function getFindGamesSortPriority(lobby: Lobby, currentPlayerId: string) {
+  const currentParticipant = getCurrentPlayerAnyParticipant(lobby, currentPlayerId);
+
+  if (lobby.adminId === currentPlayerId || currentParticipant?.role === 'admin') {
+    return 0;
+  }
+
+  if (currentParticipant) {
+    return 1;
+  }
+
+  if (lobby.joinRequests.some((request) => request.playerId === currentPlayerId && request.status === 'pending')) {
+    return 2;
+  }
+
+  return 3;
+}
+
 function LevelRangePanel({
   fromIndex,
+  onClose,
   onFromChange,
+  onReset,
   onToChange,
   toIndex,
 }: {
   fromIndex: number;
+  onClose: () => void;
   onFromChange: (index: number) => void;
+  onReset: () => void;
   onToChange: (index: number) => void;
   toIndex: number;
 }) {
+  const isAllRanks = fromIndex === 0 && toIndex === levelOptions.length - 1;
+
   return (
-    <View style={styles.filterPanel}>
-      <View style={styles.panelHeader}>
+    <View style={[styles.filterPanel, styles.rankFilterPanel]}>
+      <Pressable accessibilityRole="button" onPress={onClose} style={styles.panelHeader}>
         <AppText tone="primary" variant="metadata" weight="800">
           Rank range
         </AppText>
         <AppText tone="muted" variant="metadata" weight="700">
           {formatRankRange(fromIndex, toIndex)}
         </AppText>
-      </View>
+      </Pressable>
 
-      <RankRangeBar fromIndex={fromIndex} onFromChange={onFromChange} onToChange={onToChange} toIndex={toIndex} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: isAllRanks }}
+        onPress={() => {
+          onReset();
+          onClose();
+        }}
+        style={[styles.rankResetButton, isAllRanks && styles.rankResetButtonActive]}
+      >
+        <AppText tone={isAllRanks ? 'accent' : 'muted'} variant="caption" weight="800">
+          All ranks
+        </AppText>
+      </Pressable>
+
+      <RankRangeBar
+        fromIndex={fromIndex}
+        labelTapMode="exact"
+        onFromChange={onFromChange}
+        onToChange={onToChange}
+        toIndex={toIndex}
+      />
     </View>
   );
 }
@@ -513,11 +598,11 @@ function GenderFilterPanel({
   onSelect,
   selected,
 }: {
-  onSelect: (option: GenderFilter) => void;
+  onSelect: (option: GenderFilter | null) => void;
   selected: GenderFilter | null;
 }) {
   return (
-    <View style={styles.filterPanel}>
+    <View style={[styles.filterPanel, styles.genderFilterPanel]}>
       <View style={styles.genderOptions}>
         {genderOptions.map((option) => {
           const isSelected = selected === option;
@@ -526,7 +611,7 @@ function GenderFilterPanel({
             <Pressable
               accessibilityRole="button"
               key={option}
-              onPress={() => onSelect(option)}
+              onPress={() => onSelect(isSelected ? null : option)}
               style={[styles.genderOption, isSelected && styles.genderOptionActive]}
             >
               <AppText
@@ -547,59 +632,126 @@ function GenderFilterPanel({
 }
 
 function LocationFilterPanel({
+  currentPlayerArea,
   locations,
   onSelect,
   selectedLocationId,
 }: {
+  currentPlayerArea: string;
   locations: Location[];
   onSelect: (locationId: string | null) => void;
   selectedLocationId: string | null;
 }) {
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+  const trimmedQuery = locationSearchQuery.trim();
+  const recommendedLocations = useMemo(
+    () => getRecommendedLocationOptions(currentPlayerArea, locations, 5),
+    [currentPlayerArea, locations],
+  );
+  const searchedLocations = useMemo(
+    () => getSearchedLocationOptions(trimmedQuery, locations),
+    [locations, trimmedQuery],
+  );
+  const visibleLocations = trimmedQuery ? searchedLocations : recommendedLocations;
+  const sectionTitle = trimmedQuery ? 'Search results' : 'Recommended near your area';
+
   return (
     <View style={styles.filterPanel}>
       <View style={styles.locationOptions}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onSelect(null)}
-          style={[styles.locationOption, !selectedLocationId && styles.locationOptionActive]}
-        >
-          <AppText
-            style={!selectedLocationId && styles.locationOptionTextActive}
-            tone={!selectedLocationId ? 'accent' : 'primary'}
-            variant="chip"
-            weight="800"
-          >
-            All locations
-          </AppText>
-          <AppText tone="muted" variant="caption" weight="600">
-            Show every open match
-          </AppText>
-        </Pressable>
-
-        {locations.map((location) => {
-          const isSelected = selectedLocationId === location.id;
-
-          return (
+        <View style={styles.locationSearchBox}>
+          <Ionicons color={colors.accentSea} name="search" size={16} />
+          <TextInput
+            onChangeText={setLocationSearchQuery}
+            placeholder="Search city, area, or beach"
+            placeholderTextColor={colors.subtle}
+            style={styles.locationSearchInput}
+            value={locationSearchQuery}
+          />
+          {trimmedQuery ? (
             <Pressable
+              accessibilityLabel="Clear location search"
               accessibilityRole="button"
-              key={location.id}
-              onPress={() => onSelect(location.id)}
-              style={[styles.locationOption, isSelected && styles.locationOptionActive]}
+              onPress={() => setLocationSearchQuery('')}
+              style={styles.locationSearchClear}
             >
-              <AppText
-                style={isSelected && styles.locationOptionTextActive}
-                tone={isSelected ? 'accent' : 'primary'}
-                variant="chip"
-                weight="800"
-              >
-                {location.name}
-              </AppText>
-              <AppText tone="muted" variant="caption" weight="600">
-                {location.city}, {location.area}
-              </AppText>
+              <Ionicons color={colors.muted} name="close" size={14} />
             </Pressable>
-          );
-        })}
+          ) : null}
+        </View>
+
+        <View style={styles.areaFilterRow}>
+          {areaFilterLocations.map((areaLocation) => {
+            const isSelected = selectedLocationId === areaLocation.id;
+
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={areaLocation.id}
+                onPress={() => onSelect(isSelected ? null : areaLocation.id)}
+                style={[styles.areaFilterOption, isSelected && styles.areaFilterOptionActive]}
+              >
+                <AppText
+                  style={isSelected && styles.locationOptionTextActive}
+                  tone={isSelected ? 'accent' : 'muted'}
+                  variant="caption"
+                  weight="800"
+                >
+                  {areaLocation.name}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.locationSectionHeader}>
+          <AppText tone="muted" variant="caption" weight="800">
+            {sectionTitle}
+          </AppText>
+          {!trimmedQuery ? (
+            <AppText tone="muted" variant="caption" weight="600">
+              Top 5
+            </AppText>
+          ) : null}
+        </View>
+
+        <ScrollView
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={visibleLocations.length > 4}
+          style={styles.locationResultsList}
+        >
+          <View style={styles.locationResultsContent}>
+            {visibleLocations.length > 0 ? visibleLocations.map((location) => {
+              const isSelected = selectedLocationId === location.id;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={location.id}
+                  onPress={() => onSelect(isSelected ? null : location.id)}
+                  style={[styles.locationOption, isSelected && styles.locationOptionActive]}
+                >
+                  <AppText
+                    style={isSelected && styles.locationOptionTextActive}
+                    tone={isSelected ? 'accent' : 'primary'}
+                    variant="chip"
+                    weight="800"
+                  >
+                    {location.name}
+                  </AppText>
+                  <AppText tone="muted" variant="caption" weight="600">
+                    {getLocationOptionSubtitle(location)}
+                  </AppText>
+                </Pressable>
+              );
+            }) : (
+              <View style={styles.locationEmptyState}>
+                <AppText tone="muted" variant="caption" weight="700">
+                  No beaches found
+                </AppText>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </View>
     </View>
   );
@@ -724,19 +876,17 @@ function GameCard({
   lobby?: Lobby;
   onPress: () => void;
 }) {
-  const currentParticipant = lobby ? getCurrentPlayerParticipant(lobby, currentPlayerId) : undefined;
+  const currentParticipant = lobby ? getCurrentPlayerAnyParticipant(lobby, currentPlayerId) : undefined;
   const pendingRequest = lobby?.joinRequests.find(
     (request) => request.playerId === currentPlayerId && request.status === 'pending',
   );
-  const statusBadgeLabel =
+  const imageBadgeLabel =
     currentParticipant?.role === 'admin'
       ? 'Host'
-      : currentParticipant && isActiveLobbyParticipant(currentParticipant)
+      : currentParticipant
         ? 'Joined'
-        : pendingRequest
-          ? 'Requested access'
-          : game.spotsLeft;
-  const hasJoinedStatus = Boolean(currentParticipant && isActiveLobbyParticipant(currentParticipant));
+        : game.spotsLeft;
+  const hasJoinedStatus = Boolean(currentParticipant);
   const statusBadgeTone = hasJoinedStatus ? 'green' : 'yellow';
 
   return (
@@ -748,7 +898,8 @@ function GameCard({
       location={game.location}
       onPress={onPress}
       players={formatPlayersCount(game.players)}
-      spotsLeft={statusBadgeLabel}
+      requestStatusLabel={pendingRequest && !currentParticipant ? 'Access requested' : undefined}
+      spotsLeft={imageBadgeLabel}
       spotsTone={statusBadgeTone}
       status="Approval"
       time={formatLobbyStart(game.startsAt)}
@@ -817,6 +968,7 @@ function getLobbyDedupeKey(lobby: Lobby) {
 function getLocationOptions(lobbies: Lobby[]) {
   const locationsByKey = new Map<string, Location>();
 
+  areaFilterLocations.forEach((location) => locationsByKey.set(getLocationDedupeKey(location), location));
   israelPlaces.forEach((location) => locationsByKey.set(getLocationDedupeKey(location), location));
   lobbies.forEach((lobby) => {
     const locationKey = getLocationDedupeKey(lobby.location);
@@ -831,12 +983,289 @@ function getLocationOptions(lobbies: Lobby[]) {
   );
 }
 
+function getLocationOptionSubtitle(location: Location) {
+  return isAreaFilterLocation(location) ? `All ${location.area} games` : `${location.city}, ${location.area}`;
+}
+
+function getRecommendedLocationOptions(playerArea: string, locations: Location[], limit: number) {
+  const playerCoordinates = getPlayerAreaCoordinates(playerArea);
+
+  if (playerCoordinates) {
+    return locations
+      .map((location) => ({
+        distanceKm: getLocationDistanceKm(location, playerCoordinates),
+        location,
+      }))
+      .sort((left, right) =>
+        left.distanceKm - right.distanceKm ||
+        `${left.location.city} ${left.location.name}`.localeCompare(`${right.location.city} ${right.location.name}`),
+      )
+      .slice(0, limit)
+      .map((item) => item.location);
+  }
+
+  const scoredLocations = locations
+    .map((location) => ({
+      location,
+      score: getLocationRecommendationScore(location, playerArea),
+    }))
+    .sort((left, right) =>
+      right.score - left.score ||
+      `${left.location.city} ${left.location.name}`.localeCompare(`${right.location.city} ${right.location.name}`),
+    );
+  const preferredLocations = scoredLocations.filter((item) => item.score > 0).map((item) => item.location);
+  const fallbackLocations = scoredLocations.filter((item) => item.score === 0).map((item) => item.location);
+
+  return [...preferredLocations, ...fallbackLocations].slice(0, limit);
+}
+
+function getPlayerAreaCoordinates(playerArea: string): Coordinates | null {
+  const normalizedPlayerArea = normalizeSearchText(playerArea);
+
+  if (!normalizedPlayerArea) {
+    return null;
+  }
+
+  const matchedLocation = israelLocations
+    .map((location) => {
+      const aliasScore = Math.max(
+        ...getAreaSearchValues(location.area).map((alias) => getTextMatchScore(alias, normalizedPlayerArea)),
+        ...location.aliases.map((alias) => getTextMatchScore(alias, normalizedPlayerArea)),
+        0,
+      );
+
+      return {
+        location,
+        score: Math.max(
+          getWeightedTextMatchScore(location.city, normalizedPlayerArea, 30),
+          getWeightedTextMatchScore(location.displayName, normalizedPlayerArea, 20),
+          getWeightedTextMatchScore(location.area, normalizedPlayerArea, 8),
+          aliasScore,
+        ),
+      };
+    })
+    .filter((result) => result.score > 0)
+    .sort((left, right) => right.score - left.score || left.location.displayName.localeCompare(right.location.displayName))[0]?.location;
+
+  return matchedLocation
+    ? {
+        latitude: matchedLocation.latitude,
+        longitude: matchedLocation.longitude,
+      }
+    : null;
+}
+
+function getLocationDistanceKm(location: Location, fromCoordinates: Coordinates) {
+  const locationCoordinates = getLocationCoordinates(location);
+
+  return locationCoordinates ? getDistanceKm(fromCoordinates, locationCoordinates) : Number.MAX_SAFE_INTEGER;
+}
+
+function getLocationCoordinates(location: Location): Coordinates | null {
+  if (isAreaFilterLocation(location)) {
+    return null;
+  }
+
+  const normalizedName = normalizeSearchText(location.name);
+  const normalizedCity = normalizeSearchText(location.city);
+  const matchedBeach = israelBeaches.find((beach) =>
+    beach.id === location.id ||
+    (normalizeSearchText(beach.displayName) === normalizedName && normalizeSearchText(beach.city) === normalizedCity),
+  );
+
+  if (matchedBeach) {
+    return {
+      latitude: matchedBeach.latitude,
+      longitude: matchedBeach.longitude,
+    };
+  }
+
+  const matchedLocation = israelLocations.find((place) => normalizeSearchText(place.city) === normalizedCity);
+
+  return matchedLocation
+    ? {
+        latitude: matchedLocation.latitude,
+        longitude: matchedLocation.longitude,
+      }
+    : null;
+}
+
+function getDistanceKm(fromCoordinates: Coordinates, toCoordinates: Coordinates) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(toCoordinates.latitude - fromCoordinates.latitude);
+  const longitudeDelta = toRadians(toCoordinates.longitude - fromCoordinates.longitude);
+  const fromLatitude = toRadians(fromCoordinates.latitude);
+  const toLatitude = toRadians(toCoordinates.latitude);
+  const haversine =
+    Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
+    Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) * Math.sin(longitudeDelta / 2);
+
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function toRadians(degrees: number) {
+  return degrees * (Math.PI / 180);
+}
+
+function getSearchedLocationOptions(query: string, locations: Location[]) {
+  if (!query.trim()) {
+    return [];
+  }
+
+  return locations
+    .map((location) => ({
+      location,
+      score: getLocationSearchMatchScore(location, query),
+    }))
+    .filter((result) => result.score > 0)
+    .sort((left, right) =>
+      right.score - left.score ||
+      `${left.location.city} ${left.location.name}`.localeCompare(`${right.location.city} ${right.location.name}`),
+    )
+    .map((result) => result.location);
+}
+
 function getLocationDedupeKey(location: Location) {
+  if (isAreaFilterLocation(location)) {
+    return location.id;
+  }
+
   return [
     normalizeSearchText(location.name),
     normalizeSearchText(location.city),
-    normalizeSearchText(location.area),
   ].join('|');
+}
+
+function isAreaFilterLocation(location: Location) {
+  return location.description === 'area_filter';
+}
+
+function getLocationRecommendationScore(location: Location, playerArea: string) {
+  const normalizedPlayerArea = normalizeSearchText(playerArea);
+
+  if (!normalizedPlayerArea) {
+    return 0;
+  }
+
+  return Math.max(
+    getWeightedTextMatchScore(location.city, normalizedPlayerArea, 30),
+    getWeightedTextMatchScore(location.area, normalizedPlayerArea, 12),
+    getTextMatchScore(location.name, normalizedPlayerArea),
+    getAliasSearchScore(getLocationSearchAliases(location), normalizedPlayerArea),
+  );
+}
+
+function getLocationSearchMatchScore(location: Location, query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  return Math.max(
+    getWeightedTextMatchScore(location.name, normalizedQuery, 30),
+    getWeightedTextMatchScore(location.city, normalizedQuery, 20),
+    getWeightedTextMatchScore(location.area, normalizedQuery, 10),
+    getAliasSearchScore(getLocationSearchAliases(location), normalizedQuery),
+  );
+}
+
+function getLocationSearchAliases(location: Location) {
+  if (isAreaFilterLocation(location)) {
+    return [
+      `all ${location.area} games`,
+      `${location.area} area`,
+      ...getAreaSearchValues(location.area),
+    ];
+  }
+
+  const normalizedName = normalizeSearchText(location.name);
+  const normalizedCity = normalizeSearchText(location.city);
+  const matchingBeach = israelBeaches.find((beach) =>
+    beach.id === location.id ||
+    (normalizeSearchText(beach.displayName) === normalizedName && normalizeSearchText(beach.city) === normalizedCity),
+  );
+  const matchingCity = israelLocations.find((place) => normalizeSearchText(place.city) === normalizedCity);
+
+  return [
+    ...(matchingBeach?.aliases ?? []),
+    ...(matchingCity?.aliases ?? []),
+    ...getAreaSearchValues(location.area),
+  ];
+}
+
+function getAreaSearchValues(area: string) {
+  const normalizedArea = normalizeSearchText(area);
+
+  if (normalizedArea.includes('central') || normalizedArea.includes('center') || normalizedArea.includes('sharon')) {
+    return ['central', 'center', 'sharon', '\u05de\u05e8\u05db\u05d6'];
+  }
+
+  if (normalizedArea.includes('north')) {
+    return ['north', '\u05e6\u05e4\u05d5\u05df'];
+  }
+
+  if (normalizedArea.includes('south')) {
+    return ['south', '\u05d3\u05e8\u05d5\u05dd'];
+  }
+
+  if (normalizedArea === 'central' || normalizedArea === 'center') {
+    return ['central', 'center', 'מרכז'];
+  }
+
+  if (normalizedArea === 'north') {
+    return ['north', 'צפון'];
+  }
+
+  if (normalizedArea === 'south') {
+    return ['south', 'דרום'];
+  }
+
+  return [area];
+}
+
+function getAliasSearchScore(values: string[], normalizedQuery: string) {
+  return values.reduce((bestScore, value) => Math.max(bestScore, getTextMatchScore(value, normalizedQuery)), 0);
+}
+
+function getWeightedTextMatchScore(value: string, normalizedQuery: string, boost: number) {
+  const score = getTextMatchScore(value, normalizedQuery);
+
+  return score > 0 ? score + boost : 0;
+}
+
+function getTextMatchScore(value: string, normalizedQuery: string) {
+  const normalizedValue = normalizeSearchText(value);
+
+  if (!normalizedValue || !normalizedQuery) {
+    return 0;
+  }
+
+  if (normalizedValue === normalizedQuery) {
+    return 100;
+  }
+
+  if (normalizedValue.startsWith(normalizedQuery) || normalizedQuery.startsWith(normalizedValue)) {
+    return 80;
+  }
+
+  if (normalizedValue.includes(normalizedQuery) || normalizedQuery.includes(normalizedValue)) {
+    return 65;
+  }
+
+  const valueWords = normalizedValue.split(' ').filter((word) => word.length > 2);
+  const queryWords = normalizedQuery.split(' ').filter((word) => word.length > 2);
+  const sharedWords = queryWords.filter((word) => valueWords.includes(word)).length;
+
+  if (sharedWords >= 2) {
+    return 50 + sharedWords;
+  }
+
+  if (sharedWords === 1) {
+    return 28;
+  }
+
+  return 0;
 }
 
 function doesLobbyMatchDiscoveryFilters(
@@ -882,6 +1311,10 @@ function isPrivateLobby(lobby: Lobby) {
 }
 
 function doesLobbyMatchLocation(lobby: Lobby, selectedLocation: Location) {
+  if (isAreaFilterLocation(selectedLocation)) {
+    return getLocationAreaGroup(lobby.location) === selectedLocation.area;
+  }
+
   const selectedName = normalizeSearchText(selectedLocation.name);
   const selectedCity = normalizeSearchText(selectedLocation.city);
   const lobbyName = normalizeSearchText(lobby.location.name);
@@ -892,6 +1325,73 @@ function doesLobbyMatchLocation(lobby: Lobby, selectedLocation: Location) {
     (lobbyName === selectedName && lobbyCity === selectedCity) ||
     (Boolean(selectedCity) && lobbyCity === selectedCity)
   );
+}
+
+function getLocationAreaGroup(location: Location) {
+  const explicitAreaGroup = getAreaGroupFromText(location.area);
+
+  if (explicitAreaGroup) {
+    return explicitAreaGroup;
+  }
+
+  const cityAreaGroup = getAreaGroupFromText(location.city);
+
+  if (cityAreaGroup) {
+    return cityAreaGroup;
+  }
+
+  return getAreaGroupFromText(location.name);
+}
+
+function getAreaGroupFromText(value: string) {
+  const normalizedValue = normalizeSearchText(value);
+
+  if (
+    normalizedValue.includes('south') ||
+    normalizedValue.includes('ashdod') ||
+    normalizedValue.includes('ashkelon') ||
+    normalizedValue.includes('beersheba') ||
+    normalizedValue.includes('\u05d3\u05e8\u05d5\u05dd') ||
+    normalizedValue.includes('\u05d0\u05e9\u05d3\u05d5\u05d3') ||
+    normalizedValue.includes('\u05d0\u05e9\u05e7\u05dc\u05d5\u05df')
+  ) {
+    return 'South';
+  }
+
+  if (
+    normalizedValue.includes('north') ||
+    normalizedValue.includes('haifa') ||
+    normalizedValue.includes('caesarea') ||
+    normalizedValue.includes('\u05e6\u05e4\u05d5\u05df') ||
+    normalizedValue.includes('\u05d7\u05d9\u05e4\u05d4') ||
+    normalizedValue.includes('\u05e7\u05d9\u05e1\u05e8\u05d9\u05d4')
+  ) {
+    return 'North';
+  }
+
+  if (
+    normalizedValue.includes('central') ||
+    normalizedValue.includes('center') ||
+    normalizedValue.includes('sharon') ||
+    normalizedValue.includes('tel aviv') ||
+    normalizedValue.includes('yafo') ||
+    normalizedValue.includes('bat yam') ||
+    normalizedValue.includes('holon') ||
+    normalizedValue.includes('rishon') ||
+    normalizedValue.includes('herzliya') ||
+    normalizedValue.includes('netanya') ||
+    normalizedValue.includes('jerusalem') ||
+    normalizedValue.includes('\u05de\u05e8\u05db\u05d6') ||
+    normalizedValue.includes('\u05ea\u05dc \u05d0\u05d1\u05d9\u05d1') ||
+    normalizedValue.includes('\u05d1\u05ea \u05d9\u05dd') ||
+    normalizedValue.includes('\u05d7\u05d5\u05dc\u05d5\u05df') ||
+    normalizedValue.includes('\u05d4\u05e8\u05e6\u05dc\u05d9\u05d4') ||
+    normalizedValue.includes('\u05e0\u05ea\u05e0\u05d9\u05d4')
+  ) {
+    return 'Central';
+  }
+
+  return null;
 }
 
 function doesLobbyMatchGender(lobby: Lobby, genderFilter: GenderFilter) {
@@ -977,7 +1477,7 @@ function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: stri
     lobbyIndex: index,
     location: `${lobby.location.name}, ${lobby.location.city}`,
     players: `${activeParticipants.length} / ${lobby.maxPlayers} players`,
-    spotsLeft: spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`,
+    spotsLeft: spotsLeft === 0 ? '' : spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`,
     startsAt: lobby.startsAt,
     title: lobby.title,
   };
@@ -1117,31 +1617,12 @@ function BeachThumbnail({
   game: GameListItem;
 }) {
   const visibleBadgeLabel = badgeLabel ?? game.spotsLeft;
-  const badgeStyle =
-    badgeTone === 'lime'
-      ? styles.spotsBadgeLime
-      : badgeTone === 'muted'
-        ? styles.spotsBadgeMuted
-        : badgeTone === 'goldSoft'
-          ? styles.spotsBadgeGoldSoft
-          : styles.spotsBadgeGold;
-  const badgeTextTone =
-    badgeTone === 'muted'
-      ? 'muted'
-      : badgeTone === 'lime'
-        ? 'accent'
-        : badgeTone === 'goldSoft'
-          ? 'warning'
-          : 'primary';
+  const badgeImageTone = badgeTone === 'lime' ? 'green' : badgeTone === 'muted' ? 'muted' : 'yellow';
 
   return (
     <View style={styles.thumbnail}>
       <BeachGameVisual compact variant={game.audience === 'Women' ? 'sunset' : game.level === 'A+' ? 'morning' : 'aqua'} />
-      <View style={[styles.spotsBadge, badgeStyle]}>
-        <AppText style={styles.spotsText} tone={badgeTextTone} variant="chip" weight="800">
-          {visibleBadgeLabel}
-        </AppText>
-      </View>
+      <LobbyImageBadge label={visibleBadgeLabel} size="wide" tone={badgeImageTone} />
     </View>
   );
 }
@@ -1168,10 +1649,6 @@ function getCurrentPlayerAnyParticipant(lobby: Lobby, currentPlayerId: string) {
 
 function isCurrentPlayerInLobby(lobby: Lobby, currentPlayerId: string) {
   return Boolean(getCurrentPlayerAnyParticipant(lobby, currentPlayerId));
-}
-
-function isActiveLobbyParticipant(participant: Lobby['participants'][number]) {
-  return isJoinedParticipant(participant);
 }
 
 function formatLevelRange(fromIndex: number, toIndex: number) {
@@ -1273,6 +1750,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
   },
+  filterDismissLayer: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 10,
+  },
   filterRow: {
     gap: 4,
     justifyContent: 'space-between',
@@ -1320,6 +1805,25 @@ const styles = StyleSheet.create({
   gameTitle: {
     color: colors.ink,
   },
+  areaFilterOption: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
+  },
+  areaFilterOptionActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  areaFilterRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
   genderPill: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
@@ -1339,8 +1843,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: spacing.sm,
+    minHeight: 28,
+    paddingHorizontal: spacing.xs,
   },
   genderOptionActive: {
     backgroundColor: colors.surfaceMuted,
@@ -1348,10 +1852,16 @@ const styles = StyleSheet.create({
   },
   genderOptions: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   genderOptionTextActive: {
     color: colors.accentLime,
+  },
+  genderFilterPanel: {
+    alignSelf: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    width: '82%',
   },
   genderPopover: {
     left: 0,
@@ -1464,10 +1974,60 @@ const styles = StyleSheet.create({
   },
   locationOptions: {
     gap: spacing.xs,
-    maxHeight: 320,
   },
   locationOptionTextActive: {
     color: colors.accentLime,
+  },
+  locationSearchBox: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+  },
+  locationSearchClear: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.round,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  locationSearchInput: {
+    color: colors.ink,
+    flex: 1,
+    fontFamily: fontFamilies.manrope.medium,
+    fontSize: 13,
+    lineHeight: 17,
+    padding: 0,
+  },
+  locationSectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    paddingTop: 2,
+  },
+  locationResultsList: {
+    maxHeight: 262,
+  },
+  locationResultsContent: {
+    gap: spacing.xs,
+    paddingBottom: 2,
+  },
+  locationEmptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
   },
   locationRow: {
     alignItems: 'center',
@@ -1639,6 +2199,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  rankFilterPanel: {
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  rankResetButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 28,
+    paddingHorizontal: spacing.sm,
+  },
+  rankResetButtonActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
   screen: {
     backgroundColor: colors.background,
     flex: 1,
@@ -1685,6 +2264,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     ...shadows.soft,
   },
+  searchGamesBody: {
+    gap: 14,
+    position: 'relative',
+  },
   searchInput: {
     color: colors.ink,
     flex: 1,
@@ -1724,39 +2307,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 2,
   },
-  spotsBadge: {
-    borderRadius: radius.round,
-    left: 7,
-    minHeight: 22,
-    paddingHorizontal: 8,
-    paddingTop: 4,
-    position: 'absolute',
-    top: 7,
-  },
-  spotsBadgeGold: {
-    backgroundColor: colors.surfaceYellow,
-    borderColor: 'rgba(255, 200, 61, 0.28)',
-    borderWidth: 1,
-  },
-  spotsBadgeGoldSoft: {
-    backgroundColor: colors.surfaceYellow,
-    borderColor: 'rgba(255, 200, 61, 0.28)',
-    borderWidth: 1,
-  },
-  spotsBadgeLime: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderWidth: 1,
-  },
-  spotsBadgeMuted: {
-    backgroundColor: colors.surfaceAqua,
-    borderColor: colors.border,
-    borderWidth: 1,
-  },
-  spotsText: {
-    fontSize: 10,
-    lineHeight: 13,
-  },
   statusBadge: {
     borderRadius: radius.round,
     borderWidth: 1,
@@ -1793,7 +2343,7 @@ const styles = StyleSheet.create({
     height: 106,
     overflow: 'hidden',
     position: 'relative',
-    width: 104,
+    width: 136,
   },
   timeRow: {
     alignItems: 'center',
