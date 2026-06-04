@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, homeTypography, radius, shadows } from '../../theme';
 import { AppText } from '../AppText';
+import { LobbyImageBadge } from '../LobbyImageBadge';
 import { BeachGameVisual } from './BeachGameVisual';
 
 type NearbyGameCardProps = {
@@ -15,6 +16,7 @@ type NearbyGameCardProps = {
   location: string;
   onPress?: () => void;
   players: string;
+  requestStatusLabel?: string;
   selected?: boolean;
   spotsTone?: 'green' | 'yellow';
   spotsLeft?: string;
@@ -35,6 +37,7 @@ export function NearbyGameCard({
   location,
   onPress,
   players,
+  requestStatusLabel,
   selected = false,
   spotsTone = 'yellow',
   spotsLeft = '3 spots left',
@@ -124,6 +127,14 @@ export function NearbyGameCard({
                 {players} players
               </AppText>
             </View>
+            {requestStatusLabel ? (
+              <View style={styles.requestStatusPill}>
+                <Ionicons color={colors.primaryDark} name="time-outline" size={11} />
+                <AppText numberOfLines={1} style={styles.requestStatusText} variant="metadata" weight="800">
+                  {requestStatusLabel}
+                </AppText>
+              </View>
+            ) : null}
             <View
               style={[
                 styles.cardAction,
@@ -163,7 +174,6 @@ export function NearbyGameCard({
 function BeachThumb({
   badgeLabel,
   tone,
-  useHomeTypography,
   variant,
 }: {
   badgeLabel: string;
@@ -171,26 +181,10 @@ function BeachThumb({
   useHomeTypography: boolean;
   variant: 'morning' | 'sunset';
 }) {
-  const isLongBadge = badgeLabel.length > 8;
-
   return (
     <View style={styles.thumb}>
       <BeachGameVisual compact variant={variant} />
-      <View style={[styles.imageBadge, tone === 'green' && styles.imageBadgeGreen]}>
-        <AppText
-          numberOfLines={1}
-          style={[
-            styles.imageBadgeText,
-            useHomeTypography && styles.homeImageBadgeText,
-            isLongBadge && styles.imageBadgeTextLong,
-          ]}
-          tone={tone === 'green' ? 'accent' : 'primary'}
-          variant="chip"
-          weight="800"
-        >
-          {badgeLabel}
-        </AppText>
-      </View>
+      <LobbyImageBadge label={badgeLabel} size="compact" tone={tone} />
     </View>
   );
 }
@@ -199,7 +193,7 @@ const styles = StyleSheet.create({
   actionStack: {
     alignItems: 'flex-end',
     gap: 5,
-    width: 92,
+    width: 112,
   },
   actionText: {
     flexShrink: 1,
@@ -233,6 +227,7 @@ const styles = StyleSheet.create({
   },
   cardAction: {
     alignItems: 'center',
+    alignSelf: 'flex-end',
     backgroundColor: colors.primary,
     borderRadius: radius.round,
     flexDirection: 'row',
@@ -286,39 +281,12 @@ const styles = StyleSheet.create({
   homeChipText: {
     ...homeTypography.chipSmall,
   },
-  homeImageBadgeText: {
-    ...homeTypography.chipSmall,
-  },
   homeMetadataText: {
     ...homeTypography.metadata,
   },
   homePlayersText: {
     fontFamily: homeTypography.metadata.fontFamily,
     fontWeight: 'normal',
-  },
-  imageBadge: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceYellow,
-    borderColor: 'rgba(255, 200, 61, 0.28)',
-    borderRadius: radius.round,
-    borderWidth: 1,
-    left: 7,
-    minHeight: 28,
-    paddingHorizontal: 10,
-    paddingTop: 5,
-    position: 'absolute',
-    top: 7,
-  },
-  imageBadgeGreen: {
-    backgroundColor: 'rgba(36, 196, 90, 0.14)',
-    borderColor: 'rgba(36, 196, 90, 0.30)',
-  },
-  imageBadgeText: {
-    lineHeight: 16,
-  },
-  imageBadgeTextLong: {
-    fontSize: 10,
-    lineHeight: 13,
   },
   levelPill: {
     backgroundColor: colors.surfaceMuted,
@@ -352,6 +320,7 @@ const styles = StyleSheet.create({
   },
   playersPill: {
     alignItems: 'center',
+    alignSelf: 'flex-end',
     backgroundColor: colors.transparent,
     borderColor: colors.transparent,
     borderRadius: radius.round,
@@ -366,6 +335,26 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 9,
     lineHeight: 13,
+  },
+  requestStatusPill: {
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(234, 245, 236, 0.82)',
+    borderColor: 'rgba(36, 196, 90, 0.28)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    justifyContent: 'center',
+    minHeight: 18,
+    paddingHorizontal: 4,
+    width: 112,
+  },
+  requestStatusText: {
+    color: colors.primaryDark,
+    flexShrink: 1,
+    fontSize: 8,
+    lineHeight: 10,
   },
   thumb: {
     borderRadius: 18,

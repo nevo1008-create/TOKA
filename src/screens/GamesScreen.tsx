@@ -1,17 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { LobbyImageBadge } from '../components/LobbyImageBadge';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
+import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlaces';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { Lobby, Player } from '../types';
+import type { Lobby, Location, Player, PlayerLevel } from '../types';
 
 type GamesScreenProps = {
   currentPlayer: Player;
@@ -27,8 +29,8 @@ type GamesScreenProps = {
   setSelectedFilter: (filter: string) => void;
 };
 
-type FilterId = 'All Games' | 'Rank' | 'Gender';
-type OpenFilterPanel = 'Rank' | 'Gender' | null;
+type FilterId = 'All Games' | 'Location' | 'Rank' | 'Gender';
+type OpenFilterPanel = 'Location' | 'Rank' | 'Gender' | null;
 type GenderFilter = 'Everyone' | 'Male' | 'Female';
 
 type GameListItem = {
@@ -49,16 +51,106 @@ type GameListItem = {
   title: string;
 };
 
+type Coordinates = {
+  latitude: number;
+  longitude: number;
+};
+
 const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffix?: boolean }> = [
   { id: 'All Games', icon: 'football-outline' },
+  { id: 'Location', icon: 'navigate-outline', suffix: true },
   { id: 'Rank', icon: 'options-outline', suffix: true },
   { id: 'Gender', icon: 'male-female-outline', suffix: true },
 ];
 
+const levelOptions = rankOptions;
 const genderOptions: GenderFilter[] = ['Everyone', 'Male', 'Female'];
+const areaFilterLocations: Location[] = [
+  { area: 'Central', city: 'Area', description: 'area_filter', id: 'area-central', name: 'Central' },
+  { area: 'North', city: 'Area', description: 'area_filter', id: 'area-north', name: 'North' },
+  { area: 'South', city: 'Area', description: 'area_filter', id: 'area-south', name: 'South' },
+];
 
 const gameSections = ['Find Games', 'My Games'] as const;
 type GameSection = (typeof gameSections)[number];
+
+const gameCards: GameListItem[] = [
+  {
+    audience: 'Everyone',
+    avatars: ['NV', 'OM', 'MY'],
+    badgeLabel: 'Host',
+    badgeTone: 'lime',
+    distance: '2.4 km',
+    gradient: ['#FFF2BD', '#8EDBD2', '#24C45A'],
+    level: 'B/C+',
+    lobbyId: 'l1',
+    lobbyIndex: 0,
+    location: 'Gordon Beach, Tel Aviv',
+    players: '3 / 4 players',
+    spotsLeft: '1 spot left',
+    startsAt: '2026-06-05T16:30:00+03:00',
+    title: 'Friday at Gordon',
+  },
+  {
+    audience: 'Everyone',
+    avatars: ['DN', 'NV', 'OM'],
+    distance: '18.1 km',
+    gradient: ['#F8F1E3', '#F6C945', '#8FCFBC'],
+    level: 'A+',
+    lobbyId: 'l2',
+    lobbyIndex: 1,
+    location: 'Poleg Beach, Netanya',
+    players: '3 / 6 players',
+    spotsLeft: '3 spots left',
+    startsAt: '2026-06-06T08:00:00+03:00',
+    title: 'League morning',
+  },
+  {
+    audience: 'Women',
+    avatars: ['MY'],
+    distance: '49.5 km',
+    gradient: ['#DDF5F1', '#1BB7A8', '#F6C945'],
+    level: 'C/D',
+    lobbyId: 'l3',
+    lobbyIndex: 2,
+    location: 'Aqueduct Beach, Caesarea',
+    metaTag: 'Women',
+    players: '1 / 6 players',
+    spotsLeft: '5 spots left',
+    startsAt: '2026-06-07T19:00:00+03:00',
+    title: 'Women evening',
+  },
+  {
+    audience: 'Everyone',
+    avatars: ['NV', 'OM', 'LB', '+1'],
+    badgeLabel: 'Joined',
+    badgeTone: 'lime',
+    distance: '3.1 km',
+    gradient: ['#EAF5EC', '#24C45A', '#1BB7A8'],
+    level: 'C/B+',
+    lobbyId: 'l4',
+    lobbyIndex: 3,
+    location: 'Hilton Beach, Tel Aviv',
+    players: '3 / 6 players',
+    spotsLeft: '3 spots left',
+    startsAt: '2026-06-07T07:30:00+03:00',
+    title: 'Sunrise challenge',
+  },
+  {
+    audience: 'Everyone',
+    avatars: ['OM', 'MY', 'ES', '+2'],
+    distance: '12.7 km',
+    gradient: ['#FFF9EC', '#F6C945', '#24C45A'],
+    level: 'B+',
+    lobbyId: 'l5',
+    lobbyIndex: 4,
+    location: 'Herzliya Beach, Herzliya',
+    players: '4 / 8 players',
+    spotsLeft: 'Finished',
+    startsAt: '2026-06-08T18:00:00+03:00',
+    title: 'Monday night',
+  },
+];
 
 export function getLobbyImageUrl(index: number) {
   return `gradient-placeholder-${index}`;
@@ -73,6 +165,7 @@ export function GamesScreen({
   onOpenNotifications,
   onOpenLobby,
   players,
+  selectedFilter,
   setSelectedFilter,
 }: GamesScreenProps) {
   const [activeSection, setActiveSection] = useState<GameSection>(initialSection);
@@ -130,6 +223,7 @@ export function GamesScreen({
             lobbies={lobbies}
             onOpenLobby={onOpenLobby}
             players={players}
+            selectedFilter={selectedFilter}
             setSelectedFilter={setSelectedFilter}
           />
         ) : (
@@ -145,38 +239,54 @@ function SearchGamesView({
   lobbies,
   onOpenLobby,
   players,
+  selectedFilter,
   setSelectedFilter,
 }: {
   currentPlayer: Player;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
+  selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
 }) {
   const [openFilterPanel, setOpenFilterPanel] = useState<OpenFilterPanel>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [levelFromIndex, setLevelFromIndex] = useState(0);
-  const [levelToIndex, setLevelToIndex] = useState(rankOptions.length - 1);
+  const [levelToIndex, setLevelToIndex] = useState(levelOptions.length - 1);
   const [genderFilter, setGenderFilter] = useState<GenderFilter | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
+  const locationOptions = useMemo(() => getLocationOptions(lobbies), [lobbies]);
+  const selectedLocation = selectedLocationId
+    ? locationOptions.find((location) => location.id === selectedLocationId) ?? null
+    : null;
 
-  const hasLevelFilter = levelFromIndex !== 0 || levelToIndex !== rankOptions.length - 1;
-  const hasAnyFilter = hasLevelFilter || Boolean(genderFilter) || showPrivate || searchQuery.trim().length > 0;
-  const levelLabel = hasLevelFilter ? formatRankRange(levelFromIndex, levelToIndex) : 'Rank';
+  const hasLevelFilter = levelFromIndex !== 0 || levelToIndex !== levelOptions.length - 1;
+  const isLocationActive = Boolean(selectedLocationId);
+  const hasSearchQuery = Boolean(searchQuery.trim());
+  const hasAnyFilter = hasSearchQuery || hasLevelFilter || Boolean(genderFilter) || isLocationActive;
+  const levelLabel = hasLevelFilter ? formatLevelRange(levelFromIndex, levelToIndex) : 'Rank';
+  const locationLabel = selectedLocation ? selectedLocation.name : 'Location';
 
   function resetFilters() {
     setSelectedFilter('All Games');
     setOpenFilterPanel(null);
-    setLevelFromIndex(0);
-    setLevelToIndex(rankOptions.length - 1);
-    setGenderFilter(null);
-    setShowPrivate(false);
     setSearchQuery('');
+    setSelectedLocationId(null);
+    setLevelFromIndex(0);
+    setLevelToIndex(levelOptions.length - 1);
+    setGenderFilter(null);
   }
 
   function handleFilterPress(filter: FilterId) {
     if (filter === 'All Games') {
       resetFilters();
+      return;
+    }
+
+    if (filter === 'Location') {
+      setSelectedFilter('Location');
+      setOpenFilterPanel((current) => current === 'Location' ? null : 'Location');
       return;
     }
 
@@ -193,12 +303,20 @@ function SearchGamesView({
       return genderFilter ?? 'Gender';
     }
 
+    if (filter === 'Location') {
+      return locationLabel;
+    }
+
     return filter;
   }
 
   function getFilterActive(filter: FilterId) {
     if (filter === 'All Games') {
       return !hasAnyFilter;
+    }
+
+    if (filter === 'Location') {
+      return openFilterPanel === 'Location' || isLocationActive;
     }
 
     if (filter === 'Rank') {
@@ -208,28 +326,50 @@ function SearchGamesView({
     return openFilterPanel === 'Gender' || Boolean(genderFilter);
   }
 
-  const visibleLobbies = getUniqueLobbies(lobbies).filter((lobby) =>
-    isLobbyVisibleForFilters(lobby, {
-      genderFilter,
-      levelFromIndex,
-      levelToIndex,
-      players,
-      searchQuery,
-      showPrivate,
-    }),
+  const visibleGameCards = useMemo(
+    () =>
+      getUniqueLobbies(lobbies)
+        .map((lobby, originalIndex) => ({ lobby, originalIndex }))
+        .filter(({ lobby }) => isLobbyDiscoverable(lobby))
+        .filter(({ lobby }) =>
+          doesLobbyMatchDiscoveryFilters(
+            lobby,
+            {
+              genderFilter,
+              levelFromIndex,
+              levelToIndex,
+              searchQuery,
+              selectedLocation,
+              showPrivate,
+            },
+            players,
+          ),
+        )
+        .sort(
+          (left, right) =>
+            getFindGamesSortPriority(left.lobby, currentPlayer.id) -
+              getFindGamesSortPriority(right.lobby, currentPlayer.id) ||
+            left.originalIndex - right.originalIndex,
+        )
+        .map(({ lobby, originalIndex }) => getGameCardFromLobby(lobby, originalIndex, currentPlayer.id, players)),
+    [currentPlayer.id, genderFilter, levelFromIndex, levelToIndex, lobbies, players, searchQuery, selectedLocation, showPrivate],
   );
-  const visibleGameCards = visibleLobbies.map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players));
+
+  function closeOpenFilterPanel() {
+    setOpenFilterPanel(null);
+  }
 
   return (
-    <>
+    <View style={styles.searchGamesBody}>
       <View style={styles.searchBox}>
         <Ionicons color={colors.accentSea} name="search" size={18} />
         <TextInput
-          placeholder="Search beach, host, or game"
+          onFocus={closeOpenFilterPanel}
+          onChangeText={setSearchQuery}
+          placeholder="Search host, game, or match name"
           placeholderTextColor={colors.subtle}
           style={styles.searchInput}
           value={searchQuery}
-          onChangeText={setSearchQuery}
         />
       </View>
 
@@ -274,9 +414,29 @@ function SearchGamesView({
           <View style={styles.filterPopover}>
             <LevelRangePanel
               fromIndex={levelFromIndex}
+              onClose={closeOpenFilterPanel}
               onFromChange={setLevelFromIndex}
+              onReset={() => {
+                setLevelFromIndex(0);
+                setLevelToIndex(levelOptions.length - 1);
+              }}
               onToChange={setLevelToIndex}
               toIndex={levelToIndex}
+            />
+          </View>
+        ) : null}
+
+        {openFilterPanel === 'Location' ? (
+          <View style={styles.filterPopover}>
+            <LocationFilterPanel
+              currentPlayerArea={currentPlayer.area}
+              locations={locationOptions}
+              onSelect={(locationId) => {
+                setSelectedLocationId(locationId);
+                setSelectedFilter(locationId ? 'Location' : 'All Games');
+                setOpenFilterPanel(null);
+              }}
+              selectedLocationId={selectedLocationId}
             />
           </View>
         ) : null}
@@ -293,6 +453,15 @@ function SearchGamesView({
           </View>
         ) : null}
       </View>
+
+      {openFilterPanel ? (
+        <Pressable
+          accessibilityLabel="Close filter menu"
+          accessibilityRole="button"
+          onPress={closeOpenFilterPanel}
+          style={styles.filterDismissLayer}
+        />
+      ) : null}
 
       <View style={styles.listHeader}>
         <View style={styles.listTitleRow}>
@@ -322,14 +491,14 @@ function SearchGamesView({
       </View>
 
       <View style={styles.cardStack}>
-        {visibleGameCards.map((game, index) => {
-          const lobby = visibleLobbies[index];
+        {visibleGameCards.length > 0 ? visibleGameCards.map((game, index) => {
+          const lobby = getGameLobby(lobbies, game);
 
           return (
             <GameCard
               currentPlayerId={currentPlayer.id}
               game={game}
-              key={lobby.id}
+              key={game.lobbyId ?? `${game.title}-${index}`}
               lobby={lobby}
               onPress={() => {
                 if (lobby) {
@@ -338,17 +507,15 @@ function SearchGamesView({
               }}
             />
           );
-        })}
-        {visibleGameCards.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons color={colors.muted} name="search-outline" size={18} />
-            <AppText align="center" tone="muted" variant="metadata" weight="700">
-              No games match these filters.
-            </AppText>
-          </View>
-        ) : null}
+        }) : (
+          <EmptyState
+            icon="search-outline"
+            title="No matches yet"
+            body={hasAnyFilter ? 'Try clearing a filter or searching another beach, host, or match.' : 'New open matches will appear here when hosts create them.'}
+          />
+        )}
       </View>
-    </>
+    </View>
   );
 }
 
@@ -356,29 +523,73 @@ function isLobbyDiscoverable(lobby: Lobby) {
   return lobby.status === 'open' || lobby.status === 'full';
 }
 
+function getFindGamesSortPriority(lobby: Lobby, currentPlayerId: string) {
+  const currentParticipant = getCurrentPlayerAnyParticipant(lobby, currentPlayerId);
+
+  if (lobby.adminId === currentPlayerId || currentParticipant?.role === 'admin') {
+    return 0;
+  }
+
+  if (currentParticipant) {
+    return 1;
+  }
+
+  if (lobby.joinRequests.some((request) => request.playerId === currentPlayerId && request.status === 'pending')) {
+    return 2;
+  }
+
+  return 3;
+}
+
 function LevelRangePanel({
   fromIndex,
+  onClose,
   onFromChange,
+  onReset,
   onToChange,
   toIndex,
 }: {
   fromIndex: number;
+  onClose: () => void;
   onFromChange: (index: number) => void;
+  onReset: () => void;
   onToChange: (index: number) => void;
   toIndex: number;
 }) {
+  const isAllRanks = fromIndex === 0 && toIndex === levelOptions.length - 1;
+
   return (
-    <View style={styles.filterPanel}>
-      <View style={styles.panelHeader}>
+    <View style={[styles.filterPanel, styles.rankFilterPanel]}>
+      <Pressable accessibilityRole="button" onPress={onClose} style={styles.panelHeader}>
         <AppText tone="primary" variant="metadata" weight="800">
           Rank range
         </AppText>
         <AppText tone="muted" variant="metadata" weight="700">
           {formatRankRange(fromIndex, toIndex)}
         </AppText>
-      </View>
+      </Pressable>
 
-      <RankRangeBar fromIndex={fromIndex} onFromChange={onFromChange} onToChange={onToChange} toIndex={toIndex} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: isAllRanks }}
+        onPress={() => {
+          onReset();
+          onClose();
+        }}
+        style={[styles.rankResetButton, isAllRanks && styles.rankResetButtonActive]}
+      >
+        <AppText tone={isAllRanks ? 'accent' : 'muted'} variant="caption" weight="800">
+          All ranks
+        </AppText>
+      </Pressable>
+
+      <RankRangeBar
+        fromIndex={fromIndex}
+        labelTapMode="exact"
+        onFromChange={onFromChange}
+        onToChange={onToChange}
+        toIndex={toIndex}
+      />
     </View>
   );
 }
@@ -387,11 +598,11 @@ function GenderFilterPanel({
   onSelect,
   selected,
 }: {
-  onSelect: (option: GenderFilter) => void;
+  onSelect: (option: GenderFilter | null) => void;
   selected: GenderFilter | null;
 }) {
   return (
-    <View style={styles.filterPanel}>
+    <View style={[styles.filterPanel, styles.genderFilterPanel]}>
       <View style={styles.genderOptions}>
         {genderOptions.map((option) => {
           const isSelected = selected === option;
@@ -400,7 +611,7 @@ function GenderFilterPanel({
             <Pressable
               accessibilityRole="button"
               key={option}
-              onPress={() => onSelect(option)}
+              onPress={() => onSelect(isSelected ? null : option)}
               style={[styles.genderOption, isSelected && styles.genderOptionActive]}
             >
               <AppText
@@ -420,6 +631,132 @@ function GenderFilterPanel({
   );
 }
 
+function LocationFilterPanel({
+  currentPlayerArea,
+  locations,
+  onSelect,
+  selectedLocationId,
+}: {
+  currentPlayerArea: string;
+  locations: Location[];
+  onSelect: (locationId: string | null) => void;
+  selectedLocationId: string | null;
+}) {
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+  const trimmedQuery = locationSearchQuery.trim();
+  const recommendedLocations = useMemo(
+    () => getRecommendedLocationOptions(currentPlayerArea, locations, 5),
+    [currentPlayerArea, locations],
+  );
+  const searchedLocations = useMemo(
+    () => getSearchedLocationOptions(trimmedQuery, locations),
+    [locations, trimmedQuery],
+  );
+  const visibleLocations = trimmedQuery ? searchedLocations : recommendedLocations;
+  const sectionTitle = trimmedQuery ? 'Search results' : 'Recommended near your area';
+
+  return (
+    <View style={styles.filterPanel}>
+      <View style={styles.locationOptions}>
+        <View style={styles.locationSearchBox}>
+          <Ionicons color={colors.accentSea} name="search" size={16} />
+          <TextInput
+            onChangeText={setLocationSearchQuery}
+            placeholder="Search city, area, or beach"
+            placeholderTextColor={colors.subtle}
+            style={styles.locationSearchInput}
+            value={locationSearchQuery}
+          />
+          {trimmedQuery ? (
+            <Pressable
+              accessibilityLabel="Clear location search"
+              accessibilityRole="button"
+              onPress={() => setLocationSearchQuery('')}
+              style={styles.locationSearchClear}
+            >
+              <Ionicons color={colors.muted} name="close" size={14} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        <View style={styles.areaFilterRow}>
+          {areaFilterLocations.map((areaLocation) => {
+            const isSelected = selectedLocationId === areaLocation.id;
+
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={areaLocation.id}
+                onPress={() => onSelect(isSelected ? null : areaLocation.id)}
+                style={[styles.areaFilterOption, isSelected && styles.areaFilterOptionActive]}
+              >
+                <AppText
+                  style={isSelected && styles.locationOptionTextActive}
+                  tone={isSelected ? 'accent' : 'muted'}
+                  variant="caption"
+                  weight="800"
+                >
+                  {areaLocation.name}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.locationSectionHeader}>
+          <AppText tone="muted" variant="caption" weight="800">
+            {sectionTitle}
+          </AppText>
+          {!trimmedQuery ? (
+            <AppText tone="muted" variant="caption" weight="600">
+              Top 5
+            </AppText>
+          ) : null}
+        </View>
+
+        <ScrollView
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={visibleLocations.length > 4}
+          style={styles.locationResultsList}
+        >
+          <View style={styles.locationResultsContent}>
+            {visibleLocations.length > 0 ? visibleLocations.map((location) => {
+              const isSelected = selectedLocationId === location.id;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={location.id}
+                  onPress={() => onSelect(isSelected ? null : location.id)}
+                  style={[styles.locationOption, isSelected && styles.locationOptionActive]}
+                >
+                  <AppText
+                    style={isSelected && styles.locationOptionTextActive}
+                    tone={isSelected ? 'accent' : 'primary'}
+                    variant="chip"
+                    weight="800"
+                  >
+                    {location.name}
+                  </AppText>
+                  <AppText tone="muted" variant="caption" weight="600">
+                    {getLocationOptionSubtitle(location)}
+                  </AppText>
+                </Pressable>
+              );
+            }) : (
+              <View style={styles.locationEmptyState}>
+                <AppText tone="muted" variant="caption" weight="700">
+                  No beaches found
+                </AppText>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
 function MyGamesView({
   currentPlayer,
   lobbies,
@@ -431,7 +768,8 @@ function MyGamesView({
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
 }) {
-  const activeGames = lobbies
+  const uniqueLobbies = getUniqueLobbies(lobbies);
+  const activeGames = uniqueLobbies
     .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
     .map((lobby, index) => {
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
@@ -444,7 +782,7 @@ function MyGamesView({
         statusTone: participant?.role === 'waitlist' ? 'gold' as const : 'lime' as const,
       };
     });
-  const finishedGames = lobbies
+  const finishedGames = uniqueLobbies
     .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'rating_open' || lobby.status === 'completed' || lobby.status === 'closed'))
     .map((lobby, index) => ({
       ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
@@ -501,7 +839,7 @@ function GameHistorySection({
       </View>
 
       <View style={styles.cardStack}>
-        {games.map((game, index) => {
+        {games.length > 0 ? games.map((game, index) => {
           const lobby = getGameLobby(lobbies, game);
 
           return (
@@ -515,7 +853,13 @@ function GameHistorySection({
               }}
             />
           );
-        })}
+        }) : (
+          <EmptyState
+            icon={title === 'Joined Games' ? 'calendar-outline' : 'checkmark-done-outline'}
+            title={title === 'Joined Games' ? 'No joined matches' : 'No finished matches'}
+            body={title === 'Joined Games' ? 'Matches you host, join, or waitlist for will appear here.' : 'Completed matches and rating windows will appear here.'}
+          />
+        )}
       </View>
     </View>
   );
@@ -532,43 +876,62 @@ function GameCard({
   lobby?: Lobby;
   onPress: () => void;
 }) {
-  const currentParticipant = lobby ? getCurrentPlayerParticipant(lobby, currentPlayerId) : undefined;
-  const hasPendingRequest = lobby
-    ? lobby.joinRequests.some((request) => request.playerId === currentPlayerId && request.status === 'pending')
-    : false;
-  const actionLabel = hasPendingRequest
-    ? 'Requested access'
-    : currentParticipant && isActiveLobbyParticipant(currentParticipant)
-      ? 'Joined'
-      : 'View match';
-  const actionTone = hasPendingRequest || (currentParticipant && isActiveLobbyParticipant(currentParticipant)) ? 'muted' : 'accent';
-  const statusBadgeLabel =
+  const currentParticipant = lobby ? getCurrentPlayerAnyParticipant(lobby, currentPlayerId) : undefined;
+  const pendingRequest = lobby?.joinRequests.find(
+    (request) => request.playerId === currentPlayerId && request.status === 'pending',
+  );
+  const imageBadgeLabel =
     currentParticipant?.role === 'admin'
       ? 'Host'
-      : currentParticipant && isActiveLobbyParticipant(currentParticipant)
+      : currentParticipant
         ? 'Joined'
-        : hasPendingRequest
-          ? 'Requested'
         : game.spotsLeft;
-  const statusBadgeTone = currentParticipant && isActiveLobbyParticipant(currentParticipant) ? 'green' : 'yellow';
+  const hasJoinedStatus = Boolean(currentParticipant);
+  const statusBadgeTone = hasJoinedStatus ? 'green' : 'yellow';
 
   return (
     <NearbyGameCard
-      actionLabel={actionLabel}
-      actionTone={actionTone}
+      actionLabel="View match"
       audience={game.audience}
       distance={game.distance}
       level={game.level}
       location={game.location}
       onPress={onPress}
       players={formatPlayersCount(game.players)}
-      spotsLeft={statusBadgeLabel}
+      requestStatusLabel={pendingRequest && !currentParticipant ? 'Access requested' : undefined}
+      spotsLeft={imageBadgeLabel}
       spotsTone={statusBadgeTone}
       status="Approval"
       time={formatLobbyStart(game.startsAt)}
       title={game.title}
       variant={getNearbyVariant(game)}
     />
+  );
+}
+
+function EmptyState({
+  body,
+  icon,
+  title,
+}: {
+  body: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+}) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Ionicons color={colors.primaryDark} name={icon} size={20} />
+      </View>
+      <View style={styles.emptyCopy}>
+        <AppText align="center" tone="primary" variant="titleSmall" weight="800">
+          {title}
+        </AppText>
+        <AppText align="center" style={styles.emptyText} tone="muted" variant="bodySmall" weight="600">
+          {body}
+        </AppText>
+      </View>
+    </View>
   );
 }
 
@@ -579,113 +942,522 @@ function getGameLobby(lobbies: Lobby[], game: GameListItem) {
 }
 
 function getUniqueLobbies(lobbies: Lobby[]) {
-  const seenLobbyIds = new Set<string>();
+  const lobbyKeys = new Set<string>();
 
   return lobbies.filter((lobby) => {
-    if (seenLobbyIds.has(lobby.id)) {
+    const lobbyKey = getLobbyDedupeKey(lobby);
+
+    if (lobbyKeys.has(lobbyKey)) {
       return false;
     }
 
-    seenLobbyIds.add(lobby.id);
+    lobbyKeys.add(lobbyKey);
     return true;
   });
 }
 
-function isLobbyVisibleForFilters(
+function getLobbyDedupeKey(lobby: Lobby) {
+  return [
+    normalizeSearchText(lobby.title),
+    normalizeSearchText(lobby.location.name),
+    normalizeSearchText(lobby.location.city),
+    lobby.adminId,
+  ].join('|');
+}
+
+function getLocationOptions(lobbies: Lobby[]) {
+  const locationsByKey = new Map<string, Location>();
+
+  areaFilterLocations.forEach((location) => locationsByKey.set(getLocationDedupeKey(location), location));
+  israelPlaces.forEach((location) => locationsByKey.set(getLocationDedupeKey(location), location));
+  lobbies.forEach((lobby) => {
+    const locationKey = getLocationDedupeKey(lobby.location);
+
+    if (!locationsByKey.has(locationKey)) {
+      locationsByKey.set(locationKey, lobby.location);
+    }
+  });
+
+  return Array.from(locationsByKey.values()).sort((left, right) =>
+    `${left.city} ${left.name}`.localeCompare(`${right.city} ${right.name}`),
+  );
+}
+
+function getLocationOptionSubtitle(location: Location) {
+  return isAreaFilterLocation(location) ? `All ${location.area} games` : `${location.city}, ${location.area}`;
+}
+
+function getRecommendedLocationOptions(playerArea: string, locations: Location[], limit: number) {
+  const playerCoordinates = getPlayerAreaCoordinates(playerArea);
+
+  if (playerCoordinates) {
+    return locations
+      .map((location) => ({
+        distanceKm: getLocationDistanceKm(location, playerCoordinates),
+        location,
+      }))
+      .sort((left, right) =>
+        left.distanceKm - right.distanceKm ||
+        `${left.location.city} ${left.location.name}`.localeCompare(`${right.location.city} ${right.location.name}`),
+      )
+      .slice(0, limit)
+      .map((item) => item.location);
+  }
+
+  const scoredLocations = locations
+    .map((location) => ({
+      location,
+      score: getLocationRecommendationScore(location, playerArea),
+    }))
+    .sort((left, right) =>
+      right.score - left.score ||
+      `${left.location.city} ${left.location.name}`.localeCompare(`${right.location.city} ${right.location.name}`),
+    );
+  const preferredLocations = scoredLocations.filter((item) => item.score > 0).map((item) => item.location);
+  const fallbackLocations = scoredLocations.filter((item) => item.score === 0).map((item) => item.location);
+
+  return [...preferredLocations, ...fallbackLocations].slice(0, limit);
+}
+
+function getPlayerAreaCoordinates(playerArea: string): Coordinates | null {
+  const normalizedPlayerArea = normalizeSearchText(playerArea);
+
+  if (!normalizedPlayerArea) {
+    return null;
+  }
+
+  const matchedLocation = israelLocations
+    .map((location) => {
+      const aliasScore = Math.max(
+        ...getAreaSearchValues(location.area).map((alias) => getTextMatchScore(alias, normalizedPlayerArea)),
+        ...location.aliases.map((alias) => getTextMatchScore(alias, normalizedPlayerArea)),
+        0,
+      );
+
+      return {
+        location,
+        score: Math.max(
+          getWeightedTextMatchScore(location.city, normalizedPlayerArea, 30),
+          getWeightedTextMatchScore(location.displayName, normalizedPlayerArea, 20),
+          getWeightedTextMatchScore(location.area, normalizedPlayerArea, 8),
+          aliasScore,
+        ),
+      };
+    })
+    .filter((result) => result.score > 0)
+    .sort((left, right) => right.score - left.score || left.location.displayName.localeCompare(right.location.displayName))[0]?.location;
+
+  return matchedLocation
+    ? {
+        latitude: matchedLocation.latitude,
+        longitude: matchedLocation.longitude,
+      }
+    : null;
+}
+
+function getLocationDistanceKm(location: Location, fromCoordinates: Coordinates) {
+  const locationCoordinates = getLocationCoordinates(location);
+
+  return locationCoordinates ? getDistanceKm(fromCoordinates, locationCoordinates) : Number.MAX_SAFE_INTEGER;
+}
+
+function getLocationCoordinates(location: Location): Coordinates | null {
+  if (isAreaFilterLocation(location)) {
+    return null;
+  }
+
+  const normalizedName = normalizeSearchText(location.name);
+  const normalizedCity = normalizeSearchText(location.city);
+  const matchedBeach = israelBeaches.find((beach) =>
+    beach.id === location.id ||
+    (normalizeSearchText(beach.displayName) === normalizedName && normalizeSearchText(beach.city) === normalizedCity),
+  );
+
+  if (matchedBeach) {
+    return {
+      latitude: matchedBeach.latitude,
+      longitude: matchedBeach.longitude,
+    };
+  }
+
+  const matchedLocation = israelLocations.find((place) => normalizeSearchText(place.city) === normalizedCity);
+
+  return matchedLocation
+    ? {
+        latitude: matchedLocation.latitude,
+        longitude: matchedLocation.longitude,
+      }
+    : null;
+}
+
+function getDistanceKm(fromCoordinates: Coordinates, toCoordinates: Coordinates) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(toCoordinates.latitude - fromCoordinates.latitude);
+  const longitudeDelta = toRadians(toCoordinates.longitude - fromCoordinates.longitude);
+  const fromLatitude = toRadians(fromCoordinates.latitude);
+  const toLatitude = toRadians(toCoordinates.latitude);
+  const haversine =
+    Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
+    Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) * Math.sin(longitudeDelta / 2);
+
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function toRadians(degrees: number) {
+  return degrees * (Math.PI / 180);
+}
+
+function getSearchedLocationOptions(query: string, locations: Location[]) {
+  if (!query.trim()) {
+    return [];
+  }
+
+  return locations
+    .map((location) => ({
+      location,
+      score: getLocationSearchMatchScore(location, query),
+    }))
+    .filter((result) => result.score > 0)
+    .sort((left, right) =>
+      right.score - left.score ||
+      `${left.location.city} ${left.location.name}`.localeCompare(`${right.location.city} ${right.location.name}`),
+    )
+    .map((result) => result.location);
+}
+
+function getLocationDedupeKey(location: Location) {
+  if (isAreaFilterLocation(location)) {
+    return location.id;
+  }
+
+  return [
+    normalizeSearchText(location.name),
+    normalizeSearchText(location.city),
+  ].join('|');
+}
+
+function isAreaFilterLocation(location: Location) {
+  return location.description === 'area_filter';
+}
+
+function getLocationRecommendationScore(location: Location, playerArea: string) {
+  const normalizedPlayerArea = normalizeSearchText(playerArea);
+
+  if (!normalizedPlayerArea) {
+    return 0;
+  }
+
+  return Math.max(
+    getWeightedTextMatchScore(location.city, normalizedPlayerArea, 30),
+    getWeightedTextMatchScore(location.area, normalizedPlayerArea, 12),
+    getTextMatchScore(location.name, normalizedPlayerArea),
+    getAliasSearchScore(getLocationSearchAliases(location), normalizedPlayerArea),
+  );
+}
+
+function getLocationSearchMatchScore(location: Location, query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  return Math.max(
+    getWeightedTextMatchScore(location.name, normalizedQuery, 30),
+    getWeightedTextMatchScore(location.city, normalizedQuery, 20),
+    getWeightedTextMatchScore(location.area, normalizedQuery, 10),
+    getAliasSearchScore(getLocationSearchAliases(location), normalizedQuery),
+  );
+}
+
+function getLocationSearchAliases(location: Location) {
+  if (isAreaFilterLocation(location)) {
+    return [
+      `all ${location.area} games`,
+      `${location.area} area`,
+      ...getAreaSearchValues(location.area),
+    ];
+  }
+
+  const normalizedName = normalizeSearchText(location.name);
+  const normalizedCity = normalizeSearchText(location.city);
+  const matchingBeach = israelBeaches.find((beach) =>
+    beach.id === location.id ||
+    (normalizeSearchText(beach.displayName) === normalizedName && normalizeSearchText(beach.city) === normalizedCity),
+  );
+  const matchingCity = israelLocations.find((place) => normalizeSearchText(place.city) === normalizedCity);
+
+  return [
+    ...(matchingBeach?.aliases ?? []),
+    ...(matchingCity?.aliases ?? []),
+    ...getAreaSearchValues(location.area),
+  ];
+}
+
+function getAreaSearchValues(area: string) {
+  const normalizedArea = normalizeSearchText(area);
+
+  if (normalizedArea.includes('central') || normalizedArea.includes('center') || normalizedArea.includes('sharon')) {
+    return ['central', 'center', 'sharon', '\u05de\u05e8\u05db\u05d6'];
+  }
+
+  if (normalizedArea.includes('north')) {
+    return ['north', '\u05e6\u05e4\u05d5\u05df'];
+  }
+
+  if (normalizedArea.includes('south')) {
+    return ['south', '\u05d3\u05e8\u05d5\u05dd'];
+  }
+
+  if (normalizedArea === 'central' || normalizedArea === 'center') {
+    return ['central', 'center', 'מרכז'];
+  }
+
+  if (normalizedArea === 'north') {
+    return ['north', 'צפון'];
+  }
+
+  if (normalizedArea === 'south') {
+    return ['south', 'דרום'];
+  }
+
+  return [area];
+}
+
+function getAliasSearchScore(values: string[], normalizedQuery: string) {
+  return values.reduce((bestScore, value) => Math.max(bestScore, getTextMatchScore(value, normalizedQuery)), 0);
+}
+
+function getWeightedTextMatchScore(value: string, normalizedQuery: string, boost: number) {
+  const score = getTextMatchScore(value, normalizedQuery);
+
+  return score > 0 ? score + boost : 0;
+}
+
+function getTextMatchScore(value: string, normalizedQuery: string) {
+  const normalizedValue = normalizeSearchText(value);
+
+  if (!normalizedValue || !normalizedQuery) {
+    return 0;
+  }
+
+  if (normalizedValue === normalizedQuery) {
+    return 100;
+  }
+
+  if (normalizedValue.startsWith(normalizedQuery) || normalizedQuery.startsWith(normalizedValue)) {
+    return 80;
+  }
+
+  if (normalizedValue.includes(normalizedQuery) || normalizedQuery.includes(normalizedValue)) {
+    return 65;
+  }
+
+  const valueWords = normalizedValue.split(' ').filter((word) => word.length > 2);
+  const queryWords = normalizedQuery.split(' ').filter((word) => word.length > 2);
+  const sharedWords = queryWords.filter((word) => valueWords.includes(word)).length;
+
+  if (sharedWords >= 2) {
+    return 50 + sharedWords;
+  }
+
+  if (sharedWords === 1) {
+    return 28;
+  }
+
+  return 0;
+}
+
+function doesLobbyMatchDiscoveryFilters(
   lobby: Lobby,
-  {
-    genderFilter,
-    levelFromIndex,
-    levelToIndex,
-    players,
-    searchQuery,
-    showPrivate,
-  }: {
+  filtersState: {
     genderFilter: GenderFilter | null;
     levelFromIndex: number;
     levelToIndex: number;
-    players: Player[];
     searchQuery: string;
+    selectedLocation: Location | null;
     showPrivate: boolean;
   },
+  players: Player[],
 ) {
-  if (!isLobbyDiscoverable(lobby)) {
+  if (!filtersState.showPrivate && isPrivateLobby(lobby)) {
     return false;
   }
 
-  if (!showPrivate && (lobby.visibility === 'password' || lobby.visibility === 'invite_link')) {
+  if (filtersState.selectedLocation && !doesLobbyMatchLocation(lobby, filtersState.selectedLocation)) {
     return false;
   }
 
-  if (!doesLobbyMatchSearch(lobby, players, searchQuery)) {
+  if (filtersState.genderFilter && !doesLobbyMatchGender(lobby, filtersState.genderFilter)) {
     return false;
   }
 
-  if (!doesLobbyMatchRankRange(lobby, levelFromIndex, levelToIndex)) {
+  if (
+    (filtersState.levelFromIndex !== 0 || filtersState.levelToIndex !== levelOptions.length - 1) &&
+    !doesLobbyRankOverlapFilter(lobby, filtersState.levelFromIndex, filtersState.levelToIndex)
+  ) {
     return false;
   }
 
-  if (!doesLobbyMatchGenderFilter(lobby, genderFilter)) {
+  if (filtersState.searchQuery.trim() && !doesLobbyMatchSearch(lobby, filtersState.searchQuery, players)) {
     return false;
   }
 
   return true;
 }
 
-function doesLobbyMatchSearch(lobby: Lobby, players: Player[], searchQuery: string) {
-  const query = searchQuery.trim().toLocaleLowerCase();
-
-  if (!query) {
-    return true;
-  }
-
-  const host = players.find((player) => player.id === lobby.adminId);
-  const searchableText = [
-    lobby.title,
-    lobby.location.name,
-    lobby.location.city,
-    lobby.location.area,
-    lobby.note,
-    host?.name,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLocaleLowerCase();
-
-  return searchableText.includes(query);
+function isPrivateLobby(lobby: Lobby) {
+  return lobby.visibility === 'password' || lobby.visibility === 'invite_link';
 }
 
-function doesLobbyMatchRankRange(lobby: Lobby, fromIndex: number, toIndex: number) {
-  if (fromIndex === 0 && toIndex === rankOptions.length - 1) {
-    return true;
+function doesLobbyMatchLocation(lobby: Lobby, selectedLocation: Location) {
+  if (isAreaFilterLocation(selectedLocation)) {
+    return getLocationAreaGroup(lobby.location) === selectedLocation.area;
   }
 
-  if (lobby.rankRuleType === 'any') {
-    return true;
-  }
+  const selectedName = normalizeSearchText(selectedLocation.name);
+  const selectedCity = normalizeSearchText(selectedLocation.city);
+  const lobbyName = normalizeSearchText(lobby.location.name);
+  const lobbyCity = normalizeSearchText(lobby.location.city);
 
-  if (lobby.rankRuleType === 'exact') {
-    const exactIndex = lobby.rankExact ? getRankIndex(lobby.rankExact) : -1;
-
-    return exactIndex >= fromIndex && exactIndex <= toIndex;
-  }
-
-  const minIndex = lobby.rankMin ? getRankIndex(lobby.rankMin) : 0;
-  const maxIndex = lobby.rankMax ? getRankIndex(lobby.rankMax) : rankOptions.length - 1;
-
-  return minIndex <= toIndex && maxIndex >= fromIndex;
+  return (
+    lobby.location.id === selectedLocation.id ||
+    (lobbyName === selectedName && lobbyCity === selectedCity) ||
+    (Boolean(selectedCity) && lobbyCity === selectedCity)
+  );
 }
 
-function doesLobbyMatchGenderFilter(lobby: Lobby, genderFilter: GenderFilter | null) {
-  if (!genderFilter) {
-    return true;
+function getLocationAreaGroup(location: Location) {
+  const explicitAreaGroup = getAreaGroupFromText(location.area);
+
+  if (explicitAreaGroup) {
+    return explicitAreaGroup;
   }
 
+  const cityAreaGroup = getAreaGroupFromText(location.city);
+
+  if (cityAreaGroup) {
+    return cityAreaGroup;
+  }
+
+  return getAreaGroupFromText(location.name);
+}
+
+function getAreaGroupFromText(value: string) {
+  const normalizedValue = normalizeSearchText(value);
+
+  if (
+    normalizedValue.includes('south') ||
+    normalizedValue.includes('ashdod') ||
+    normalizedValue.includes('ashkelon') ||
+    normalizedValue.includes('beersheba') ||
+    normalizedValue.includes('\u05d3\u05e8\u05d5\u05dd') ||
+    normalizedValue.includes('\u05d0\u05e9\u05d3\u05d5\u05d3') ||
+    normalizedValue.includes('\u05d0\u05e9\u05e7\u05dc\u05d5\u05df')
+  ) {
+    return 'South';
+  }
+
+  if (
+    normalizedValue.includes('north') ||
+    normalizedValue.includes('haifa') ||
+    normalizedValue.includes('caesarea') ||
+    normalizedValue.includes('\u05e6\u05e4\u05d5\u05df') ||
+    normalizedValue.includes('\u05d7\u05d9\u05e4\u05d4') ||
+    normalizedValue.includes('\u05e7\u05d9\u05e1\u05e8\u05d9\u05d4')
+  ) {
+    return 'North';
+  }
+
+  if (
+    normalizedValue.includes('central') ||
+    normalizedValue.includes('center') ||
+    normalizedValue.includes('sharon') ||
+    normalizedValue.includes('tel aviv') ||
+    normalizedValue.includes('yafo') ||
+    normalizedValue.includes('bat yam') ||
+    normalizedValue.includes('holon') ||
+    normalizedValue.includes('rishon') ||
+    normalizedValue.includes('herzliya') ||
+    normalizedValue.includes('netanya') ||
+    normalizedValue.includes('jerusalem') ||
+    normalizedValue.includes('\u05de\u05e8\u05db\u05d6') ||
+    normalizedValue.includes('\u05ea\u05dc \u05d0\u05d1\u05d9\u05d1') ||
+    normalizedValue.includes('\u05d1\u05ea \u05d9\u05dd') ||
+    normalizedValue.includes('\u05d7\u05d5\u05dc\u05d5\u05df') ||
+    normalizedValue.includes('\u05d4\u05e8\u05e6\u05dc\u05d9\u05d4') ||
+    normalizedValue.includes('\u05e0\u05ea\u05e0\u05d9\u05d4')
+  ) {
+    return 'Central';
+  }
+
+  return null;
+}
+
+function doesLobbyMatchGender(lobby: Lobby, genderFilter: GenderFilter) {
   if (genderFilter === 'Everyone') {
     return lobby.genderRule === 'everyone';
   }
 
-  return lobby.genderRule === (genderFilter === 'Male' ? 'male' : 'female');
+  return lobby.genderRule === genderFilter.toLowerCase();
+}
+
+function doesLobbyRankOverlapFilter(lobby: Lobby, levelFromIndex: number, levelToIndex: number) {
+  const lobbyRange = getLobbyLevelRangeIndexes(lobby);
+
+  return lobbyRange.fromIndex <= levelToIndex && lobbyRange.toIndex >= levelFromIndex;
+}
+
+function getLobbyLevelRangeIndexes(lobby: Lobby) {
+  if (lobby.rankRuleType === 'any') {
+    return {
+      fromIndex: 0,
+      toIndex: levelOptions.length - 1,
+    };
+  }
+
+  if (lobby.rankRuleType === 'exact') {
+    const exactIndex = getLevelIndex(lobby.rankExact);
+
+    return {
+      fromIndex: exactIndex,
+      toIndex: exactIndex,
+    };
+  }
+
+  const fromIndex = getLevelIndex(lobby.rankMin);
+  const toIndex = getLevelIndex(lobby.rankMax);
+
+  return {
+    fromIndex: Math.min(fromIndex, toIndex),
+    toIndex: Math.max(fromIndex, toIndex),
+  };
+}
+
+function getLevelIndex(level?: PlayerLevel) {
+  return level ? Math.max(getRankIndex(level), 0) : 0;
+}
+
+function doesLobbyMatchSearch(lobby: Lobby, searchQuery: string, players: Player[]) {
+  const normalizedQuery = normalizeSearchText(searchQuery);
+  const host = players.find((player) => player.id === lobby.adminId);
+  const searchParts = [
+    lobby.title,
+    lobby.location.name,
+    lobby.location.city,
+    lobby.location.area,
+    lobby.locationDescription,
+    lobby.note,
+    host?.name,
+    getGenderAudience(lobby),
+    getLobbyLevelLabel(lobby),
+  ];
+
+  return searchParts.some((part) => normalizeSearchText(part).includes(normalizedQuery));
+}
+
+function normalizeSearchText(value?: string) {
+  return value?.trim().toLocaleLowerCase() ?? '';
 }
 
 function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: string, players: Player[]): GameListItem {
@@ -705,7 +1477,7 @@ function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: stri
     lobbyIndex: index,
     location: `${lobby.location.name}, ${lobby.location.city}`,
     players: `${activeParticipants.length} / ${lobby.maxPlayers} players`,
-    spotsLeft: spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`,
+    spotsLeft: spotsLeft === 0 ? '' : spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`,
     startsAt: lobby.startsAt,
     title: lobby.title,
   };
@@ -845,31 +1617,12 @@ function BeachThumbnail({
   game: GameListItem;
 }) {
   const visibleBadgeLabel = badgeLabel ?? game.spotsLeft;
-  const badgeStyle =
-    badgeTone === 'lime'
-      ? styles.spotsBadgeLime
-      : badgeTone === 'muted'
-        ? styles.spotsBadgeMuted
-        : badgeTone === 'goldSoft'
-          ? styles.spotsBadgeGoldSoft
-          : styles.spotsBadgeGold;
-  const badgeTextTone =
-    badgeTone === 'muted'
-      ? 'muted'
-      : badgeTone === 'lime'
-        ? 'accent'
-        : badgeTone === 'goldSoft'
-          ? 'warning'
-          : 'primary';
+  const badgeImageTone = badgeTone === 'lime' ? 'green' : badgeTone === 'muted' ? 'muted' : 'yellow';
 
   return (
     <View style={styles.thumbnail}>
       <BeachGameVisual compact variant={game.audience === 'Women' ? 'sunset' : game.level === 'A+' ? 'morning' : 'aqua'} />
-      <View style={[styles.spotsBadge, badgeStyle]}>
-        <AppText style={styles.spotsText} tone={badgeTextTone} variant="chip" weight="800">
-          {visibleBadgeLabel}
-        </AppText>
-      </View>
+      <LobbyImageBadge label={visibleBadgeLabel} size="wide" tone={badgeImageTone} />
     </View>
   );
 }
@@ -898,8 +1651,8 @@ function isCurrentPlayerInLobby(lobby: Lobby, currentPlayerId: string) {
   return Boolean(getCurrentPlayerAnyParticipant(lobby, currentPlayerId));
 }
 
-function isActiveLobbyParticipant(participant: Lobby['participants'][number]) {
-  return isJoinedParticipant(participant);
+function formatLevelRange(fromIndex: number, toIndex: number) {
+  return formatRankRange(fromIndex, toIndex);
 }
 
 const styles = StyleSheet.create({
@@ -949,16 +1702,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAqua,
     borderColor: colors.border,
   },
+  emptyCopy: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
   emptyState: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.borderSoft,
-    borderRadius: 18,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    gap: spacing.xs,
-    minHeight: 82,
+    gap: spacing.sm,
     justifyContent: 'center',
-    padding: spacing.md,
+    minHeight: 152,
+    padding: spacing.lg,
+    ...shadows.soft,
+  },
+  emptyText: {
+    maxWidth: 260,
   },
   filterArea: {
     position: 'relative',
@@ -978,6 +1749,14 @@ const styles = StyleSheet.create({
   filterChipActive: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
+  },
+  filterDismissLayer: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 10,
   },
   filterRow: {
     gap: 4,
@@ -1026,6 +1805,25 @@ const styles = StyleSheet.create({
   gameTitle: {
     color: colors.ink,
   },
+  areaFilterOption: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
+  },
+  areaFilterOptionActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  areaFilterRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
   genderPill: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
@@ -1045,8 +1843,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: spacing.sm,
+    minHeight: 28,
+    paddingHorizontal: spacing.xs,
   },
   genderOptionActive: {
     backgroundColor: colors.surfaceMuted,
@@ -1054,10 +1852,16 @@ const styles = StyleSheet.create({
   },
   genderOptions: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   genderOptionTextActive: {
     color: colors.accentLime,
+  },
+  genderFilterPanel: {
+    alignSelf: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    width: '82%',
   },
   genderPopover: {
     left: 0,
@@ -1094,11 +1898,136 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  levelBar: {
+    height: 34,
+    justifyContent: 'center',
+    marginHorizontal: 11,
+    position: 'relative',
+  },
+  levelThumb: {
+    backgroundColor: colors.primary,
+    borderColor: colors.surfaceRaised,
+    borderRadius: radius.round,
+    borderWidth: 2,
+    height: 18,
+    width: 18,
+  },
+  levelThumbRight: {
+    backgroundColor: colors.accentGoldDark,
+  },
+  levelThumbTouchArea: {
+    alignItems: 'center',
+    cursor: 'pointer',
+    height: 34,
+    justifyContent: 'center',
+    marginLeft: -17,
+    position: 'absolute',
+    width: 34,
+    zIndex: 3,
+  },
+  levelTick: {
+    backgroundColor: 'rgba(21, 153, 71, 0.26)',
+    borderRadius: radius.round,
+    height: 8,
+    width: 2,
+  },
+  levelTicks: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    height: 12,
+    justifyContent: 'space-between',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  levelTrackFill: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.round,
+    height: 5,
+    position: 'absolute',
+    zIndex: 1,
+  },
+  levelTrackLine: {
+    backgroundColor: 'rgba(216, 232, 212, 0.9)',
+    borderRadius: radius.round,
+    height: 5,
+  },
   liveDot: {
     backgroundColor: colors.primary,
     borderRadius: radius.round,
     height: 7,
     width: 7,
+  },
+  locationOption: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.xxs,
+    minHeight: 50,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  locationOptionActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  locationOptions: {
+    gap: spacing.xs,
+  },
+  locationOptionTextActive: {
+    color: colors.accentLime,
+  },
+  locationSearchBox: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+  },
+  locationSearchClear: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.round,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  locationSearchInput: {
+    color: colors.ink,
+    flex: 1,
+    fontFamily: fontFamilies.manrope.medium,
+    fontSize: 13,
+    lineHeight: 17,
+    padding: 0,
+  },
+  locationSectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    paddingTop: 2,
+  },
+  locationResultsList: {
+    maxHeight: 262,
+  },
+  locationResultsContent: {
+    gap: spacing.xs,
+    paddingBottom: 2,
+  },
+  locationEmptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
   },
   locationRow: {
     alignItems: 'center',
@@ -1270,6 +2199,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  rankFilterPanel: {
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  rankResetButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 28,
+    paddingHorizontal: spacing.sm,
+  },
+  rankResetButtonActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
   screen: {
     backgroundColor: colors.background,
     flex: 1,
@@ -1316,6 +2264,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     ...shadows.soft,
   },
+  searchGamesBody: {
+    gap: 14,
+    position: 'relative',
+  },
   searchInput: {
     color: colors.ink,
     flex: 1,
@@ -1355,39 +2307,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 2,
   },
-  spotsBadge: {
-    borderRadius: radius.round,
-    left: 7,
-    minHeight: 22,
-    paddingHorizontal: 8,
-    paddingTop: 4,
-    position: 'absolute',
-    top: 7,
-  },
-  spotsBadgeGold: {
-    backgroundColor: colors.surfaceYellow,
-    borderColor: 'rgba(255, 200, 61, 0.28)',
-    borderWidth: 1,
-  },
-  spotsBadgeGoldSoft: {
-    backgroundColor: colors.surfaceYellow,
-    borderColor: 'rgba(255, 200, 61, 0.28)',
-    borderWidth: 1,
-  },
-  spotsBadgeLime: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderWidth: 1,
-  },
-  spotsBadgeMuted: {
-    backgroundColor: colors.surfaceAqua,
-    borderColor: colors.border,
-    borderWidth: 1,
-  },
-  spotsText: {
-    fontSize: 10,
-    lineHeight: 13,
-  },
   statusBadge: {
     borderRadius: radius.round,
     borderWidth: 1,
@@ -1424,7 +2343,7 @@ const styles = StyleSheet.create({
     height: 106,
     overflow: 'hidden',
     position: 'relative',
-    width: 104,
+    width: 136,
   },
   timeRow: {
     alignItems: 'center',

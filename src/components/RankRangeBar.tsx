@@ -7,6 +7,7 @@ import { AppText } from './AppText';
 
 type RankRangeBarProps = {
   fromIndex: number;
+  labelTapMode?: 'nearestHandle' | 'exact';
   onFromChange: (index: number) => void;
   onToChange: (index: number) => void;
   toIndex: number;
@@ -20,11 +21,13 @@ type RankBarProps = {
 export const rankOptions = [...playerLevels];
 const trackSideInset = 11;
 
-export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: RankRangeBarProps) {
+export function RankRangeBar({ fromIndex, labelTapMode = 'nearestHandle', onFromChange, onToChange, toIndex }: RankRangeBarProps) {
   const [surfaceWidth, setSurfaceWidth] = useState(0);
   const activeHandle = useRef<'from' | 'to'>('to');
   const currentFromIndex = useRef(fromIndex);
   const currentToIndex = useRef(toIndex);
+  const dragStartFromIndex = useRef(fromIndex);
+  const dragStartToIndex = useRef(toIndex);
   const isLabelDragging = useRef(false);
   const isPointerDragging = useRef(false);
   const surfaceWidthRef = useRef(surfaceWidth);
@@ -51,6 +54,8 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
       }),
     [onFromChange, onToChange],
   );
+  const fromHandleResponder = useMemo(() => createHandleResponder('from'), [onFromChange, onToChange]);
+  const toHandleResponder = useMemo(() => createHandleResponder('to'), [onFromChange, onToChange]);
 
   function handleSurfaceLayout(event: LayoutChangeEvent) {
     setSurfaceWidth(event.nativeEvent.layout.width);
@@ -81,6 +86,58 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
     if (nextToIndex !== currentToIndex.current) {
       onToChange(nextToIndex);
     }
+  }
+
+  function updateExactRankFromIndex(nextIndex: number) {
+    if (nextIndex !== currentFromIndex.current) {
+      onFromChange(nextIndex);
+    }
+
+    if (nextIndex !== currentToIndex.current) {
+      onToChange(nextIndex);
+    }
+  }
+
+  function beginHandleDrag(handle: 'from' | 'to') {
+    activeHandle.current = handle;
+    dragStartFromIndex.current = currentFromIndex.current;
+    dragStartToIndex.current = currentToIndex.current;
+  }
+
+  function updateActiveHandleFromDelta(deltaX: number) {
+    const usableWidth = Math.max(surfaceWidthRef.current - trackSideInset * 2, 1);
+    const deltaIndex = Math.round((deltaX / usableWidth) * (rankOptions.length - 1));
+
+    if (activeHandle.current === 'from') {
+      const nextFromIndex = clampRankIndex(dragStartFromIndex.current + deltaIndex, 0, currentToIndex.current);
+
+      if (nextFromIndex !== currentFromIndex.current) {
+        onFromChange(nextFromIndex);
+      }
+      return;
+    }
+
+    const nextToIndex = clampRankIndex(dragStartToIndex.current + deltaIndex, currentFromIndex.current, rankOptions.length - 1);
+
+    if (nextToIndex !== currentToIndex.current) {
+      onToChange(nextToIndex);
+    }
+  }
+
+  function createHandleResponder(handle: 'from' | 'to') {
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderGrant: () => {
+        beginHandleDrag(handle);
+      },
+      onPanResponderMove: (_event, gestureState) => {
+        updateActiveHandleFromDelta(gestureState.dx);
+      },
+      onPanResponderTerminationRequest: () => false,
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+    });
   }
 
   function updateRangeFromPointerEvent(event: { currentTarget?: unknown; nativeEvent?: { clientX?: number; locationX?: number }; preventDefault?: () => void }, shouldChooseHandle: boolean) {
@@ -118,6 +175,26 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
       isPointerDragging.current = false;
     },
   } as Record<string, unknown>;
+  const fromHandlePointerHandlers = getHandlePointerHandlers('from');
+  const toHandlePointerHandlers = getHandlePointerHandlers('to');
+
+  function getHandlePointerHandlers(handle: 'from' | 'to') {
+    return {
+      onPointerDown: (event: {
+        preventDefault?: () => void;
+        stopPropagation?: () => void;
+      }) => {
+        isPointerDragging.current = true;
+        beginHandleDrag(handle);
+        event.preventDefault?.();
+        event.stopPropagation?.();
+      },
+      onPointerUp: (event: { stopPropagation?: () => void }) => {
+        isPointerDragging.current = false;
+        event.stopPropagation?.();
+      },
+    } as Record<string, unknown>;
+  }
 
   return (
     <View style={styles.rangeWrap}>
@@ -140,7 +217,8 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
             ]}
           />
           <View
-            pointerEvents="none"
+            {...fromHandlePointerHandlers}
+            {...fromHandleResponder.panHandlers}
             style={[
               styles.thumbTouchArea,
               {
@@ -153,7 +231,8 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
             <View style={styles.thumb} />
           </View>
           <View
-            pointerEvents="none"
+            {...toHandlePointerHandlers}
+            {...toHandleResponder.panHandlers}
             style={[
               styles.thumbTouchArea,
               {
@@ -171,6 +250,7 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
           {rankOptions.map((rank, index) => {
             const isSelected = index === fromIndex || index === toIndex;
             const isInRange = index >= fromIndex && index <= toIndex;
+            const shouldSelectExactRank = labelTapMode === 'exact';
 
             return (
               <Pressable
@@ -178,23 +258,42 @@ export function RankRangeBar({ fromIndex, onFromChange, onToChange, toIndex }: R
                 accessibilityState={{ selected: isInRange }}
                 key={rank}
                 onHoverIn={() => {
-                  if (isLabelDragging.current) {
+                  if (!shouldSelectExactRank && isLabelDragging.current) {
                     updateRangeFromIndex(index, false);
                   }
                 }}
-                onPress={() => updateRangeFromIndex(index, true)}
-                onPressIn={() => {
-                  isLabelDragging.current = true;
+                onPress={() => {
+                  if (shouldSelectExactRank) {
+                    updateExactRankFromIndex(index);
+                    return;
+                  }
+
                   updateRangeFromIndex(index, true);
+                }}
+                onPressIn={() => {
+                  if (!shouldSelectExactRank) {
+                    isLabelDragging.current = true;
+                    updateRangeFromIndex(index, true);
+                  }
                 }}
                 onPressOut={() => {
                   isLabelDragging.current = false;
                 }}
-                style={styles.rankLabelButton}
+                style={[
+                  styles.rankLabelButton,
+                  index === 0 && styles.rankLabelButtonFirst,
+                  index === rankOptions.length - 1 && styles.rankLabelButtonLast,
+                ]}
               >
                 <AppText
                   align="center"
-                  style={[styles.rankLabel, isSelected && styles.rankLabelSelected, isInRange && styles.rankLabelInRange]}
+                  numberOfLines={1}
+                  style={[
+                    styles.rankLabel,
+                    index === rankOptions.length - 1 && styles.rankLabelLeague,
+                    isSelected && styles.rankLabelSelected,
+                    isInRange && styles.rankLabelInRange,
+                  ]}
                   tone={isInRange ? 'accent' : 'subtle'}
                   variant="caption"
                   weight={isSelected ? '900' : '700'}
@@ -280,23 +379,34 @@ const styles = StyleSheet.create({
   },
   rankLabel: {
     flex: 1,
-    fontSize: 8,
-    lineHeight: 11,
+    fontSize: 7,
+    lineHeight: 10,
+  },
+  rankLabelButtonFirst: {
+    alignItems: 'flex-start',
+  },
+  rankLabelButtonLast: {
+    alignItems: 'flex-end',
+    flex: 1.35,
   },
   rankLabelInRange: {
     color: colors.accentLime,
+  },
+  rankLabelLeague: {
+    fontSize: 6.5,
   },
   rankLabelSelected: {
     color: colors.primaryDark,
   },
   rankLabels: {
     flexDirection: 'row',
-    gap: 1,
+    gap: 0,
   },
   rankLabelButton: {
     flex: 1,
     minHeight: 20,
     justifyContent: 'center',
+    minWidth: 0,
   },
   rangeWrap: {
     gap: spacing.xs,
