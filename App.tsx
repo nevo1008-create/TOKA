@@ -7,7 +7,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import type { User } from '@supabase/supabase-js';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -20,10 +20,13 @@ import { currentPlayer as mockCurrentPlayer, players as mockPlayers } from './sr
 import {
   deleteCurrentUserAccount,
   getCurrentSession,
+  preparePasswordResetSession,
+  requestPasswordResetEmail,
   resendSignupVerificationEmail,
   signInWithEmail,
   signOut,
   signUpWithEmail,
+  updateCurrentUserPassword,
 } from './src/features/auth/authRepository';
 import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
@@ -46,6 +49,7 @@ import { LobbyChatSheet, LobbyDetailsScreen, LobbyFloatingChatButton } from './s
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { PrivacyPolicyScreen } from './src/screens/PrivacyPolicyScreen';
 import { ReportProblemScreen } from './src/screens/ReportProblemScreen';
+import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
 import { colors, spacing } from './src/theme';
@@ -62,11 +66,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [authFlow, setAuthFlow] = useState<'app' | 'auth' | 'loading' | 'onboarding'>('loading');
   const [isEmailVerifiedRoute] = useState(isEmailVerifiedPath);
+  const [isPasswordResetRoute] = useState(isPasswordResetPath);
   const [authEmail, setAuthEmail] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isResetPasswordLoading, setIsResetPasswordLoading] = useState(false);
+  const [isResetPasswordReady, setIsResetPasswordReady] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
+  const [resetPasswordNotice, setResetPasswordNotice] = useState<string | null>(null);
   const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
   const lobbyStore = useLobbyStore(profilePlayer, playersForInvite);
@@ -819,6 +828,64 @@ export default function App() {
     }
   }
 
+  async function requestAuthPasswordReset(email: string) {
+    setAuthError(null);
+    setAuthNotice(null);
+    setIsAuthLoading(true);
+
+    try {
+      await requestPasswordResetEmail(email);
+      setAuthNotice('Password reset link sent. Check your email.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not send reset link.';
+
+      setAuthError(message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  }
+
+  const prepareResetPasswordRoute = useCallback(async () => {
+    setIsResetPasswordLoading(true);
+    setResetPasswordError(null);
+    setResetPasswordNotice(null);
+
+    try {
+      await preparePasswordResetSession();
+      setIsResetPasswordReady(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not prepare this reset link.';
+
+      setIsResetPasswordReady(false);
+      setResetPasswordError(message);
+    } finally {
+      setIsResetPasswordLoading(false);
+    }
+  }, []);
+
+  const updatePasswordFromResetRoute = useCallback(async (password: string) => {
+    setIsResetPasswordLoading(true);
+    setResetPasswordError(null);
+
+    try {
+      await updateCurrentUserPassword(password);
+      await signOut().catch(() => undefined);
+      setResetPasswordNotice('Your password was saved. You can now log in with your new password.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update your password.';
+
+      setResetPasswordError(message);
+    } finally {
+      setIsResetPasswordLoading(false);
+    }
+  }, []);
+
+  function returnToLoginFromPasswordReset() {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
+  }
+
   async function finishOnboarding(nextPlayer: Player) {
     if (!authUser) {
       setAuthError('Missing authenticated user. Please sign in again.');
@@ -871,6 +938,30 @@ export default function App() {
     );
   }
 
+  if (isPasswordResetRoute) {
+    return (
+      <GestureHandlerRootView style={styles.root}>
+        <SafeAreaProvider>
+          <SafeAreaView
+            edges={['top', 'left', 'right']}
+            style={styles.safeArea}
+          >
+            <StatusBar style="dark" />
+            <ResetPasswordScreen
+              errorMessage={resetPasswordError}
+              isLoading={isResetPasswordLoading}
+              isReady={isResetPasswordReady}
+              onBackToLogin={returnToLoginFromPasswordReset}
+              onPrepareReset={prepareResetPasswordRoute}
+              onUpdatePassword={updatePasswordFromResetRoute}
+              successMessage={resetPasswordNotice}
+            />
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
+
   if (authFlow === 'loading') {
     return null;
   }
@@ -892,6 +983,7 @@ export default function App() {
                 isLoading={isAuthLoading}
                 onClearFeedback={clearAuthFeedback}
                 onContinue={continueAuth}
+                onRequestPasswordReset={requestAuthPasswordReset}
                 onResendVerification={resendAuthVerification}
                 successMessage={authNotice}
               />
@@ -1115,6 +1207,10 @@ export default function App() {
 
 function isEmailVerifiedPath() {
   return typeof window !== 'undefined' && window.location.pathname === '/email-verified';
+}
+
+function isPasswordResetPath() {
+  return typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 }
 
 function getAuthErrorMessage(error: unknown, mode: 'login' | 'signup') {

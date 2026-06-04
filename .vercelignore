@@ -1,0 +1,11 @@
+.git
+.codex
+.expo
+dev-server*.log
+screenshots
+supabase/.temp
+node_modules
+dist
+web-build
+ios
+android

@@ -25,6 +25,8 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+dev-server*.log
+screenshots/
 .codex/
 
 # macOS
@@ -34,6 +36,7 @@ yarn-error.*
 # local env files
 .env
 .env*.local
+public/auth-config.js
 
 # typescript
 *.tsbuildinfo
@@ -41,3 +44,5 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+.vercel
+supabase/.temp/
