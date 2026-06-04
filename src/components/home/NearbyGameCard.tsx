@@ -26,7 +26,7 @@ type NearbyGameCardProps = {
 };
 
 export function NearbyGameCard({
-  actionLabel = 'Open game',
+  actionLabel = 'View match',
   actionTone = 'accent',
   audience = 'Everyone',
   disabled = false,

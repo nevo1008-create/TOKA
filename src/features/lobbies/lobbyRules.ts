@@ -19,7 +19,7 @@ export type LobbyAccessDecision =
   | {
       canEnterLobby: true;
       kind: 'can_enter';
-      label: 'Open game';
+      label: 'View match';
       reasons: JoinRequestReason[];
     }
   | {
@@ -200,7 +200,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'Open game',
+      label: 'View match',
       reasons: [],
     };
   }
@@ -218,7 +218,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'Open game',
+      label: 'View match',
       reasons: [],
     };
   }
@@ -236,7 +236,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'Open game',
+      label: 'View match',
       reasons: [],
     };
   }
@@ -260,7 +260,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
   return {
     canEnterLobby: true,
     kind: 'can_enter',
-    label: 'Open game',
+    label: 'View match',
     reasons: [],
   };
 }

@@ -21,7 +21,7 @@ type HelpTopic = {
 const helpTopics: HelpTopic[] = [
   {
     answer:
-      'Open Games, choose a lobby, and use Open game to review the time, beach, rank range, players, and joining state before you join.',
+      'Open Games, choose a lobby, and use View match to review the time, beach, rank range, players, and joining state before you join.',
     icon: 'football-outline',
     id: 'joining',
     title: 'Joining a game',

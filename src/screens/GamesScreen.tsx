@@ -7,10 +7,11 @@ import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
+import { israelPlaces } from '../data/israelPlaces';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { Lobby, Player } from '../types';
+import { playerLevels, type Lobby, type Location, type Player, type PlayerLevel } from '../types';
 
 type GamesScreenProps = {
   currentPlayer: Player;
@@ -27,7 +28,7 @@ type GamesScreenProps = {
 };
 
 type FilterId = 'All Games' | 'Location' | 'Rank' | 'Gender';
-type OpenFilterPanel = 'Rank' | 'Gender' | null;
+type OpenFilterPanel = 'Location' | 'Rank' | 'Gender' | null;
 type GenderFilter = 'Everyone' | 'Male' | 'Female';
 
 type GameListItem = {
@@ -50,12 +51,12 @@ type GameListItem = {
 
 const filters: Array<{ id: FilterId; icon: keyof typeof Ionicons.glyphMap; suffix?: boolean }> = [
   { id: 'All Games', icon: 'football-outline' },
-  { id: 'Location', icon: 'navigate-outline' },
+  { id: 'Location', icon: 'navigate-outline', suffix: true },
   { id: 'Rank', icon: 'options-outline', suffix: true },
   { id: 'Gender', icon: 'male-female-outline', suffix: true },
 ];
 
-const levelOptions = ['A-', 'A', 'A+', 'B-', 'B', 'B+', 'C-', 'C', 'C+', 'D-', 'D', 'D+', 'E-', 'E', 'E+', 'League'];
+const levelOptions = [...playerLevels];
 const genderOptions: GenderFilter[] = ['Everyone', 'Male', 'Female'];
 
 const gameSections = ['Find Games', 'My Games'] as const;
@@ -237,19 +238,29 @@ function SearchGamesView({
   setSelectedFilter: (filter: string) => void;
 }) {
   const [openFilterPanel, setOpenFilterPanel] = useState<OpenFilterPanel>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [levelFromIndex, setLevelFromIndex] = useState(0);
   const [levelToIndex, setLevelToIndex] = useState(levelOptions.length - 1);
   const [genderFilter, setGenderFilter] = useState<GenderFilter | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
+  const locationOptions = useMemo(() => getLocationOptions(lobbies), [lobbies]);
+  const selectedLocation = selectedLocationId
+    ? locationOptions.find((location) => location.id === selectedLocationId) ?? null
+    : null;
 
   const hasLevelFilter = levelFromIndex !== 0 || levelToIndex !== levelOptions.length - 1;
-  const isLocationActive = selectedFilter === 'Location' || selectedFilter === 'Nearby';
-  const hasAnyFilter = hasLevelFilter || Boolean(genderFilter) || isLocationActive || showPrivate;
+  const isLocationActive = Boolean(selectedLocationId);
+  const hasSearchQuery = Boolean(searchQuery.trim());
+  const hasAnyFilter = hasSearchQuery || hasLevelFilter || Boolean(genderFilter) || isLocationActive || showPrivate;
   const levelLabel = hasLevelFilter ? formatLevelRange(levelFromIndex, levelToIndex) : 'Rank';
+  const locationLabel = selectedLocation ? selectedLocation.name : 'Location';
 
   function resetFilters() {
     setSelectedFilter('All Games');
     setOpenFilterPanel(null);
+    setSearchQuery('');
+    setSelectedLocationId(null);
     setLevelFromIndex(0);
     setLevelToIndex(levelOptions.length - 1);
     setGenderFilter(null);
@@ -263,8 +274,8 @@ function SearchGamesView({
     }
 
     if (filter === 'Location') {
-      setSelectedFilter(isLocationActive ? 'All Games' : 'Location');
-      setOpenFilterPanel(null);
+      setSelectedFilter('Location');
+      setOpenFilterPanel((current) => current === 'Location' ? null : 'Location');
       return;
     }
 
@@ -281,6 +292,10 @@ function SearchGamesView({
       return genderFilter ?? 'Gender';
     }
 
+    if (filter === 'Location') {
+      return locationLabel;
+    }
+
     return filter;
   }
 
@@ -290,7 +305,7 @@ function SearchGamesView({
     }
 
     if (filter === 'Location') {
-      return isLocationActive;
+      return openFilterPanel === 'Location' || isLocationActive;
     }
 
     if (filter === 'Rank') {
@@ -300,27 +315,34 @@ function SearchGamesView({
     return openFilterPanel === 'Gender' || Boolean(genderFilter);
   }
 
-  const staticLobbyIds = new Set(gameCards.map((game) => game.lobbyId).filter(Boolean));
-  const createdLobbyCards = lobbies
-    .filter((lobby) => !staticLobbyIds.has(lobby.id) && isLobbyDiscoverable(lobby))
-    .map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players));
-  const visibleGameCards = [
-    ...createdLobbyCards,
-    ...gameCards.filter((game) => {
-      const lobby = getGameLobby(lobbies, game);
-
-      return lobby ? isLobbyDiscoverable(lobby) : true;
-    }),
-  ];
+  const visibleGameCards = useMemo(
+    () =>
+      getUniqueLobbies(lobbies)
+        .filter((lobby) => isLobbyDiscoverable(lobby))
+        .filter((lobby) =>
+          doesLobbyMatchDiscoveryFilters(lobby, {
+            genderFilter,
+            levelFromIndex,
+            levelToIndex,
+            searchQuery,
+            selectedLocation,
+            showPrivate,
+          }, players),
+        )
+        .map((lobby, index) => getGameCardFromLobby(lobby, index, currentPlayer.id, players)),
+    [currentPlayer.id, genderFilter, levelFromIndex, levelToIndex, lobbies, players, searchQuery, selectedLocation, showPrivate],
+  );
 
   return (
     <>
       <View style={styles.searchBox}>
         <Ionicons color={colors.accentSea} name="search" size={18} />
         <TextInput
+          onChangeText={setSearchQuery}
           placeholder="Search beach, host, or game"
           placeholderTextColor={colors.subtle}
           style={styles.searchInput}
+          value={searchQuery}
         />
       </View>
 
@@ -372,6 +394,20 @@ function SearchGamesView({
           </View>
         ) : null}
 
+        {openFilterPanel === 'Location' ? (
+          <View style={styles.filterPopover}>
+            <LocationFilterPanel
+              locations={locationOptions}
+              onSelect={(locationId) => {
+                setSelectedLocationId(locationId);
+                setSelectedFilter(locationId ? 'Location' : 'All Games');
+                setOpenFilterPanel(null);
+              }}
+              selectedLocationId={selectedLocationId}
+            />
+          </View>
+        ) : null}
+
         {openFilterPanel === 'Gender' ? (
           <View style={[styles.filterPopover, styles.genderPopover]}>
             <GenderFilterPanel
@@ -413,14 +449,14 @@ function SearchGamesView({
       </View>
 
       <View style={styles.cardStack}>
-        {visibleGameCards.map((game, index) => {
+        {visibleGameCards.length > 0 ? visibleGameCards.map((game, index) => {
           const lobby = getGameLobby(lobbies, game);
 
           return (
             <GameCard
               currentPlayerId={currentPlayer.id}
               game={game}
-              key={`${game.title}-${index}`}
+              key={game.lobbyId ?? `${game.title}-${index}`}
               lobby={lobby}
               onPress={() => {
                 if (lobby) {
@@ -429,7 +465,13 @@ function SearchGamesView({
               }}
             />
           );
-        })}
+        }) : (
+          <EmptyState
+            icon="search-outline"
+            title="No matches yet"
+            body={hasAnyFilter ? 'Try clearing a filter or searching another beach, host, or match.' : 'New open matches will appear here when hosts create them.'}
+          />
+        )}
       </View>
     </>
   );
@@ -603,6 +645,65 @@ function GenderFilterPanel({
   );
 }
 
+function LocationFilterPanel({
+  locations,
+  onSelect,
+  selectedLocationId,
+}: {
+  locations: Location[];
+  onSelect: (locationId: string | null) => void;
+  selectedLocationId: string | null;
+}) {
+  return (
+    <View style={styles.filterPanel}>
+      <View style={styles.locationOptions}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSelect(null)}
+          style={[styles.locationOption, !selectedLocationId && styles.locationOptionActive]}
+        >
+          <AppText
+            style={!selectedLocationId && styles.locationOptionTextActive}
+            tone={!selectedLocationId ? 'accent' : 'primary'}
+            variant="chip"
+            weight="800"
+          >
+            All locations
+          </AppText>
+          <AppText tone="muted" variant="caption" weight="600">
+            Show every open match
+          </AppText>
+        </Pressable>
+
+        {locations.map((location) => {
+          const isSelected = selectedLocationId === location.id;
+
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={location.id}
+              onPress={() => onSelect(location.id)}
+              style={[styles.locationOption, isSelected && styles.locationOptionActive]}
+            >
+              <AppText
+                style={isSelected && styles.locationOptionTextActive}
+                tone={isSelected ? 'accent' : 'primary'}
+                variant="chip"
+                weight="800"
+              >
+                {location.name}
+              </AppText>
+              <AppText tone="muted" variant="caption" weight="600">
+                {location.city}, {location.area}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function MyGamesView({
   currentPlayer,
   lobbies,
@@ -614,20 +715,21 @@ function MyGamesView({
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
 }) {
-  const activeGames = lobbies
+  const uniqueLobbies = getUniqueLobbies(lobbies);
+  const activeGames = uniqueLobbies
     .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
     .map((lobby, index) => {
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
 
       return {
         ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
-        actionLabel: 'Open game',
+        actionLabel: 'View match',
         imageBadgeLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
         statusLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
         statusTone: participant?.role === 'waitlist' ? 'gold' as const : 'lime' as const,
       };
     });
-  const finishedGames = lobbies
+  const finishedGames = uniqueLobbies
     .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'rating_open' || lobby.status === 'completed' || lobby.status === 'closed'))
     .map((lobby, index) => ({
       ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
@@ -684,7 +786,7 @@ function GameHistorySection({
       </View>
 
       <View style={styles.cardStack}>
-        {games.map((game, index) => {
+        {games.length > 0 ? games.map((game, index) => {
           const lobby = getGameLobby(lobbies, game);
 
           return (
@@ -698,7 +800,13 @@ function GameHistorySection({
               }}
             />
           );
-        })}
+        }) : (
+          <EmptyState
+            icon={title === 'Joined Games' ? 'calendar-outline' : 'checkmark-done-outline'}
+            title={title === 'Joined Games' ? 'No joined matches' : 'No finished matches'}
+            body={title === 'Joined Games' ? 'Matches you host, join, or waitlist for will appear here.' : 'Completed matches and rating windows will appear here.'}
+          />
+        )}
       </View>
     </View>
   );
@@ -716,17 +824,23 @@ function GameCard({
   onPress: () => void;
 }) {
   const currentParticipant = lobby ? getCurrentPlayerParticipant(lobby, currentPlayerId) : undefined;
+  const pendingRequest = lobby?.joinRequests.find(
+    (request) => request.playerId === currentPlayerId && request.status === 'pending',
+  );
   const statusBadgeLabel =
     currentParticipant?.role === 'admin'
       ? 'Host'
       : currentParticipant && isActiveLobbyParticipant(currentParticipant)
         ? 'Joined'
-        : game.spotsLeft;
-  const statusBadgeTone = currentParticipant && isActiveLobbyParticipant(currentParticipant) ? 'green' : 'yellow';
+        : pendingRequest
+          ? 'Requested access'
+          : game.spotsLeft;
+  const hasJoinedStatus = Boolean(currentParticipant && isActiveLobbyParticipant(currentParticipant));
+  const statusBadgeTone = hasJoinedStatus ? 'green' : 'yellow';
 
   return (
     <NearbyGameCard
-      actionLabel="Open game"
+      actionLabel="View match"
       audience={game.audience}
       distance={game.distance}
       level={game.level}
@@ -743,10 +857,206 @@ function GameCard({
   );
 }
 
+function EmptyState({
+  body,
+  icon,
+  title,
+}: {
+  body: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+}) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Ionicons color={colors.primaryDark} name={icon} size={20} />
+      </View>
+      <View style={styles.emptyCopy}>
+        <AppText align="center" tone="primary" variant="titleSmall" weight="800">
+          {title}
+        </AppText>
+        <AppText align="center" style={styles.emptyText} tone="muted" variant="bodySmall" weight="600">
+          {body}
+        </AppText>
+      </View>
+    </View>
+  );
+}
+
 function getGameLobby(lobbies: Lobby[], game: GameListItem) {
   return game.lobbyId
     ? lobbies.find((lobby) => lobby.id === game.lobbyId)
     : lobbies[game.lobbyIndex % Math.max(lobbies.length, 1)];
+}
+
+function getUniqueLobbies(lobbies: Lobby[]) {
+  const lobbyKeys = new Set<string>();
+
+  return lobbies.filter((lobby) => {
+    const lobbyKey = getLobbyDedupeKey(lobby);
+
+    if (lobbyKeys.has(lobbyKey)) {
+      return false;
+    }
+
+    lobbyKeys.add(lobbyKey);
+    return true;
+  });
+}
+
+function getLobbyDedupeKey(lobby: Lobby) {
+  return [
+    normalizeSearchText(lobby.title),
+    normalizeSearchText(lobby.location.name),
+    normalizeSearchText(lobby.location.city),
+    lobby.adminId,
+  ].join('|');
+}
+
+function getLocationOptions(lobbies: Lobby[]) {
+  const locationsByKey = new Map<string, Location>();
+
+  israelPlaces.forEach((location) => locationsByKey.set(getLocationDedupeKey(location), location));
+  lobbies.forEach((lobby) => {
+    const locationKey = getLocationDedupeKey(lobby.location);
+
+    if (!locationsByKey.has(locationKey)) {
+      locationsByKey.set(locationKey, lobby.location);
+    }
+  });
+
+  return Array.from(locationsByKey.values()).sort((left, right) =>
+    `${left.city} ${left.name}`.localeCompare(`${right.city} ${right.name}`),
+  );
+}
+
+function getLocationDedupeKey(location: Location) {
+  return [
+    normalizeSearchText(location.name),
+    normalizeSearchText(location.city),
+    normalizeSearchText(location.area),
+  ].join('|');
+}
+
+function doesLobbyMatchDiscoveryFilters(
+  lobby: Lobby,
+  filtersState: {
+    genderFilter: GenderFilter | null;
+    levelFromIndex: number;
+    levelToIndex: number;
+    searchQuery: string;
+    selectedLocation: Location | null;
+    showPrivate: boolean;
+  },
+  players: Player[],
+) {
+  if (!filtersState.showPrivate && isPrivateLobby(lobby)) {
+    return false;
+  }
+
+  if (filtersState.selectedLocation && !doesLobbyMatchLocation(lobby, filtersState.selectedLocation)) {
+    return false;
+  }
+
+  if (filtersState.genderFilter && !doesLobbyMatchGender(lobby, filtersState.genderFilter)) {
+    return false;
+  }
+
+  if (
+    (filtersState.levelFromIndex !== 0 || filtersState.levelToIndex !== levelOptions.length - 1) &&
+    !doesLobbyRankOverlapFilter(lobby, filtersState.levelFromIndex, filtersState.levelToIndex)
+  ) {
+    return false;
+  }
+
+  if (filtersState.searchQuery.trim() && !doesLobbyMatchSearch(lobby, filtersState.searchQuery, players)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isPrivateLobby(lobby: Lobby) {
+  return lobby.visibility === 'password' || lobby.visibility === 'invite_link';
+}
+
+function doesLobbyMatchLocation(lobby: Lobby, selectedLocation: Location) {
+  const selectedName = normalizeSearchText(selectedLocation.name);
+  const selectedCity = normalizeSearchText(selectedLocation.city);
+  const lobbyName = normalizeSearchText(lobby.location.name);
+  const lobbyCity = normalizeSearchText(lobby.location.city);
+
+  return (
+    lobby.location.id === selectedLocation.id ||
+    (lobbyName === selectedName && lobbyCity === selectedCity) ||
+    (Boolean(selectedCity) && lobbyCity === selectedCity)
+  );
+}
+
+function doesLobbyMatchGender(lobby: Lobby, genderFilter: GenderFilter) {
+  if (genderFilter === 'Everyone') {
+    return lobby.genderRule === 'everyone';
+  }
+
+  return lobby.genderRule === genderFilter.toLowerCase();
+}
+
+function doesLobbyRankOverlapFilter(lobby: Lobby, levelFromIndex: number, levelToIndex: number) {
+  const lobbyRange = getLobbyLevelRangeIndexes(lobby);
+
+  return lobbyRange.fromIndex <= levelToIndex && lobbyRange.toIndex >= levelFromIndex;
+}
+
+function getLobbyLevelRangeIndexes(lobby: Lobby) {
+  if (lobby.rankRuleType === 'any') {
+    return {
+      fromIndex: 0,
+      toIndex: levelOptions.length - 1,
+    };
+  }
+
+  if (lobby.rankRuleType === 'exact') {
+    const exactIndex = getLevelIndex(lobby.rankExact);
+
+    return {
+      fromIndex: exactIndex,
+      toIndex: exactIndex,
+    };
+  }
+
+  const fromIndex = getLevelIndex(lobby.rankMin);
+  const toIndex = getLevelIndex(lobby.rankMax);
+
+  return {
+    fromIndex: Math.min(fromIndex, toIndex),
+    toIndex: Math.max(fromIndex, toIndex),
+  };
+}
+
+function getLevelIndex(level?: PlayerLevel) {
+  return level ? Math.max(levelOptions.indexOf(level), 0) : 0;
+}
+
+function doesLobbyMatchSearch(lobby: Lobby, searchQuery: string, players: Player[]) {
+  const normalizedQuery = normalizeSearchText(searchQuery);
+  const host = players.find((player) => player.id === lobby.adminId);
+  const searchParts = [
+    lobby.title,
+    lobby.location.name,
+    lobby.location.city,
+    lobby.location.area,
+    lobby.locationDescription,
+    lobby.note,
+    host?.name,
+    getGenderAudience(lobby),
+    getLobbyLevelLabel(lobby),
+  ];
+
+  return searchParts.some((part) => normalizeSearchText(part).includes(normalizedQuery));
+}
+
+function normalizeSearchText(value?: string) {
+  return value?.trim().toLocaleLowerCase() ?? '';
 }
 
 function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: string, players: Player[]): GameListItem {
@@ -1025,6 +1335,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAqua,
     borderColor: colors.border,
   },
+  emptyCopy: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  emptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 152,
+    padding: spacing.lg,
+    ...shadows.soft,
+  },
+  emptyText: {
+    maxWidth: 260,
+  },
   filterArea: {
     position: 'relative',
     zIndex: 20,
@@ -1218,6 +1557,27 @@ const styles = StyleSheet.create({
     borderRadius: radius.round,
     height: 7,
     width: 7,
+  },
+  locationOption: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.xxs,
+    minHeight: 50,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  locationOptionActive: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  locationOptions: {
+    gap: spacing.xs,
+    maxHeight: 320,
+  },
+  locationOptionTextActive: {
+    color: colors.accentLime,
   },
   locationRow: {
     alignItems: 'center',
