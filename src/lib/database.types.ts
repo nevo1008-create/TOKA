@@ -23,9 +23,13 @@ export type DbPlayer = {
   preferred_foot: PreferredFoot;
   side: PlayerSide;
   area: string;
+  avatar_focus_x: number | null;
+  avatar_focus_y: number | null;
+  avatar_path: string | null;
   initials: string;
   has_ball: boolean;
   has_court_marks: boolean;
+  push_notifications_enabled: boolean;
   friend_ids: string[];
   created_at: string;
   updated_at: string;

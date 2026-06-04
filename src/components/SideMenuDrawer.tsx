@@ -8,10 +8,7 @@ import { colors, radius, shadows, spacing } from '../theme';
 import type { Player } from '../types';
 import { AppText } from './AppText';
 
-type DrawerRowAction =
-  | 'blockedPlayers'
-  | 'deleteAccount'
-  | 'logOut';
+type DrawerRowAction = 'blockedPlayers';
 
 type SideMenuDrawerProps = {
   onClose: () => void;
@@ -20,9 +17,11 @@ type SideMenuDrawerProps = {
   onEditProfile: () => void;
   onHelpSupport: () => void;
   onInviteFriends: () => void;
+  onDeleteAccount: () => void;
   onMyGames: () => void;
   onNotifications: () => void;
   onPrivacyPolicy: () => void;
+  onLogOut: () => void;
   onReportProblem: () => void;
   onTermsOfService: () => void;
   onPlaceholderAction: (action: DrawerRowAction, label: string) => void;
@@ -48,6 +47,8 @@ export function SideMenuDrawer({
   onEditProfile,
   onHelpSupport,
   onInviteFriends,
+  onDeleteAccount,
+  onLogOut,
   onMyGames,
   onNotifications,
   onPrivacyPolicy,
@@ -104,8 +105,8 @@ export function SideMenuDrawer({
   ];
 
   const managementRows: DrawerRowConfig[] = [
-    { action: 'deleteAccount', destructive: true, icon: 'trash-outline', label: 'Delete account' },
-    { action: 'logOut', destructive: true, icon: 'log-out-outline', label: 'Log out' },
+    { destructive: true, icon: 'log-out-outline', label: 'Log out', onPress: onLogOut },
+    { destructive: true, icon: 'trash-outline', label: 'Delete account', onPress: onDeleteAccount },
   ];
 
   return (
