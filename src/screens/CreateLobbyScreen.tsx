@@ -5,6 +5,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, type StylePr
 
 import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { formatRankRange, getRankIndex, rankOptions, RankBar, RankRangeBar } from '../components/RankRangeBar';
 import type { CreateLobbyDraft } from '../features/lobbies/lobbyCreateTypes';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { GenderRule, LobbyVisibility, Player, PlayerLevel, RankRuleType } from '../types';
@@ -18,7 +19,7 @@ type CreateLobbyScreenProps = {
   player: Player;
 };
 
-type RankPickerField = 'exact' | 'max' | 'min';
+type CreatePicker = 'date' | 'location' | 'time';
 
 export function CreateLobbyScreen({
   notificationCount,
@@ -31,17 +32,24 @@ export function CreateLobbyScreen({
   const [step, setStep] = useState<1 | 2>(1);
   const [title, setTitle] = useState('Sunset Footvolley');
   const [meetingPoint, setMeetingPoint] = useState('Meet near the north workout area by the showers');
+  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+  const [selectedTimeIndex, setSelectedTimeIndex] = useState(0);
+  const [selectedLocationIndex, setSelectedLocationIndex] = useState(0);
   const [playerCounts, setPlayerCounts] = useState<number[]>([4, 6]);
   const [rankRuleType, setRankRuleType] = useState<RankRuleType>('range');
-  const [rankMin, setRankMin] = useState<PlayerLevel>('B-');
-  const [rankMax, setRankMax] = useState<PlayerLevel>('A');
+  const [rankMin, setRankMin] = useState<PlayerLevel>('A-');
+  const [rankMax, setRankMax] = useState<PlayerLevel>('B+');
   const [rankExact, setRankExact] = useState<PlayerLevel>('B+');
-  const [rankPickerField, setRankPickerField] = useState<RankPickerField | null>(null);
+  const [activePicker, setActivePicker] = useState<CreatePicker | null>(null);
   const [genderRule, setGenderRule] = useState<GenderRule>('everyone');
   const [visibility, setVisibility] = useState<LobbyVisibility>('public');
+  const selectedDate = dateOptions[selectedDateIndex];
+  const selectedTime = timeOptions[selectedTimeIndex];
+  const selectedLocation = locationOptions[selectedLocationIndex];
+  const startsAt = `${selectedDate.value}T${selectedTime.value}:00+03:00`;
   const isTitleValid = title.trim().length > 2;
   const isMeetingPointValid = meetingPoint.trim().length > 4;
-  const isRankRangeValid = rankRuleType !== 'range' || rankOptions.indexOf(rankMin) <= rankOptions.indexOf(rankMax);
+  const isRankRangeValid = rankRuleType !== 'range' || getRankIndex(rankMin) <= getRankIndex(rankMax);
   const maxPlayers = Math.max(...playerCounts);
   const canContinue = isTitleValid && isMeetingPointValid;
   const canCreate = canContinue && isRankRangeValid && playerCounts.length > 0;
@@ -53,8 +61,8 @@ export function CreateLobbyScreen({
 
     onCreateLobby({
       genderRule,
-      locationCity: 'Tel Aviv',
-      locationName: 'Gordon Beach',
+      locationCity: selectedLocation.city,
+      locationName: selectedLocation.name,
       maxPlayers,
       meetingPoint: meetingPoint.trim(),
       playerCounts,
@@ -62,7 +70,7 @@ export function CreateLobbyScreen({
       rankMax: rankRuleType === 'range' ? rankMax : undefined,
       rankMin: rankRuleType === 'range' ? rankMin : undefined,
       rankRuleType,
-      startsAt: defaultStartsAt,
+      startsAt,
       title: title.trim(),
       visibility,
     });
@@ -78,28 +86,15 @@ export function CreateLobbyScreen({
     });
   }
 
-  function selectRank(rank: PlayerLevel) {
-    if (rankPickerField === 'min') {
-      setRankMin(rank);
-    } else if (rankPickerField === 'max') {
-      setRankMax(rank);
-    } else if (rankPickerField === 'exact') {
-      setRankExact(rank);
+  function selectLocation(index: number) {
+    const previousDefaultMeetingPoint = locationOptions[selectedLocationIndex].defaultMeetingPoint;
+    const nextLocation = locationOptions[index];
+
+    setSelectedLocationIndex(index);
+
+    if (!meetingPoint.trim() || meetingPoint === previousDefaultMeetingPoint) {
+      setMeetingPoint(nextLocation.defaultMeetingPoint);
     }
-
-    setRankPickerField(null);
-  }
-
-  function getSelectedRank() {
-    if (rankPickerField === 'min') {
-      return rankMin;
-    }
-
-    if (rankPickerField === 'max') {
-      return rankMax;
-    }
-
-    return rankExact;
   }
 
   return (
@@ -124,9 +119,15 @@ export function CreateLobbyScreen({
           <>
             <View style={styles.wizardTopSpacer} />
             <WhenWhereStep
+              dateLabel={selectedDate.label}
+              locationLabel={`${selectedLocation.name}, ${selectedLocation.city}`}
               meetingPoint={meetingPoint}
               onChangeMeetingPoint={setMeetingPoint}
               onChangeTitle={setTitle}
+              onOpenDate={() => setActivePicker('date')}
+              onOpenLocation={() => setActivePicker('location')}
+              onOpenTime={() => setActivePicker('time')}
+              timeLabel={selectedTime.label}
               title={title}
             />
           </>
@@ -140,9 +141,11 @@ export function CreateLobbyScreen({
             <AccessRulesStep
               genderRule={genderRule}
               onChangeGenderRule={setGenderRule}
+              onChangeRankMax={setRankMax}
+              onChangeRankExact={setRankExact}
+              onChangeRankMin={setRankMin}
               onChangeRankRuleType={setRankRuleType}
               onChangeVisibility={setVisibility}
-              onOpenRankPicker={setRankPickerField}
               onTogglePlayerCount={togglePlayerCount}
               playerCounts={playerCounts}
               rankExact={rankExact}
@@ -180,26 +183,49 @@ export function CreateLobbyScreen({
           <WizardDots step={step} />
         </View>
       </View>
-      <RankPickerSheet
-        onClose={() => setRankPickerField(null)}
-        onSelect={selectRank}
-        selectedRank={getSelectedRank()}
-        title={getRankPickerTitle(rankPickerField)}
-        visible={Boolean(rankPickerField)}
+      <OptionPickerSheet
+        onClose={() => setActivePicker(null)}
+        onSelect={(index) => {
+          if (activePicker === 'date') {
+            setSelectedDateIndex(index);
+          } else if (activePicker === 'time') {
+            setSelectedTimeIndex(index);
+          } else if (activePicker === 'location') {
+            selectLocation(index);
+          }
+
+          setActivePicker(null);
+        }}
+        options={getPickerOptions(activePicker)}
+        selectedIndex={getPickerSelectedIndex(activePicker, selectedDateIndex, selectedTimeIndex, selectedLocationIndex)}
+        title={getPickerTitle(activePicker)}
+        visible={Boolean(activePicker)}
       />
     </View>
   );
 }
 
 function WhenWhereStep({
+  dateLabel,
+  locationLabel,
   meetingPoint,
   onChangeMeetingPoint,
   onChangeTitle,
+  onOpenDate,
+  onOpenLocation,
+  onOpenTime,
+  timeLabel,
   title,
 }: {
+  dateLabel: string;
+  locationLabel: string;
   meetingPoint: string;
   onChangeMeetingPoint: (value: string) => void;
   onChangeTitle: (value: string) => void;
+  onOpenDate: () => void;
+  onOpenLocation: () => void;
+  onOpenTime: () => void;
+  timeLabel: string;
   title: string;
 }) {
   return (
@@ -216,15 +242,15 @@ function WhenWhereStep({
 
       <View style={styles.twoColumn}>
         <Field label="Date" style={styles.fieldInRow}>
-          <InputShell icon="calendar-outline" value="Tue, Jun 9" withChevron />
+          <InputShell icon="calendar-outline" onPress={onOpenDate} value={dateLabel} withChevron />
         </Field>
         <Field label="Start time" style={styles.fieldInRow}>
-          <InputShell icon="time-outline" value="18:30" withChevron />
+          <InputShell icon="time-outline" onPress={onOpenTime} value={timeLabel} withChevron />
         </Field>
       </View>
 
       <Field label="Location">
-        <InputShell icon="location" value="Gordon Beach, Tel Aviv" withChevron />
+        <InputShell icon="location" onPress={onOpenLocation} value={locationLabel} withChevron />
       </Field>
 
       <Field label="Meeting point">
@@ -244,9 +270,11 @@ function WhenWhereStep({
 function AccessRulesStep({
   genderRule,
   onChangeGenderRule,
+  onChangeRankExact,
+  onChangeRankMax,
+  onChangeRankMin,
   onChangeRankRuleType,
   onChangeVisibility,
-  onOpenRankPicker,
   onTogglePlayerCount,
   playerCounts,
   rankExact,
@@ -257,9 +285,11 @@ function AccessRulesStep({
 }: {
   genderRule: GenderRule;
   onChangeGenderRule: (value: GenderRule) => void;
+  onChangeRankExact: (value: PlayerLevel) => void;
+  onChangeRankMax: (value: PlayerLevel) => void;
+  onChangeRankMin: (value: PlayerLevel) => void;
   onChangeRankRuleType: (value: RankRuleType) => void;
   onChangeVisibility: (value: LobbyVisibility) => void;
-  onOpenRankPicker: (field: RankPickerField) => void;
   onTogglePlayerCount: (count: number) => void;
   playerCounts: number[];
   rankExact: PlayerLevel;
@@ -292,19 +322,29 @@ function AccessRulesStep({
       </Field>
 
       {rankRuleType === 'range' ? (
-        <View style={styles.twoColumn}>
-          <Field label="Min rank" style={styles.fieldInRow}>
-            <InputShell onPress={() => onOpenRankPicker('min')} value={rankMin} withChevron />
-          </Field>
-          <Field label="Max rank" style={styles.fieldInRow}>
-            <InputShell onPress={() => onOpenRankPicker('max')} value={rankMax} withChevron />
-          </Field>
-        </View>
+        <Field label="Rank range">
+          <View style={styles.rankRangePanel}>
+            <View style={styles.rankRangeHeader}>
+              <AppText tone="primary" variant="metadata" weight="800">
+                {formatRankRange(getRankIndex(rankMin), getRankIndex(rankMax))}
+              </AppText>
+              <AppText tone="muted" variant="metadata" weight="600">
+                Drag handles
+              </AppText>
+            </View>
+            <RankRangeBar
+              fromIndex={getRankIndex(rankMin)}
+              onFromChange={(index) => onChangeRankMin(rankOptions[index])}
+              onToChange={(index) => onChangeRankMax(rankOptions[index])}
+              toIndex={getRankIndex(rankMax)}
+            />
+          </View>
+        </Field>
       ) : null}
 
       {rankRuleType === 'exact' ? (
         <Field label="Exact rank">
-          <InputShell onPress={() => onOpenRankPicker('exact')} value={rankExact} withChevron />
+          <RankBar selectedRank={rankExact} onSelect={onChangeRankExact} />
         </Field>
       ) : null}
 
@@ -376,16 +416,18 @@ function PlayerCountSelector({
   );
 }
 
-function RankPickerSheet({
+function OptionPickerSheet({
   onClose,
   onSelect,
-  selectedRank,
+  options,
+  selectedIndex,
   title,
   visible,
 }: {
   onClose: () => void;
-  onSelect: (rank: PlayerLevel) => void;
-  selectedRank: PlayerLevel;
+  onSelect: (index: number) => void;
+  options: Array<{ description?: string; label: string }>;
+  selectedIndex: number;
   title: string;
   visible: boolean;
 }) {
@@ -400,32 +442,40 @@ function RankPickerSheet({
                 {title}
               </AppText>
               <AppText tone="muted" variant="metadata" weight="600">
-                Tap a rank to set the rule.
+                Tap an option to update this game.
               </AppText>
             </View>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.rankCloseButton}>
               <Ionicons color={colors.muted} name="close" size={18} />
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.rankGrid} showsVerticalScrollIndicator={false}>
-            {rankOptions.map((rank) => {
-              const isSelected = rank === selectedRank;
+          <ScrollView contentContainerStyle={styles.optionList} showsVerticalScrollIndicator={false}>
+            {options.map((option, index) => {
+              const isSelected = index === selectedIndex;
 
               return (
                 <Pressable
                   accessibilityRole="button"
-                  key={rank}
-                  onPress={() => onSelect(rank)}
-                  style={[styles.rankOption, isSelected && styles.rankOptionSelected]}
+                  accessibilityState={{ selected: isSelected }}
+                  key={`${option.label}-${index}`}
+                  onPress={() => onSelect(index)}
+                  style={[styles.optionRow, isSelected && styles.optionRowSelected]}
                 >
-                  <AppText
-                    align="center"
-                    tone={isSelected ? 'accent' : 'primary'}
-                    variant="button"
-                    weight="800"
-                  >
-                    {rank}
-                  </AppText>
+                  <View style={styles.optionCopy}>
+                    <AppText tone={isSelected ? 'accent' : 'primary'} variant="button" weight="800">
+                      {option.label}
+                    </AppText>
+                    {option.description ? (
+                      <AppText tone="muted" variant="metadata" weight="600">
+                        {option.description}
+                      </AppText>
+                    ) : null}
+                  </View>
+                  <Ionicons
+                    color={isSelected ? colors.accentLime : colors.muted}
+                    name={isSelected ? 'checkmark-circle' : 'chevron-forward'}
+                    size={18}
+                  />
                 </Pressable>
               );
             })}
@@ -597,9 +647,99 @@ function PolicyCard({
   );
 }
 
-const defaultStartsAt = '2026-06-09T18:30:00+03:00';
+const dateOptions = [
+  { label: 'Tue, Jun 9', value: '2026-06-09' },
+  { label: 'Wed, Jun 10', value: '2026-06-10' },
+  { label: 'Thu, Jun 11', value: '2026-06-11' },
+  { label: 'Fri, Jun 12', value: '2026-06-12' },
+  { label: 'Sat, Jun 13', value: '2026-06-13' },
+];
+const timeOptions = [
+  { label: '07:00', value: '07:00' },
+  { label: '08:30', value: '08:30' },
+  { label: '16:30', value: '16:30' },
+  { label: '18:30', value: '18:30' },
+  { label: '20:00', value: '20:00' },
+];
+const locationOptions = [
+  {
+    city: 'Tel Aviv',
+    defaultMeetingPoint: 'Meet near the north workout area by the showers',
+    name: 'Gordon Beach',
+  },
+  {
+    city: 'Tel Aviv',
+    defaultMeetingPoint: 'Meet by the south entrance stairs near the promenade',
+    name: 'Hilton Beach',
+  },
+  {
+    city: 'Netanya',
+    defaultMeetingPoint: 'Meet next to the central lifeguard tower',
+    name: 'Poleg Beach',
+  },
+  {
+    city: 'Caesarea',
+    defaultMeetingPoint: 'Meet by the aqueduct parking entrance',
+    name: 'Aqueduct Beach',
+  },
+];
 const playerCountOptions = [4, 5, 6];
-const rankOptions: PlayerLevel[] = ['C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+', 'League'];
+
+function getPickerOptions(picker: CreatePicker | null) {
+  if (picker === 'date') {
+    return dateOptions.map((option) => ({ label: option.label }));
+  }
+
+  if (picker === 'time') {
+    return timeOptions.map((option) => ({ label: option.label }));
+  }
+
+  if (picker === 'location') {
+    return locationOptions.map((option) => ({
+      description: option.city,
+      label: option.name,
+    }));
+  }
+
+  return [];
+}
+
+function getPickerSelectedIndex(
+  picker: CreatePicker | null,
+  selectedDateIndex: number,
+  selectedTimeIndex: number,
+  selectedLocationIndex: number,
+) {
+  if (picker === 'date') {
+    return selectedDateIndex;
+  }
+
+  if (picker === 'time') {
+    return selectedTimeIndex;
+  }
+
+  if (picker === 'location') {
+    return selectedLocationIndex;
+  }
+
+  return 0;
+}
+
+function getPickerTitle(picker: CreatePicker | null) {
+  if (picker === 'date') {
+    return 'Choose date';
+  }
+
+  if (picker === 'time') {
+    return 'Choose start time';
+  }
+
+  if (picker === 'location') {
+    return 'Choose location';
+  }
+
+  return 'Choose option';
+}
 
 function getGenderLabel(genderRule: GenderRule) {
   if (genderRule === 'male') {
@@ -623,18 +763,6 @@ function getRankRuleLabel(rankRuleType: RankRuleType) {
   }
 
   return 'Range';
-}
-
-function getRankPickerTitle(field: RankPickerField | null) {
-  if (field === 'min') {
-    return 'Choose min rank';
-  }
-
-  if (field === 'max') {
-    return 'Choose max rank';
-  }
-
-  return 'Choose exact rank';
 }
 
 const styles = StyleSheet.create({
@@ -697,6 +825,31 @@ const styles = StyleSheet.create({
   },
   inputText: {
     flex: 1,
+  },
+  optionCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  optionList: {
+    gap: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  optionRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  optionRowSelected: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.primary,
   },
   policyCard: {
     backgroundColor: colors.surfaceRaised,
@@ -796,11 +949,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 34,
   },
-  rankGrid: {
+  rankRangeHeader: {
+    alignItems: 'center',
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    paddingBottom: spacing.xs,
+    justifyContent: 'space-between',
+  },
+  rankRangePanel: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
   },
   rankModalBackdrop: {
     backgroundColor: 'rgba(18, 59, 42, 0.18)',
@@ -814,20 +974,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     padding: spacing.md,
-  },
-  rankOption: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.borderSoft,
-    borderRadius: radius.round,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 42,
-    width: '23%',
-  },
-  rankOptionSelected: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.primary,
   },
   rankSheet: {
     backgroundColor: colors.surface,

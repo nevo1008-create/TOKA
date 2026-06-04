@@ -213,6 +213,41 @@ export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayer
   };
 }
 
+export async function cancelJoinRequest(lobby: Lobby, player: Player) {
+  const pendingRequest = lobby.joinRequests.find(
+    (request) => request.playerId === player.id && request.status === 'pending',
+  );
+
+  if (!pendingRequest) {
+    return {
+      messages: [],
+      success: false,
+    };
+  }
+
+  const { error } = await supabase
+    .from('lobby_memberships')
+    .update({
+      left_at: new Date().toISOString(),
+      request_message: null,
+      requested_at: null,
+      requested_reasons: [],
+      status: 'left',
+    })
+    .eq('lobby_id', lobby.id)
+    .eq('player_id', player.id)
+    .eq('status', 'pending_approval');
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    messages: [],
+    success: true,
+  };
+}
+
 export async function leaveLobby(lobby: Lobby, player: Player) {
   const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
 
