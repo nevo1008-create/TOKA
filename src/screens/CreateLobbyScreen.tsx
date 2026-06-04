@@ -28,7 +28,7 @@ export function CreateLobbyScreen({
   onOpenNotifications,
   player,
 }: CreateLobbyScreenProps) {
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<number>(1);
   const [title, setTitle] = useState('Sunset Footvolley');
   const [meetingPoint, setMeetingPoint] = useState('Meet near the north workout area by the showers');
   const [playerCounts, setPlayerCounts] = useState<number[]>([4, 6]);
@@ -454,7 +454,7 @@ function PrimaryActionButton({ disabled = false, label, onPress }: { disabled?: 
   );
 }
 
-function WizardDots({ step }: { step: 1 | 2 }) {
+function WizardDots({ step }: { step: number }) {
   return (
     <View style={styles.wizardDots}>
       <View style={[styles.wizardDot, step === 1 && styles.wizardDotActive]} />

@@ -857,7 +857,7 @@ function getCommunityProfileActionState(
   player: ProfilePreviewPlayer,
   isFriend: boolean,
   isRequested: boolean,
-): { kind: 'accept' | 'add' | 'invite' | 'message' | 'requested'; label: string } {
+): { kind: string; label: string } {
   if (isRequested && player.menuVariant !== 'request') {
     return { kind: 'requested', label: 'Requested' };
   }

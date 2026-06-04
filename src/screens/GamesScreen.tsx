@@ -665,7 +665,7 @@ function GameHistorySection({
   title,
 }: {
   countLabel: string;
-  games: Array<GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' }>;
+  games: Array<GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: string }>;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
   title: string;
@@ -871,7 +871,7 @@ function MyGameCard({
   game,
   onPress,
 }: {
-  game: GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
+  game: GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: string };
   onPress: () => void;
 }) {
   const isFinished = game.statusTone === 'muted';
