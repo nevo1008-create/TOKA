@@ -11,6 +11,7 @@ import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { GenderRule, LobbyVisibility, Player, PlayerLevel, RankRuleType } from '../types';
 
 type CreateLobbyScreenProps = {
+  isCreating?: boolean;
   notificationCount: number;
   onCancel: () => void;
   onCreateLobby: (draft: CreateLobbyDraft) => void;
@@ -22,6 +23,7 @@ type CreateLobbyScreenProps = {
 type CreatePicker = 'date' | 'location' | 'time';
 
 export function CreateLobbyScreen({
+  isCreating = false,
   notificationCount,
   onCancel,
   onCreateLobby,
@@ -55,11 +57,14 @@ export function CreateLobbyScreen({
   const canCreate = canContinue && isRankRangeValid && playerCounts.length > 0;
 
   function createLobby() {
-    if (!canCreate) {
+    if (!canCreate || isCreating) {
       return;
     }
 
+    const accessCode = visibility === 'password' ? generatePrivateAccessCode() : undefined;
+
     onCreateLobby({
+      accessCode,
       genderRule,
       locationCity: selectedLocation.city,
       locationName: selectedLocation.name,
@@ -171,8 +176,8 @@ export function CreateLobbyScreen({
 
         <View style={styles.footerActions}>
           <PrimaryActionButton
-            disabled={step === 1 ? !canContinue : !canCreate}
-            label={step === 1 ? 'Continue' : 'Create game'}
+            disabled={step === 1 ? !canContinue : !canCreate || isCreating}
+            label={step === 1 ? 'Continue' : isCreating ? 'Creating...' : 'Create game'}
             onPress={step === 1 ? () => setStep(2) : createLobby}
           />
           <Pressable accessibilityRole="button" onPress={onCancel} style={styles.cancelButton}>
@@ -384,6 +389,10 @@ function AccessRulesStep({
       </Field>
     </Section>
   );
+}
+
+function generatePrivateAccessCode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 function PlayerCountSelector({

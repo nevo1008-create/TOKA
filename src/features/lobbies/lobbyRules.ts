@@ -1,5 +1,6 @@
 import { playerLevels, type ChatChannel, type JoinRequestReason, type Lobby, type LobbyParticipant, type Player } from '../../types';
 import { getMinutesBetweenLobbyStarts, getMinutesUntilLobbyStart } from './lobbyDateTime';
+import { lobbyLabels } from './lobbyLabels';
 
 export const commitmentConflictWindowMinutes = 90;
 export const defaultCancellationPenaltyMinutes = 90;
@@ -19,7 +20,7 @@ export type LobbyAccessDecision =
   | {
       canEnterLobby: true;
       kind: 'can_enter';
-      label: 'View match';
+      label: typeof lobbyLabels.viewMatch;
       reasons: JoinRequestReason[];
     }
   | {
@@ -43,7 +44,7 @@ export type LobbyAccessDecision =
   | {
       canEnterLobby: false;
       kind: 'pending_approval';
-      label: 'Requested access';
+      label: typeof lobbyLabels.accessRequested;
       reasons: JoinRequestReason[];
     };
 
@@ -200,7 +201,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'View match',
+      label: lobbyLabels.viewMatch,
       reasons: [],
     };
   }
@@ -218,7 +219,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'View match',
+      label: lobbyLabels.viewMatch,
       reasons: [],
     };
   }
@@ -227,7 +228,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: false,
       kind: 'pending_approval',
-      label: 'Requested access',
+      label: lobbyLabels.accessRequested,
       reasons: exceptionReasons,
     };
   }
@@ -236,7 +237,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
     return {
       canEnterLobby: true,
       kind: 'can_enter',
-      label: 'View match',
+      label: lobbyLabels.viewMatch,
       reasons: [],
     };
   }
@@ -260,7 +261,7 @@ export function getLobbyAccessDecision(player: Player, lobby: Lobby, context: Lo
   return {
     canEnterLobby: true,
     kind: 'can_enter',
-    label: 'View match',
+    label: lobbyLabels.viewMatch,
     reasons: [],
   };
 }
@@ -272,7 +273,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
     return {
       canJoin: false,
       kind: 'already_joined',
-      label: 'Joined',
+      label: lobbyLabels.joined,
       reasons: ['Player is already committed to this game.'],
     };
   }
@@ -281,7 +282,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
     return {
       canJoin: false,
       kind: 'pending_approval',
-      label: 'Requested access',
+      label: lobbyLabels.accessRequested,
       reasons: ['Host approval is still pending.'],
     };
   }
@@ -292,6 +293,23 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
       kind: 'closed',
       label: 'Closed',
       reasons: ['This game is not open for new commitments.'],
+    };
+  }
+
+  if (relationship === 'waitlist') {
+    if (isLobbyFull(lobby)) {
+      return {
+        canJoin: false,
+        kind: 'full_join_waitlist',
+        label: lobbyLabels.onWaitlist,
+        reasons: ['This game has no open joined-player slots.'],
+      };
+    }
+
+    return {
+      canJoin: true,
+      kind: 'join_game',
+      label: lobbyLabels.moveToPlayers,
     };
   }
 
@@ -310,7 +328,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
     return {
       canJoin: false,
       kind: 'full_join_waitlist',
-      label: lobby.waitlistEnabled ? 'Join waitlist' : 'Full',
+      label: lobby.waitlistEnabled ? lobbyLabels.joinWaitlist : 'Full',
       reasons: ['This game has no open joined-player slots.'],
     };
   }
@@ -321,23 +339,15 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
     return {
       canJoin: false,
       kind: 'commitment_conflict',
-      label: 'Join waitlist',
+      label: lobbyLabels.joinWaitlist,
       reasons: [`Player is already joined to ${conflict.title} within 90 minutes of this game.`],
-    };
-  }
-
-  if (relationship === 'waitlist') {
-    return {
-      canJoin: true,
-      kind: 'join_game',
-      label: 'Move to joined players',
     };
   }
 
   return {
     canJoin: false,
     kind: 'waitlist_only',
-    label: 'Join waitlist',
+    label: lobbyLabels.joinWaitlist,
     reasons: ['Player must join the waitlist before moving into players.'],
   };
 }
@@ -349,7 +359,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
     return {
       canJoinWaitlist: false,
       kind: 'already_waitlisted',
-      label: 'On waitlist',
+      label: lobbyLabels.onWaitlist,
       reasons: ['Player is already on the waitlist.'],
     };
   }
@@ -358,7 +368,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
     return {
       canJoinWaitlist: true,
       kind: 'join_waitlist',
-      label: 'Move to waitlist',
+      label: lobbyLabels.moveToWaitlist,
     };
   }
 
@@ -366,7 +376,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
     return {
       canJoinWaitlist: false,
       kind: 'pending_approval',
-      label: 'Requested access',
+      label: lobbyLabels.accessRequested,
       reasons: ['Host approval is still pending.'],
     };
   }
@@ -403,7 +413,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
   return {
     canJoinWaitlist: true,
     kind: 'join_waitlist',
-    label: 'Join waitlist',
+    label: lobbyLabels.joinWaitlist,
   };
 }
 

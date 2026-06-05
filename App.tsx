@@ -96,7 +96,10 @@ export default function App() {
   const [selectedFilter, setSelectedFilter] = useState('All Games');
   const [inviteParams, setInviteParams] = useState<InviteComposerParams | null>(null);
   const [isLobbyChatOpen, setIsLobbyChatOpen] = useState(false);
+  const [isCreatingLobby, setIsCreatingLobby] = useState(false);
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
+  const [pendingLobbyActionKey, setPendingLobbyActionKey] = useState<string | null>(null);
+  const pendingLobbyActionRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = lobbyStore.unreadNotifications;
   const unreadNotificationCount = lobbyStore.unreadNotificationCount;
@@ -561,9 +564,30 @@ export default function App() {
     Alert.alert('Game update', messages.join('\n'));
   }
 
+  async function runLobbyAction<T>(actionKey: string, action: () => Promise<T>) {
+    if (pendingLobbyActionRef.current) {
+      return null;
+    }
+
+    pendingLobbyActionRef.current = actionKey;
+    setPendingLobbyActionKey(actionKey);
+
+    try {
+      return await action();
+    } finally {
+      pendingLobbyActionRef.current = null;
+      setPendingLobbyActionKey(null);
+    }
+  }
+
   async function handleJoinGame(lobby: Lobby) {
     try {
-      const result = await lobbyStore.joinGame(lobby);
+      const result = await runLobbyAction(`join-game:${lobby.id}`, () => lobbyStore.joinGame(lobby));
+
+      if (!result) {
+        return;
+      }
+
       showLobbyActionMessages(result.messages);
     } catch (error) {
       showActionError(error);
@@ -573,12 +597,21 @@ export default function App() {
   function handleJoinWaitlist(lobby: Lobby) {
     const moveToWaitlist = async () => {
       try {
-        const result = await lobbyStore.joinWaitlist(lobby);
+        const result = await runLobbyAction(`join-waitlist:${lobby.id}`, () => lobbyStore.joinWaitlist(lobby));
+
+        if (!result) {
+          return;
+        }
+
         showLobbyActionMessages(result.messages);
       } catch (error) {
         showActionError(error);
       }
     };
+
+    if (pendingLobbyActionRef.current) {
+      return;
+    }
 
     if (lobbyStore.shouldConfirmMoveToWaitlist(lobby)) {
       Alert.alert(
@@ -597,7 +630,12 @@ export default function App() {
 
   async function handleRequestWaitlistApproval(lobby: Lobby) {
     try {
-      const result = await lobbyStore.requestWaitlistApproval(lobby);
+      const result = await runLobbyAction(`request-waitlist:${lobby.id}`, () => lobbyStore.requestWaitlistApproval(lobby));
+
+      if (!result) {
+        return;
+      }
+
       showLobbyActionMessages(result.messages);
     } catch (error) {
       showActionError(error);
@@ -606,7 +644,12 @@ export default function App() {
 
   async function handleApproveWaitlistRequest(lobby: Lobby, playerId: string) {
     try {
-      const result = await lobbyStore.approveWaitlistRequest(lobby, playerId);
+      const result = await runLobbyAction(`approve-waitlist:${lobby.id}:${playerId}`, () => lobbyStore.approveWaitlistRequest(lobby, playerId));
+
+      if (!result) {
+        return;
+      }
+
       showLobbyActionMessages(result.messages);
     } catch (error) {
       showActionError(error);
@@ -615,7 +658,12 @@ export default function App() {
 
   async function handleRejectJoinRequest(lobby: Lobby, playerId: string) {
     try {
-      const result = await lobbyStore.rejectJoinRequest(lobby, playerId);
+      const result = await runLobbyAction(`reject-request:${lobby.id}:${playerId}`, () => lobbyStore.rejectJoinRequest(lobby, playerId));
+
+      if (!result) {
+        return;
+      }
+
       showLobbyActionMessages(result.messages);
     } catch (error) {
       showActionError(error);
@@ -624,7 +672,12 @@ export default function App() {
 
   async function handleCancelJoinRequest(lobby: Lobby) {
     try {
-      const result = await lobbyStore.cancelJoinRequest(lobby);
+      const result = await runLobbyAction(`cancel-request:${lobby.id}`, () => lobbyStore.cancelJoinRequest(lobby));
+
+      if (!result) {
+        return;
+      }
+
       showLobbyActionMessages(result.messages);
     } catch (error) {
       showActionError(error);
@@ -635,13 +688,13 @@ export default function App() {
     let result;
 
     try {
-      result = await lobbyStore.leaveLobby(lobby);
+      result = await runLobbyAction(`leave-lobby:${lobby.id}`, () => lobbyStore.leaveLobby(lobby));
     } catch (error) {
       showActionError(error);
       return;
     }
 
-    if (!result.success) {
+    if (!result?.success) {
       return;
     }
 
@@ -675,6 +728,12 @@ export default function App() {
   }
 
   async function handleCreateLobby(draft: CreateLobbyDraft) {
+    if (isCreatingLobby) {
+      return;
+    }
+
+    setIsCreatingLobby(true);
+
     try {
       const nextLobby = await lobbyStore.createLobby(draft);
 
@@ -683,6 +742,8 @@ export default function App() {
       setActiveTab('games');
     } catch (error) {
       showActionError(error);
+    } finally {
+      setIsCreatingLobby(false);
     }
   }
 
@@ -1077,6 +1138,7 @@ export default function App() {
                         notificationCount={unreadNotificationCount}
                         allLobbies={lobbyStore.lobbies}
                         hasPrivateAccess={lobbyStore.hasPrivateAccess(selectedLobby.id)}
+                        isActionPending={Boolean(pendingLobbyActionKey)}
                         onBack={() => {
                           setIsLobbyChatOpen(false);
                           setSelectedLobbyId(null);
@@ -1103,6 +1165,7 @@ export default function App() {
                     ) : (
                       <GamesScreen
                         currentPlayer={profilePlayer}
+                        hasPrivateAccess={lobbyStore.hasPrivateAccess}
                         initialSection={gamesInitialSection}
                         lobbies={filteredLobbies}
                         notificationCount={unreadNotificationCount}
@@ -1118,6 +1181,7 @@ export default function App() {
                   )}
                   {activeTab === 'create' && (
                     <CreateLobbyScreen
+                      isCreating={isCreatingLobby}
                       notificationCount={unreadNotificationCount}
                       onCancel={() => setActiveTab('home')}
                       onCreateLobby={handleCreateLobby}
