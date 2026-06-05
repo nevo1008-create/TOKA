@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase';
-import type { DbLobbyWithRelations } from '../../lib/database.types';
+import type { DbLobbyMembership, DbLobbyWithRelations } from '../../lib/database.types';
 import type { Lobby, Player } from '../../types';
 import type { CreateLobbyDraft } from './lobbyCreateTypes';
 import { getCancellationStatus, getJoinGameDecision, getJoinWaitlistDecision, getRuleExceptionReasons } from './lobbyRules';
@@ -15,7 +15,28 @@ export async function listLobbies(): Promise<Lobby[]> {
     throw error;
   }
 
-  return ((data ?? []) as unknown as DbLobbyWithRelations[]).map(mapDbLobbyToLobby);
+  const rows = (data ?? []) as unknown as DbLobbyWithRelations[];
+  const activeRows = rows.filter(hasCurrentMembership);
+  const emptyRows = rows.filter((row) => !hasCurrentMembership(row));
+
+  if (emptyRows.length > 0) {
+    void Promise.all(emptyRows.map((row) => deleteLobbyCascade(row.id))).catch((cleanupError) => {
+      console.warn('Could not delete empty lobbies.', cleanupError);
+    });
+  }
+
+  const lobbies = activeRows.map(mapDbLobbyToLobby);
+  const hostRepairs = activeRows
+    .map((row, index) => ({ lobby: lobbies[index], row }))
+    .filter(({ lobby, row }) => lobby.adminId !== row.host_player_id);
+
+  if (hostRepairs.length > 0) {
+    void Promise.all(hostRepairs.map(({ lobby, row }) => transferLobbyHost(row.id, lobby.adminId))).catch((repairError) => {
+      console.warn('Could not repair lobby host ownership.', repairError);
+    });
+  }
+
+  return lobbies;
 }
 
 export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player): Promise<Lobby> {
@@ -50,8 +71,9 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
       max_players: Math.max(...selectedPlayerCounts),
       min_players: Math.min(...selectedPlayerCounts),
       note: draft.visibility === 'password'
-        ? `Private game. Secure PIN verification is not production-ready yet. ${draft.meetingPoint}`
+        ? `Private game. ${draft.meetingPoint}`
         : draft.meetingPoint,
+      pin_code_hash: draft.accessCode,
       rank_exact: draft.rankExact,
       rank_max: draft.rankMax,
       rank_min: draft.rankMin,
@@ -87,14 +109,23 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
     sender_player_id: currentPlayer.id,
   });
 
-  const nextLobbies = await listLobbies();
-  const createdLobby = nextLobbies.find((candidate) => candidate.id === lobby.id) ?? mapDbLobbyToLobby(lobby as unknown as DbLobbyWithRelations);
+  const { data: createdLobbyRow, error: createdLobbyError } = await supabase
+    .from('lobbies')
+    .select('*, locations (*), lobby_memberships (*)')
+    .eq('id', lobby.id)
+    .single();
+
+  if (createdLobbyError) {
+    throw createdLobbyError;
+  }
+
+  const createdLobby = mapDbLobbyToLobby(createdLobbyRow as unknown as DbLobbyWithRelations);
 
   return createdLobby;
 }
 
-export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[]) {
-  const decision = getJoinGameDecision(player, lobby, { allLobbies });
+export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
+  const decision = getJoinGameDecision(player, lobby, { accessCode, allLobbies });
 
   if (!decision.canJoin) {
     return {
@@ -111,8 +142,8 @@ export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[]
   };
 }
 
-export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lobby[]) {
-  const decision = getJoinWaitlistDecision(player, lobby, { allLobbies });
+export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
+  const decision = getJoinWaitlistDecision(player, lobby, { accessCode, allLobbies });
 
   if (!decision.canJoinWaitlist) {
     return {
@@ -164,9 +195,37 @@ export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
 }
 
 export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
-  await upsertMembership(lobby.id, player, 'waitlisted', {
-    approvedByPlayerId: hostPlayerId,
-  });
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('lobby_memberships')
+    .update({
+      approved_at: now,
+      approved_by_player_id: hostPlayerId,
+      brings_ball: player.hasBall,
+      brings_court_marks: player.hasCourtMarks,
+      joined_at: now,
+      request_message: null,
+      requested_at: null,
+      requested_reasons: [],
+      role: lobby.adminId === player.id ? 'host' : 'member',
+      status: 'waitlisted',
+    })
+    .eq('lobby_id', lobby.id)
+    .eq('player_id', player.id)
+    .eq('status', 'pending_approval')
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return {
+      messages: ['This request is no longer pending.'],
+      success: false,
+    };
+  }
 
   await createNotification({
     body: `You were added to the waitlist for ${lobby.title}.`,
@@ -184,18 +243,31 @@ export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostP
 }
 
 export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('lobby_memberships')
     .update({
       declined_at: new Date().toISOString(),
       declined_by_player_id: hostPlayerId,
+      request_message: null,
+      requested_at: null,
+      requested_reasons: [],
       status: 'declined',
     })
     .eq('lobby_id', lobby.id)
-    .eq('player_id', player.id);
+    .eq('player_id', player.id)
+    .eq('status', 'pending_approval')
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     throw error;
+  }
+
+  if (!data) {
+    return {
+      messages: ['This request is no longer pending.'],
+      success: false,
+    };
   }
 
   await createNotification({
@@ -252,65 +324,168 @@ export async function leaveLobby(lobby: Lobby, player: Player) {
   const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
 
   if (!participant) {
+    if (lobby.adminId === player.id) {
+      await transferOrCloseLobbyAfterHostLeaves(lobby, player.id).catch((error) => {
+        console.warn('Could not finish host cleanup after stale leave.', error);
+      });
+
+      return {
+        messages: [],
+        success: true,
+      };
+    }
+
     return {
       messages: [],
       success: false,
     };
   }
 
+  const remainingParticipants = lobby.participants.filter((candidate) => candidate.playerId !== player.id);
   const status = participant.role === 'waitlist' ? 'cancelled_on_time' : getCancellationStatus(lobby);
 
-  const { error } = await supabase
-    .from('lobby_memberships')
-    .update({
-      left_at: new Date().toISOString(),
-      status,
-    })
-    .eq('lobby_id', lobby.id)
-    .eq('player_id', player.id);
+  await markMembershipLeft(lobby.id, player.id, status);
 
-  if (error) {
-    throw error;
-  }
-
-  const remainingParticipants = lobby.participants.filter((candidate) => candidate.playerId !== player.id);
-
-  if (remainingParticipants.length === 0) {
-    const { error: closeError } = await supabase
-      .from('lobbies')
-      .update({ status: 'closed' })
-      .eq('id', lobby.id);
-
-    if (closeError) {
-      throw closeError;
-    }
-  } else if (lobby.adminId === player.id) {
-    const nextHost = remainingParticipants.find((candidate) => candidate.role === 'joined') ?? remainingParticipants[0];
-
-    const { error: roleError } = await supabase
-      .from('lobby_memberships')
-      .update({ role: 'host' })
-      .eq('lobby_id', lobby.id)
-      .eq('player_id', nextHost.playerId);
-
-    if (roleError) {
-      throw roleError;
-    }
-
-    const { error: hostError } = await supabase
-      .from('lobbies')
-      .update({ host_player_id: nextHost.playerId })
-      .eq('id', lobby.id);
-
-    if (hostError) {
-      throw hostError;
-    }
+  if (lobby.adminId === player.id) {
+    await transferOrCloseLobbyAfterHostLeaves(lobby, player.id).catch((error) => {
+      console.warn('Could not finish host transfer after leaving.', error);
+    });
+  } else if (remainingParticipants.length === 0) {
+    await closeAndDeleteLobbyBestEffort(lobby.id);
   }
 
   return {
     messages: [],
     success: true,
   };
+}
+
+async function markMembershipLeft(
+  lobbyId: string,
+  playerId: string,
+  status: ReturnType<typeof getCancellationStatus>,
+) {
+  const { error } = await supabase
+    .from('lobby_memberships')
+    .update({
+      left_at: new Date().toISOString(),
+      role: 'member',
+      status,
+    })
+    .eq('lobby_id', lobbyId)
+    .eq('player_id', playerId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function transferOrCloseLobbyAfterHostLeaves(lobby: Lobby, leavingPlayerId: string) {
+  const remainingParticipants = lobby.participants.filter((candidate) => candidate.playerId !== leavingPlayerId);
+
+  if (remainingParticipants.length === 0) {
+    await closeAndDeleteLobbyBestEffort(lobby.id);
+    return;
+  }
+
+  await transferLobbyHost(lobby.id, getNextHostParticipant(remainingParticipants).playerId);
+}
+
+async function closeAndDeleteLobbyBestEffort(lobbyId: string) {
+  const { error: closeError } = await supabase
+    .from('lobbies')
+    .update({ status: 'closed' })
+    .eq('id', lobbyId);
+
+  if (closeError) {
+    console.warn('Could not mark empty lobby closed before cleanup.', closeError);
+  }
+
+  await deleteLobbyCascade(lobbyId).catch((error) => {
+    console.warn('Could not delete empty lobby after last participant left.', error);
+  });
+}
+
+function getNextHostParticipant(participants: Lobby['participants'][number][]) {
+  return participants.find((candidate) => candidate.role === 'joined') ?? participants[0];
+}
+
+async function transferLobbyHost(lobbyId: string, nextHostPlayerId: string) {
+  const { error: demoteError } = await supabase
+    .from('lobby_memberships')
+    .update({ role: 'member' })
+    .eq('lobby_id', lobbyId)
+    .in('status', ['joined', 'waitlisted', 'attended'])
+    .neq('player_id', nextHostPlayerId);
+
+  if (demoteError) {
+    throw demoteError;
+  }
+
+  const { error: roleError } = await supabase
+    .from('lobby_memberships')
+    .update({ role: 'host' })
+    .eq('lobby_id', lobbyId)
+    .eq('player_id', nextHostPlayerId);
+
+  if (roleError) {
+    throw roleError;
+  }
+
+  const { error: hostError } = await supabase
+    .from('lobbies')
+    .update({ host_player_id: nextHostPlayerId })
+    .eq('id', lobbyId);
+
+  if (hostError) {
+    throw hostError;
+  }
+}
+
+async function deleteLobbyCascade(lobbyId: string) {
+  const { error: notificationError } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('related_lobby_id', lobbyId);
+
+  if (notificationError) {
+    throw notificationError;
+  }
+
+  const { error: messagesError } = await supabase
+    .from('lobby_messages')
+    .delete()
+    .eq('lobby_id', lobbyId);
+
+  if (messagesError) {
+    throw messagesError;
+  }
+
+  const { error: membershipsError } = await supabase
+    .from('lobby_memberships')
+    .delete()
+    .eq('lobby_id', lobbyId);
+
+  if (membershipsError) {
+    throw membershipsError;
+  }
+
+  const { error: lobbyError } = await supabase
+    .from('lobbies')
+    .delete()
+    .eq('id', lobbyId);
+
+  if (lobbyError) {
+    throw lobbyError;
+  }
+}
+
+function hasCurrentMembership(lobby: DbLobbyWithRelations) {
+  return (lobby.lobby_memberships ?? []).some(isCurrentMembership);
+}
+
+function isCurrentMembership(membership: DbLobbyMembership) {
+  return membership.status === 'joined' || membership.status === 'waitlisted' || membership.status === 'attended';
 }
 
 async function upsertMembership(
@@ -331,11 +506,14 @@ async function upsertMembership(
       approved_by_player_id: options.approvedByPlayerId,
       brings_ball: player.hasBall,
       brings_court_marks: player.hasCourtMarks,
-      joined_at: status === 'joined' || status === 'waitlisted' ? now : undefined,
+      declined_at: null,
+      declined_by_player_id: null,
+      joined_at: status === 'joined' || status === 'waitlisted' ? now : null,
+      left_at: null,
       lobby_id: lobbyId,
       player_id: player.id,
-      request_message: options.requestMessage,
-      requested_at: status === 'pending_approval' ? now : undefined,
+      request_message: options.requestMessage ?? null,
+      requested_at: status === 'pending_approval' ? now : null,
       requested_reasons: options.requestedReasons ?? [],
       role: 'member',
       status,

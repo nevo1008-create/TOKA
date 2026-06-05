@@ -11,6 +11,7 @@ import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
 import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlaces';
 import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { getLobbyMembershipBadgeLabel, getLobbyMembershipStatusLabel, isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby, Location, Player, PlayerLevel } from '../types';
@@ -23,6 +24,7 @@ type GamesScreenProps = {
   onBack: () => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
+  hasPrivateAccess: (lobbyId: string) => boolean;
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
   selectedFilter: string;
@@ -34,6 +36,8 @@ type OpenFilterPanel = 'Location' | 'Rank' | 'Gender' | null;
 type GenderFilter = 'Everyone' | 'Male' | 'Female';
 
 type GameListItem = {
+  actionLabel?: string;
+  actionTone?: 'accent' | 'muted' | 'warning';
   audience: string;
   avatars: string[];
   badgeLabel?: string;
@@ -46,7 +50,10 @@ type GameListItem = {
   location: string;
   metaTag?: string;
   players: string;
+  secondarySpotsLeft?: string;
+  secondarySpotsTone?: 'green' | 'red' | 'yellow';
   spotsLeft: string;
+  spotsTone?: 'green' | 'red' | 'yellow';
   startsAt: string;
   title: string;
 };
@@ -161,6 +168,7 @@ export function GamesScreen({
   initialSection = 'Find Games',
   lobbies,
   notificationCount,
+  hasPrivateAccess,
   onOpenMenu,
   onOpenNotifications,
   onOpenLobby,
@@ -221,6 +229,7 @@ export function GamesScreen({
           <SearchGamesView
             currentPlayer={currentPlayer}
             lobbies={lobbies}
+            hasPrivateAccess={hasPrivateAccess}
             onOpenLobby={onOpenLobby}
             players={players}
             selectedFilter={selectedFilter}
@@ -237,6 +246,7 @@ export function GamesScreen({
 function SearchGamesView({
   currentPlayer,
   lobbies,
+  hasPrivateAccess,
   onOpenLobby,
   players,
   selectedFilter,
@@ -244,6 +254,7 @@ function SearchGamesView({
 }: {
   currentPlayer: Player;
   lobbies: Lobby[];
+  hasPrivateAccess: (lobbyId: string) => boolean;
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
   selectedFilter: string;
@@ -341,6 +352,7 @@ function SearchGamesView({
               searchQuery,
               selectedLocation,
               showPrivate,
+              currentPlayerId: currentPlayer.id,
             },
             players,
           ),
@@ -498,6 +510,7 @@ function SearchGamesView({
             <GameCard
               currentPlayerId={currentPlayer.id}
               game={game}
+              hasPrivateAccess={lobby ? hasPrivateAccess(lobby.id) : false}
               key={game.lobbyId ?? `${game.title}-${index}`}
               lobby={lobby}
               onPress={() => {
@@ -520,13 +533,13 @@ function SearchGamesView({
 }
 
 function isLobbyDiscoverable(lobby: Lobby) {
-  return lobby.status === 'open' || lobby.status === 'full';
+  return lobby.participants.length > 0 && (lobby.status === 'open' || lobby.status === 'full');
 }
 
 function getFindGamesSortPriority(lobby: Lobby, currentPlayerId: string) {
   const currentParticipant = getCurrentPlayerAnyParticipant(lobby, currentPlayerId);
 
-  if (lobby.adminId === currentPlayerId || currentParticipant?.role === 'admin') {
+  if (isLobbyHost(lobby, currentPlayerId, currentParticipant)) {
     return 0;
   }
 
@@ -770,16 +783,23 @@ function MyGamesView({
 }) {
   const uniqueLobbies = getUniqueLobbies(lobbies);
   const activeGames = uniqueLobbies
-    .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
+    .filter((lobby) => isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayer.id) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
     .map((lobby, index) => {
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
+      const pendingRequest = getCurrentPlayerPendingRequest(lobby, currentPlayer.id);
+      const imageBadgeLabel = getLobbyMembershipBadgeLabel(lobby, currentPlayer.id, participant);
+      const secondarySpotsLeft = isPrivateLobby(lobby) && isLobbyHost(lobby, currentPlayer.id, participant)
+        ? 'Private'
+        : undefined;
 
       return {
         ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
-        actionLabel: 'View match',
-        imageBadgeLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
-        statusLabel: participant?.role === 'admin' ? 'Host' : participant?.role === 'waitlist' ? 'Waitlist' : 'Joined',
-        statusTone: participant?.role === 'waitlist' ? 'gold' as const : 'lime' as const,
+        actionLabel: lobbyLabels.viewMatch,
+        imageBadgeLabel,
+        requestStatusLabel: pendingRequest && !participant ? lobbyLabels.accessRequested : undefined,
+        secondarySpotsLeft,
+        statusLabel: getLobbyMembershipStatusLabel(lobby, currentPlayer.id, participant),
+        statusTone: participant ? 'lime' as const : 'gold' as const,
       };
     });
   const finishedGames = uniqueLobbies
@@ -820,7 +840,7 @@ function GameHistorySection({
   title,
 }: {
   countLabel: string;
-  games: Array<GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' }>;
+  games: Array<GameListItem & { actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' }>;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
   title: string;
@@ -868,11 +888,13 @@ function GameHistorySection({
 function GameCard({
   currentPlayerId,
   game,
+  hasPrivateAccess: hasVerifiedPrivateAccess,
   lobby,
   onPress,
 }: {
   currentPlayerId: string;
   game: GameListItem;
+  hasPrivateAccess: boolean;
   lobby?: Lobby;
   onPress: () => void;
 }) {
@@ -880,25 +902,35 @@ function GameCard({
   const pendingRequest = lobby?.joinRequests.find(
     (request) => request.playerId === currentPlayerId && request.status === 'pending',
   );
-  const imageBadgeLabel =
-    currentParticipant?.role === 'admin'
-      ? 'Host'
-      : currentParticipant
-        ? 'Joined'
-        : game.spotsLeft;
+  const hasPrivateAccess = Boolean(
+    lobby &&
+      isPrivateLobby(lobby) &&
+      (hasVerifiedPrivateAccess || currentParticipant || pendingRequest),
+  );
+  const isLockedPrivateLobby = Boolean(lobby && isPrivateLobby(lobby) && !hasPrivateAccess);
+  const shouldShowHostPrivateBadge = Boolean(
+    lobby && isPrivateLobby(lobby) && isLobbyHost(lobby, currentPlayerId, currentParticipant),
+  );
+  const imageBadgeLabel = lobby
+    ? getLobbyMembershipBadgeLabel(lobby, currentPlayerId, currentParticipant) ?? (isLockedPrivateLobby ? 'Private' : game.spotsLeft)
+    : game.spotsLeft;
   const hasJoinedStatus = Boolean(currentParticipant);
-  const statusBadgeTone = hasJoinedStatus ? 'green' : 'yellow';
+  const statusBadgeTone = hasJoinedStatus ? 'green' : isLockedPrivateLobby ? 'red' : 'yellow';
 
   return (
     <NearbyGameCard
-      actionLabel="View match"
+      actionLabel={isLockedPrivateLobby ? 'Enter PIN' : lobbyLabels.viewMatch}
+      actionTone={isLockedPrivateLobby ? 'warning' : 'accent'}
       audience={game.audience}
       distance={game.distance}
       level={game.level}
       location={game.location}
-      onPress={onPress}
+      onActionPress={onPress}
+      onPress={isLockedPrivateLobby ? undefined : onPress}
       players={formatPlayersCount(game.players)}
-      requestStatusLabel={pendingRequest && !currentParticipant ? 'Access requested' : undefined}
+      requestStatusLabel={pendingRequest && !currentParticipant ? lobbyLabels.accessRequested : undefined}
+      secondarySpotsLeft={shouldShowHostPrivateBadge ? 'Private' : undefined}
+      secondarySpotsTone="red"
       spotsLeft={imageBadgeLabel}
       spotsTone={statusBadgeTone}
       status="Approval"
@@ -1277,10 +1309,11 @@ function doesLobbyMatchDiscoveryFilters(
     searchQuery: string;
     selectedLocation: Location | null;
     showPrivate: boolean;
+    currentPlayerId: string;
   },
   players: Player[],
 ) {
-  if (!filtersState.showPrivate && isPrivateLobby(lobby)) {
+  if (!filtersState.showPrivate && isPrivateLobby(lobby) && !isCurrentPlayerActiveOrPendingInLobby(lobby, filtersState.currentPlayerId)) {
     return false;
   }
 
@@ -1463,13 +1496,14 @@ function normalizeSearchText(value?: string) {
 function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: string, players: Player[]): GameListItem {
   const activeParticipants = lobby.participants.filter(isJoinedParticipant);
   const currentParticipant = getCurrentPlayerParticipant(lobby, currentPlayerId);
+  const isHost = isLobbyHost(lobby, currentPlayerId, currentParticipant);
   const spotsLeft = Math.max(lobby.maxPlayers - activeParticipants.length, 0);
 
   return {
     audience: getGenderAudience(lobby),
     avatars: activeParticipants.slice(0, 3).map((participant) => getPlayerInitials(participant.playerId, players)),
-    badgeLabel: currentParticipant?.role === 'admin' ? 'Host' : undefined,
-    badgeTone: currentParticipant?.role === 'admin' ? 'lime' : undefined,
+    badgeLabel: isHost ? lobbyLabels.host : undefined,
+    badgeTone: isHost ? 'lime' : undefined,
     distance: lobby.location.distanceKm ? `${lobby.location.distanceKm.toFixed(1)} km` : 'New',
     gradient: index % 2 === 0 ? ['#FFF2BD', '#8EDBD2', '#24C45A'] : ['#EAF5EC', '#24C45A', '#1BB7A8'],
     level: getLobbyLevelLabel(lobby),
@@ -1582,7 +1616,7 @@ function MyGameCard({
   game,
   onPress,
 }: {
-  game: GameListItem & { actionLabel: string; imageBadgeLabel?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
+  game: GameListItem & { actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
   onPress: () => void;
 }) {
   const isFinished = game.statusTone === 'muted';
@@ -1597,7 +1631,10 @@ function MyGameCard({
       location={game.location}
       onPress={isFinished ? undefined : onPress}
       players={formatPlayersCount(game.players)}
-      spotsLeft={game.imageBadgeLabel ?? game.statusLabel}
+      requestStatusLabel={game.requestStatusLabel}
+      secondarySpotsLeft={game.secondarySpotsLeft}
+      secondarySpotsTone="red"
+      spotsLeft={game.imageBadgeLabel ?? (game.requestStatusLabel ? game.spotsLeft : game.statusLabel)}
       spotsTone={game.statusTone === 'lime' ? 'green' : 'yellow'}
       status={game.statusTone === 'muted' ? 'Full' : 'Approval'}
       time={formatLobbyStart(game.startsAt)}
@@ -1649,6 +1686,14 @@ function getCurrentPlayerAnyParticipant(lobby: Lobby, currentPlayerId: string) {
 
 function isCurrentPlayerInLobby(lobby: Lobby, currentPlayerId: string) {
   return Boolean(getCurrentPlayerAnyParticipant(lobby, currentPlayerId));
+}
+
+function isCurrentPlayerActiveOrPendingInLobby(lobby: Lobby, currentPlayerId: string) {
+  return isCurrentPlayerInLobby(lobby, currentPlayerId) || Boolean(getCurrentPlayerPendingRequest(lobby, currentPlayerId));
+}
+
+function getCurrentPlayerPendingRequest(lobby: Lobby, currentPlayerId: string) {
+  return lobby.joinRequests.find((request) => request.playerId === currentPlayerId && request.status === 'pending');
 }
 
 function formatLevelRange(fromIndex: number, toIndex: number) {

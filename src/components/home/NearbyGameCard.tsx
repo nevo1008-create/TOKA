@@ -14,11 +14,14 @@ type NearbyGameCardProps = {
   distance: string;
   level: string;
   location: string;
+  onActionPress?: () => void;
   onPress?: () => void;
   players: string;
   requestStatusLabel?: string;
+  secondarySpotsLeft?: string;
+  secondarySpotsTone?: 'green' | 'red' | 'yellow';
   selected?: boolean;
-  spotsTone?: 'green' | 'yellow';
+  spotsTone?: 'green' | 'red' | 'yellow';
   spotsLeft?: string;
   status: 'Approval' | 'Full';
   time: string;
@@ -35,9 +38,12 @@ export function NearbyGameCard({
   distance,
   level,
   location,
+  onActionPress,
   onPress,
   players,
   requestStatusLabel,
+  secondarySpotsLeft,
+  secondarySpotsTone = 'red',
   selected = false,
   spotsTone = 'yellow',
   spotsLeft = '3 spots left',
@@ -51,15 +57,16 @@ export function NearbyGameCard({
   const isMutedAction = actionTone === 'muted';
   const isLongAction = actionLabel.length > 7;
 
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled, selected }}
-      disabled={disabled}
-      onPress={onPress}
-      style={[styles.card, selected && styles.cardSelected, disabled && styles.cardDisabled]}
-    >
-      <BeachThumb badgeLabel={spotsLeft} tone={spotsTone} useHomeTypography={useHomeTypography} variant={variant} />
+  const cardContent = (
+    <>
+      <BeachThumb
+        badgeLabel={spotsLeft}
+        secondaryBadgeLabel={secondarySpotsLeft}
+        secondaryTone={secondarySpotsTone}
+        tone={spotsTone}
+        useHomeTypography={useHomeTypography}
+        variant={variant}
+      />
       <View style={styles.copy}>
         <View style={styles.timeRow}>
           <View style={styles.liveDot} />
@@ -135,11 +142,15 @@ export function NearbyGameCard({
                 </AppText>
               </View>
             ) : null}
-            <View
+            <Pressable
+              accessibilityRole="button"
+              disabled={disabled}
+              onPress={onActionPress ?? onPress}
               style={[
                 styles.cardAction,
                 isWarningAction && styles.cardActionWarning,
                 isMutedAction && styles.cardActionMuted,
+                disabled && styles.cardActionDisabled,
               ]}
             >
               <AppText
@@ -163,21 +174,45 @@ export function NearbyGameCard({
                   size={14}
                 />
               )}
-            </View>
+            </Pressable>
           </View>
         </View>
       </View>
+    </>
+  );
+
+  if (!onPress) {
+    return (
+      <View style={[styles.card, selected && styles.cardSelected, disabled && styles.cardDisabled]}>
+        {cardContent}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.card, selected && styles.cardSelected, disabled && styles.cardDisabled]}
+    >
+      {cardContent}
     </Pressable>
   );
 }
 
 function BeachThumb({
   badgeLabel,
+  secondaryBadgeLabel,
+  secondaryTone,
   tone,
   variant,
 }: {
   badgeLabel: string;
-  tone: 'green' | 'yellow';
+  secondaryBadgeLabel?: string;
+  secondaryTone: 'green' | 'red' | 'yellow';
+  tone: 'green' | 'red' | 'yellow';
   useHomeTypography: boolean;
   variant: 'morning' | 'sunset';
 }) {
@@ -185,6 +220,7 @@ function BeachThumb({
     <View style={styles.thumb}>
       <BeachGameVisual compact variant={variant} />
       <LobbyImageBadge label={badgeLabel} size="compact" tone={tone} />
+      <LobbyImageBadge label={secondaryBadgeLabel} offset="after" size="compact" tone={secondaryTone} />
     </View>
   );
 }
@@ -240,6 +276,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
     borderWidth: 1,
+  },
+  cardActionDisabled: {
+    opacity: 0.58,
   },
   cardActionWarning: {
     backgroundColor: colors.accent,

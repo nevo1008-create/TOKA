@@ -16,18 +16,21 @@ import type {
 
 export function mapDbLobbyToLobby(row: DbLobbyWithRelations): Lobby {
   const memberships = row.lobby_memberships ?? [];
-  const participants = memberships
-    .filter((membership) => !isPendingRequest(membership) && membership.status !== 'declined' && membership.status !== 'left')
-    .sort(sortMemberships)
+  const currentMemberships = memberships
+    .filter(isCurrentMembership)
+    .sort(sortMemberships);
+  const participants = currentMemberships
     .map(mapMembershipToParticipant);
+  const adminId = getEffectiveAdminId(row.host_player_id, currentMemberships, participants);
   const joinRequests = memberships
     .filter(isPendingRequest)
     .sort(sortMemberships)
     .map(mapMembershipToJoinRequest);
+  const status = participants.length > 0 ? row.status : 'closed';
 
   return {
-    accessCode: undefined,
-    adminId: row.host_player_id,
+    accessCode: row.pin_code_hash ?? undefined,
+    adminId,
     ballNeeded: row.ball_needed,
     cancellationPenaltyMinutes: row.cancellation_penalty_minutes ?? undefined,
     capacityMode: row.capacity_mode,
@@ -67,13 +70,20 @@ export function mapDbLobbyToLobby(row: DbLobbyWithRelations): Lobby {
     maxPlayers: row.max_players,
     minPlayers: row.min_players,
     note: row.note,
-    participants,
+    participants: participants.map((participant) =>
+      participant.playerId === adminId && participant.role !== 'waitlist'
+        ? {
+            ...participant,
+            role: 'admin',
+          }
+        : participant,
+    ),
     rankExact: row.rank_exact ?? undefined,
     rankMax: row.rank_max ?? undefined,
     rankMin: row.rank_min ?? undefined,
     rankRuleType: row.rank_rule_type,
     startsAt: row.starts_at,
-    status: row.status,
+    status,
     title: row.title,
     visibility: row.visibility,
     waitlistEnabled: row.waitlist_enabled,
@@ -111,10 +121,10 @@ function mapMembershipToParticipant(membership: DbLobbyMembership): LobbyPartici
     bringsBall: membership.brings_ball,
     bringsCourtMarks: membership.brings_court_marks,
     playerId: membership.player_id,
-    role: membership.role === 'host'
-      ? 'admin'
-      : membership.status === 'waitlisted'
-        ? 'waitlist'
+    role: membership.status === 'waitlisted'
+      ? 'waitlist'
+      : membership.role === 'host'
+        ? 'admin'
         : 'joined',
     status: mapMembershipStatusToParticipantStatus(membership.status),
   };
@@ -165,6 +175,32 @@ function mapNotificationType(type: string): Notification['type'] {
   }
 
   return 'lobby_changed';
+}
+
+function isCurrentMembership(membership: DbLobbyMembership) {
+  return membership.status === 'joined' || membership.status === 'waitlisted' || membership.status === 'attended';
+}
+
+function getEffectiveAdminId(
+  savedAdminId: string,
+  memberships: DbLobbyMembership[],
+  participants: LobbyParticipant[],
+) {
+  const currentHostMembership = memberships.find((membership) => membership.role === 'host');
+
+  if (currentHostMembership) {
+    return currentHostMembership.player_id;
+  }
+
+  return getNextHostParticipant(participants)?.playerId ?? savedAdminId;
+}
+
+function getNextHostParticipant(participants: LobbyParticipant[]) {
+  return (
+    participants.find((participant) => participant.role === 'admin') ??
+    participants.find((participant) => participant.role === 'joined') ??
+    participants.find((participant) => participant.role === 'waitlist')
+  );
 }
 
 function isPendingRequest(membership: DbLobbyMembership) {

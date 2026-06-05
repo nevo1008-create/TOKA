@@ -14,6 +14,7 @@ import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePrevi
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
 import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
 import {
   getJoinGameDecision,
   getJoinWaitlistDecision,
@@ -47,6 +48,7 @@ type LobbyDetailsScreenProps = {
   onRejectWaitlistRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
+  isActionPending?: boolean;
 };
 
 type LobbyProfilePreviewSelection = {
@@ -91,6 +93,7 @@ export function LobbyDetailsScreen({
   onRejectWaitlistRequest,
   onViewPlayerProfile,
   players,
+  isActionPending = false,
 }: LobbyDetailsScreenProps) {
   const admin = players.find((player) => player.id === lobby.adminId);
   const activeParticipants = getJoinedParticipants(lobby);
@@ -101,6 +104,7 @@ export function LobbyDetailsScreen({
       (participant.status === 'approved' || participant.status === 'attended'),
   );
   const pendingRequests = lobby.joinRequests.filter((request) => request.status === 'pending');
+  const currentPendingRequest = pendingRequests.find((request) => request.playerId === currentPlayer.id);
   const playerCount = `${activeParticipants.length} / ${lobby.maxPlayers}`;
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
@@ -111,7 +115,7 @@ export function LobbyDetailsScreen({
   const [pinCode, setPinCode] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const profilePreviewPlayer = profilePreviewSelection?.player;
-  const isCurrentUserAdmin = currentParticipant?.role === 'admin';
+  const isCurrentUserAdmin = isLobbyHost(lobby, currentPlayer.id, currentParticipant);
   const isRatingOpen = lobby.status === 'rating_open';
   const primaryAction = getLobbyPrimaryAction({
     allLobbies,
@@ -205,6 +209,7 @@ export function LobbyDetailsScreen({
           onInvite={onInvite}
           playerCount={playerCount}
           primaryAction={primaryAction}
+          isActionPending={isActionPending}
         />
 
         <GameInfoStrip
@@ -217,12 +222,26 @@ export function LobbyDetailsScreen({
         />
 
         {canLeaveRoom ? (
-          <RoomMembershipPanel participant={currentParticipant} onLeave={onLeaveLobby} />
+          <RoomMembershipPanel
+            disabled={isActionPending}
+            isHost={isCurrentUserAdmin}
+            participant={currentParticipant}
+            onLeave={onLeaveLobby}
+          />
+        ) : null}
+
+        {currentPendingRequest && !currentParticipant ? (
+          <PendingApprovalPanel />
+        ) : null}
+
+        {isCurrentUserAdmin && isPrivateLobby(lobby) && lobby.accessCode ? (
+          <HostPrivatePinPanel pin={lobby.accessCode} />
         ) : null}
 
         {isCurrentUserAdmin ? (
           <HostPanel
             currentPlayerId={currentPlayer.id}
+            isActionPending={isActionPending}
             onApproveWaitlistRequest={onApproveWaitlistRequest}
             onRejectWaitlistRequest={onRejectWaitlistRequest}
             pendingRequests={pendingRequests}
@@ -349,6 +368,7 @@ export function LobbyDetailsScreen({
 function RoomHeroCard({
   admin,
   currentParticipant,
+  isActionPending,
   lobby,
   lobbyIndex,
   onInvite,
@@ -357,6 +377,7 @@ function RoomHeroCard({
 }: {
   admin?: Player;
   currentParticipant?: LobbyParticipant;
+  isActionPending: boolean;
   lobby: Lobby;
   lobbyIndex: number;
   onInvite: () => void;
@@ -377,7 +398,7 @@ function RoomHeroCard({
 
       <View style={styles.heroContent}>
         <View style={styles.heroPills}>
-          <StatusPill label={getStatusLabel(lobby)} tone="lime" />
+          <StatusPill label={getStatusLabel(lobby)} tone={isPrivateLobby(lobby) ? 'red' : 'lime'} />
           <StatusPill icon="time-outline" label={formatLobbyStart(lobby.startsAt)} tone="gold" />
         </View>
 
@@ -416,12 +437,13 @@ function RoomHeroCard({
         <View style={styles.actions}>
           <Pressable
             accessibilityRole="button"
-            disabled={primaryAction.disabled}
+            disabled={primaryAction.disabled || isActionPending}
             onPress={primaryAction.onPress}
             style={[
               styles.primaryButton,
               primaryAction.tone === 'muted' && styles.joinedButton,
               primaryAction.tone === 'rating' && styles.ratingButton,
+              isActionPending && styles.actionButtonDisabled,
             ]}
           >
             <AppText
@@ -502,10 +524,62 @@ function PrivatePinPanel({
   );
 }
 
-function RoomMembershipPanel({ onLeave, participant }: { onLeave: () => void; participant: LobbyParticipant }) {
-  const isHost = participant.role === 'admin';
+function PendingApprovalPanel() {
+  return (
+    <View style={styles.pendingApprovalPanel}>
+      <View style={styles.pendingApprovalIcon}>
+        <Ionicons color={colors.primaryDark} name="time-outline" size={16} />
+      </View>
+      <View style={styles.pendingApprovalCopy}>
+        <AppText variant="uiBody" weight="800">
+          {lobbyLabels.waitingForHostApproval}
+        </AppText>
+        <AppText tone="muted" variant="metadata" weight="600">
+          Your access request was sent. You can keep viewing this match or cancel the request.
+        </AppText>
+      </View>
+    </View>
+  );
+}
+
+function HostPrivatePinPanel({ pin }: { pin: string }) {
+  return (
+    <View style={styles.hostPinPanel}>
+      <View style={styles.hostPinIcon}>
+        <Ionicons color={colors.danger} name="lock-closed-outline" size={16} />
+      </View>
+      <View style={styles.hostPinCopy}>
+        <AppText variant="uiBody" weight="800">
+          Private lobby PIN
+        </AppText>
+        <AppText tone="muted" variant="metadata" weight="600">
+          Share this code with players you want to invite.
+        </AppText>
+      </View>
+      <View style={styles.hostPinCode}>
+        <AppText align="center" tone="danger" variant="button" weight="900">
+          {pin}
+        </AppText>
+      </View>
+    </View>
+  );
+}
+
+function RoomMembershipPanel({
+  disabled,
+  isHost,
+  onLeave,
+  participant,
+}: {
+  disabled: boolean;
+  isHost: boolean;
+  onLeave: () => void;
+  participant: LobbyParticipant;
+}) {
   const statusLabel = isHost
-    ? 'You are the host.'
+    ? participant.role === 'waitlist'
+      ? 'You are host, on waitlist.'
+      : 'You are the host.'
     : participant.role === 'waitlist'
       ? 'You are on the waitlist.'
       : 'You are in players.';
@@ -526,7 +600,12 @@ function RoomMembershipPanel({ onLeave, participant }: { onLeave: () => void; pa
           </AppText>
         </View>
       </View>
-      <Pressable accessibilityRole="button" onPress={onLeave} style={styles.leaveRoomButton}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onLeave}
+        style={[styles.leaveRoomButton, disabled && styles.actionButtonDisabled]}
+      >
         <Ionicons color={colors.danger} name="exit-outline" size={16} />
         <AppText tone="danger" variant="button" weight="800">
           {buttonLabel}
@@ -660,12 +739,14 @@ function ParticipantRow({
 
 function HostPanel({
   currentPlayerId,
+  isActionPending,
   onApproveWaitlistRequest,
   onRejectWaitlistRequest,
   pendingRequests,
   players,
 }: {
   currentPlayerId: string;
+  isActionPending: boolean;
   onApproveWaitlistRequest: (playerId: string) => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   pendingRequests: Lobby['joinRequests'];
@@ -703,6 +784,7 @@ function HostPanel({
               <View key={request.id} style={styles.requestCard}>
                 <HostRequestRow
                   currentPlayerId={currentPlayerId}
+                  disabled={isActionPending}
                   onApprove={() => onApproveWaitlistRequest(request.playerId)}
                   onReject={() => onRejectWaitlistRequest(request.playerId)}
                   player={player}
@@ -728,11 +810,13 @@ function HostPanel({
 
 function HostRequestRow({
   currentPlayerId,
+  disabled,
   onApprove,
   onReject,
   player,
 }: {
   currentPlayerId: string;
+  disabled: boolean;
   onApprove: () => void;
   onReject: () => void;
   player: Player;
@@ -776,14 +860,21 @@ function HostRequestRow({
       </View>
 
       <View style={styles.hostRequestActions}>
-        <Pressable accessibilityLabel="Reject request" accessibilityRole="button" onPress={onReject} style={styles.hostRequestIconButton}>
+        <Pressable
+          accessibilityLabel="Reject request"
+          accessibilityRole="button"
+          disabled={disabled}
+          onPress={onReject}
+          style={[styles.hostRequestIconButton, disabled && styles.actionButtonDisabled]}
+        >
           <Ionicons color={colors.muted} name="close" size={16} />
         </Pressable>
         <Pressable
           accessibilityLabel="Approve request"
           accessibilityRole="button"
+          disabled={disabled}
           onPress={onApprove}
-          style={[styles.hostRequestIconButton, styles.hostRequestApproveButton]}
+          style={[styles.hostRequestIconButton, styles.hostRequestApproveButton, disabled && styles.actionButtonDisabled]}
         >
           <Ionicons color={colors.textOnGreen} name="checkmark" size={16} />
         </Pressable>
@@ -995,21 +1086,22 @@ function StatusPill({
 }: {
   icon?: keyof typeof Ionicons.glyphMap;
   label: string;
-  tone?: 'gold' | 'lime' | 'neutral';
+  tone?: 'gold' | 'lime' | 'neutral' | 'red';
 }) {
   const isLime = tone === 'lime';
   const isGold = tone === 'gold';
+  const isRed = tone === 'red';
 
   return (
-    <View style={[styles.pill, isLime && styles.limePill, isGold && styles.goldPill]}>
+    <View style={[styles.pill, isLime && styles.limePill, isGold && styles.goldPill, isRed && styles.redPill]}>
       {icon ? (
         <Ionicons
-          color={isGold ? colors.accent : isLime ? colors.primaryDark : colors.muted}
+          color={isGold ? colors.accent : isLime ? colors.primaryDark : isRed ? colors.danger : colors.muted}
           name={icon}
           size={13}
         />
       ) : null}
-      <AppText tone={isGold ? 'warning' : isLime ? 'accent' : 'muted'} variant="caption" weight="800">
+      <AppText tone={isGold ? 'warning' : isLime ? 'accent' : isRed ? 'danger' : 'muted'} variant="caption" weight="800">
         {label}
       </AppText>
     </View>
@@ -1103,7 +1195,7 @@ function getStatusLabel(lobby: Lobby) {
   }
 
   if (lobby.visibility === 'password' || lobby.visibility === 'invite_link') {
-    return 'Protected';
+    return 'Private';
   }
 
   return 'Open';
@@ -1119,6 +1211,10 @@ function getVisibilityLabel(visibility: LobbyVisibility) {
   }
 
   return visibility === 'password' ? 'Password' : 'Invite';
+}
+
+function isPrivateLobby(lobby: Lobby) {
+  return lobby.visibility === 'password' || lobby.visibility === 'invite_link';
 }
 
 function getGenderLabel(genderRule: GenderRule) {
@@ -1194,12 +1290,12 @@ function getLobbyPrimaryAction({
     };
   }
 
-  if (currentParticipant?.role === 'admin') {
+  if (isLobbyHost(lobby, currentPlayer.id, currentParticipant) && currentParticipant?.role !== 'waitlist') {
     return {
       disabled: true,
       icon: 'shield-checkmark',
       iconColor: colors.muted,
-      label: 'Host',
+      label: lobbyLabels.host,
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1229,20 +1325,9 @@ function getLobbyPrimaryAction({
       disabled: false,
       icon: 'close-circle-outline',
       iconColor: colors.danger,
-      label: 'Cancel request',
+      label: lobbyLabels.cancelRequest,
       onPress: onCancelJoinRequest,
       textTone: 'danger',
-      tone: 'muted',
-    };
-  }
-
-  if (relationship === 'waitlist') {
-    return {
-      disabled: true,
-      icon: 'time-outline',
-      iconColor: colors.muted,
-      label: 'On waitlist',
-      textTone: 'muted',
       tone: 'muted',
     };
   }
@@ -1252,7 +1337,7 @@ function getLobbyPrimaryAction({
       disabled: true,
       icon: 'checkmark',
       iconColor: colors.muted,
-      label: 'Joined',
+      label: lobbyLabels.joined,
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1263,7 +1348,7 @@ function getLobbyPrimaryAction({
       disabled: false,
       icon: 'mail-outline',
       iconColor: colors.textOnGreen,
-      label: 'Request waitlist',
+      label: lobbyLabels.requestWaitlist,
       onPress: onRequestWaitlistApproval,
       textTone: 'inverse',
       tone: 'green',
@@ -1282,6 +1367,28 @@ function getLobbyPrimaryAction({
   }
 
   const waitlistDecision = getJoinWaitlistDecision(currentPlayer, lobby, accessContext);
+  const joinDecision = getJoinGameDecision(currentPlayer, lobby, accessContext);
+
+  if (relationship === 'waitlist') {
+    return joinDecision.canJoin
+      ? {
+          disabled: false,
+          icon: 'log-in-outline',
+          iconColor: colors.textOnGreen,
+          label: joinDecision.label,
+          onPress: onJoinGame,
+          textTone: 'inverse',
+          tone: 'green',
+        }
+      : {
+          disabled: true,
+          icon: 'time-outline',
+          iconColor: colors.muted,
+          label: lobbyLabels.onWaitlist,
+          textTone: 'muted',
+          tone: 'muted',
+        };
+  }
 
   if (waitlistDecision.canJoinWaitlist) {
     return {
@@ -1295,14 +1402,12 @@ function getLobbyPrimaryAction({
     };
   }
 
-  const joinDecision = getJoinGameDecision(currentPlayer, lobby, accessContext);
-
   if (joinDecision.canJoin) {
     return {
       disabled: false,
       icon: 'log-in-outline',
       iconColor: colors.textOnGreen,
-      label: 'Join players',
+      label: joinDecision.label,
       onPress: onJoinGame,
       textTone: 'inverse',
       tone: 'green',
@@ -1352,7 +1457,7 @@ function getPlayerSectionAction({
   return joinDecision.canJoin
     ? {
         icon: 'log-in-outline',
-        label: 'Join players',
+        label: joinDecision.label,
         onPress: onJoinGame,
       }
     : undefined;
@@ -1372,9 +1477,8 @@ function getWaitlistSectionAction({
   onJoinWaitlist: () => void;
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
-  const activeCurrentParticipant = getActiveCurrentParticipant(lobby, currentPlayer.id);
 
-  if (activeCurrentParticipant?.role === 'admin' || relationship === 'waitlist' || lobby.status === 'rating_open') {
+  if (relationship === 'waitlist' || lobby.status === 'rating_open') {
     return undefined;
   }
 
@@ -1386,7 +1490,7 @@ function getWaitlistSectionAction({
   return waitlistDecision.canJoinWaitlist
     ? {
         icon: 'hourglass-outline',
-        label: 'Join waitlist',
+        label: waitlistDecision.label,
         onPress: onJoinWaitlist,
       }
     : undefined;
@@ -1475,7 +1579,7 @@ function getLobbyProfilePreviewPrimaryAction(
   }
 
   return {
-    label: selection.participant.role === 'waitlist' ? 'Move to players' : 'Move to waitlist',
+    label: selection.participant.role === 'waitlist' ? 'Move to players' : lobbyLabels.moveToWaitlist,
     onPress: () => undefined,
   };
 }
@@ -1547,6 +1651,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  actionButtonDisabled: {
+    opacity: 0.56,
   },
   avatarWrap: {
     position: 'relative',
@@ -1795,6 +1902,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 200, 61, 0.10)',
     borderColor: 'rgba(255, 200, 61, 0.28)',
   },
+  redPill: {
+    backgroundColor: 'rgba(255, 235, 232, 0.88)',
+    borderColor: 'rgba(221, 71, 54, 0.34)',
+  },
   heroCard: {
     backgroundColor: colors.surface,
     borderColor: 'rgba(255, 255, 255, 0.72)',
@@ -1852,6 +1963,43 @@ const styles = StyleSheet.create({
     height: 34,
     justifyContent: 'center',
     width: 34,
+  },
+  hostPinCode: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 235, 232, 0.88)',
+    borderColor: 'rgba(221, 71, 54, 0.34)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    minWidth: 64,
+    paddingHorizontal: spacing.sm,
+  },
+  hostPinCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  hostPinIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 235, 232, 0.72)',
+    borderColor: 'rgba(221, 71, 54, 0.28)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  hostPinPanel: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(221, 71, 54, 0.22)',
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+    ...shadows.soft,
   },
   hostPanelTitleRow: {
     alignItems: 'center',
@@ -2121,6 +2269,33 @@ const styles = StyleSheet.create({
   },
   pinSubmitDisabled: {
     opacity: 0.52,
+  },
+  pendingApprovalCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  pendingApprovalIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  pendingApprovalPanel: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(36, 196, 90, 0.24)',
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    ...shadows.soft,
   },
   participantRow: {
     alignItems: 'center',

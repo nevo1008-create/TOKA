@@ -12,6 +12,7 @@ export type CreateLobbyDraft = {
   rankMin?: PlayerLevel;
   rankMax?: PlayerLevel;
   rankExact?: PlayerLevel;
+  accessCode?: string;
   genderRule: GenderRule;
   visibility: LobbyVisibility;
 };

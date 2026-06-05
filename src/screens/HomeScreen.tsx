@@ -182,7 +182,7 @@ export function HomeScreen({
 }
 
 function isLobbyDiscoverable(lobby: Lobby) {
-  return lobby.status === 'open' || lobby.status === 'full';
+  return lobby.participants.length > 0 && (lobby.status === 'open' || lobby.status === 'full');
 }
 
 const styles = StyleSheet.create({

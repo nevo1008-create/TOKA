@@ -11,7 +11,7 @@ import {
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
 } from '../notifications/notificationRepository';
-import type { ChatMessage, Lobby, Notification, Player } from '../../types';
+import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player } from '../../types';
 import type { CreateLobbyDraft } from './lobbyCreateTypes';
 import { getMinutesUntilLobbyStart } from './lobbyDateTime';
 import {
@@ -45,19 +45,25 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
 
   const refreshLobbyData = useCallback(async () => {
     try {
-      const [nextLobbies, nextMessages, nextNotifications] = await Promise.all([
-        listLobbies(),
-        listLobbyMessages(),
-        listNotifications(currentPlayer.id),
-      ]);
+      const nextLobbies = await listLobbies();
 
       setLobbies(nextLobbies);
-      setChatMessages(nextMessages);
-      setNotifications(nextNotifications);
     } catch (error) {
-      console.warn('Falling back to mock lobby data after Supabase load failed.', error);
+      console.warn('Falling back to mock lobby data after lobby load failed.', error);
       setLobbies(mockLobbies);
+    }
+
+    try {
+      setChatMessages(await listLobbyMessages());
+    } catch (error) {
+      console.warn('Falling back to mock chat data after Supabase load failed.', error);
       setChatMessages(mockChatMessages);
+    }
+
+    try {
+      setNotifications(await listNotifications(currentPlayer.id));
+    } catch (error) {
+      console.warn('Falling back to mock notification data after Supabase load failed.', error);
       setNotifications(mockNotifications);
     }
   }, [currentPlayer.id]);
@@ -108,6 +114,10 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     return true;
   }
 
+  function revokePrivateAccess(lobbyId: string) {
+    setVerifiedPrivateLobbyIds((current) => current.filter((id) => id !== lobbyId));
+  }
+
   function shouldConfirmMoveToWaitlist(lobby: Lobby) {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
     const penaltyMinutes = lobby.cancellationPenaltyMinutes ?? defaultCancellationPenaltyMinutes;
@@ -120,7 +130,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
   }
 
   async function joinGame(lobby: Lobby): Promise<LobbyStoreActionResult> {
-    const result = await persistJoinGame(lobby, currentPlayer, lobbies);
+    const result = await persistJoinGame(lobby, currentPlayer, lobbies, getVerifiedPrivateAccessCode(lobby));
 
     if (result.success) {
       await refreshLobbyData();
@@ -132,7 +142,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
   async function joinWaitlist(lobby: Lobby): Promise<LobbyStoreActionResult> {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
     const isActiveInRoom = participant && (participant.status === 'approved' || participant.status === 'attended');
-    const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies);
+    const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies, getVerifiedPrivateAccessCode(lobby));
 
     if (result.success) {
       await refreshLobbyData();
@@ -181,6 +191,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     const result = await persistApproveWaitlistRequest(lobby, player, currentPlayer.id);
 
     if (result.success) {
+      revokePrivateAccess(lobby.id);
       await refreshLobbyData();
       addLobbyNotification({
         body: `${player.name} was added to the waitlist for ${lobby.title}.`,
@@ -238,21 +249,35 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
 
     if (!participant) {
+      revokePrivateAccess(lobby.id);
+
       return {
-        messages: [],
-        success: false,
+        messages: ['You are no longer in this room.'],
+        success: true,
       };
     }
 
     const result = await persistLeaveLobby(lobby, currentPlayer);
 
     if (result.success) {
-      await refreshLobbyData();
+      revokePrivateAccess(lobby.id);
+      setLobbies((current) =>
+        current
+          .map((candidate) =>
+            candidate.id === lobby.id
+              ? getOptimisticLobbyAfterLeave(candidate, currentPlayer.id)
+              : candidate,
+          )
+          .filter((candidate): candidate is Lobby => Boolean(candidate)),
+      );
       addLobbyNotification({
         body: `You left ${lobby.title}.`,
         lobbyId: lobby.id,
         title: 'Left room',
         type: 'waitlist_update',
+      });
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after leaving.', error);
       });
     }
 
@@ -307,6 +332,11 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     const nextLobby = await persistCreateLobby(draft, currentPlayer);
 
     await refreshLobbyData();
+    setLobbies((current) =>
+      current.some((lobby) => lobby.id === nextLobby.id)
+        ? current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby))
+        : [nextLobby, ...current],
+    );
     addLobbyNotification({
       body: `${draft.title} is live and visible in Games.`,
       lobbyId: nextLobby.id,
@@ -346,6 +376,10 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     ]);
   }
 
+  function getVerifiedPrivateAccessCode(lobby: Lobby) {
+    return hasPrivateAccess(lobby.id) ? lobby.accessCode : undefined;
+  }
+
   return {
     approveWaitlistRequest,
     cancelJoinRequest,
@@ -373,4 +407,38 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     unreadNotificationCount,
     unreadNotifications,
   };
+}
+
+function getOptimisticLobbyAfterLeave(lobby: Lobby, leavingPlayerId: string): Lobby | null {
+  const remainingParticipants = lobby.participants.filter((participant) => participant.playerId !== leavingPlayerId);
+
+  if (remainingParticipants.length === 0) {
+    return null;
+  }
+
+  const nextHost = lobby.adminId === leavingPlayerId ? getNextHostParticipant(remainingParticipants) : undefined;
+
+  return {
+    ...lobby,
+    adminId: nextHost?.playerId ?? lobby.adminId,
+    joinRequests: lobby.joinRequests.filter((request) => request.playerId !== leavingPlayerId),
+    participants: nextHost
+      ? remainingParticipants.map((participant) =>
+          participant.playerId === nextHost.playerId
+            ? {
+                ...participant,
+                role: 'admin',
+              }
+            : participant,
+        )
+      : remainingParticipants,
+    status: lobby.status,
+  };
+}
+
+function getNextHostParticipant(participants: LobbyParticipant[]) {
+  return (
+    participants.find((participant) => participant.role === 'joined') ??
+    participants.find((participant) => participant.role === 'waitlist')
+  );
 }
