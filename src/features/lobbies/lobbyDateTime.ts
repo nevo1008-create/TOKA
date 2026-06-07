@@ -10,6 +10,26 @@ export function formatLobbyStart(startsAt: string) {
   return `${dayLabels[date.getDay()]} ${padTime(date.getHours())}:${padTime(date.getMinutes())}`;
 }
 
+export function getLobbyLocalDateValue(startsAt: string) {
+  const date = new Date(startsAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return startsAt.slice(0, 10);
+  }
+
+  return `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}`;
+}
+
+export function getLobbyLocalTimeValue(startsAt: string) {
+  const date = new Date(startsAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return startsAt.slice(11, 16);
+  }
+
+  return `${padTime(date.getHours())}:${padTime(date.getMinutes())}`;
+}
+
 export function getMinutesBetweenLobbyStarts(firstStartsAt: string, secondStartsAt: string) {
   const firstTime = new Date(firstStartsAt).getTime();
   const secondTime = new Date(secondStartsAt).getTime();

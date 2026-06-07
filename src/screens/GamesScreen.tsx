@@ -788,7 +788,7 @@ function MyGamesView({
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
       const pendingRequest = getCurrentPlayerPendingRequest(lobby, currentPlayer.id);
       const imageBadgeLabel = getLobbyMembershipBadgeLabel(lobby, currentPlayer.id, participant);
-      const secondarySpotsLeft = isPrivateLobby(lobby) && isLobbyHost(lobby, currentPlayer.id, participant)
+      const secondarySpotsLeft = isPrivateLobby(lobby) && (participant || pendingRequest)
         ? 'Private'
         : undefined;
 
@@ -908,8 +908,8 @@ function GameCard({
       (hasVerifiedPrivateAccess || currentParticipant || pendingRequest),
   );
   const isLockedPrivateLobby = Boolean(lobby && isPrivateLobby(lobby) && !hasPrivateAccess);
-  const shouldShowHostPrivateBadge = Boolean(
-    lobby && isPrivateLobby(lobby) && isLobbyHost(lobby, currentPlayerId, currentParticipant),
+  const shouldShowPrivateBadge = Boolean(
+    lobby && isPrivateLobby(lobby) && hasPrivateAccess,
   );
   const imageBadgeLabel = lobby
     ? getLobbyMembershipBadgeLabel(lobby, currentPlayerId, currentParticipant) ?? (isLockedPrivateLobby ? 'Private' : game.spotsLeft)
@@ -929,7 +929,7 @@ function GameCard({
       onPress={isLockedPrivateLobby ? undefined : onPress}
       players={formatPlayersCount(game.players)}
       requestStatusLabel={pendingRequest && !currentParticipant ? lobbyLabels.accessRequested : undefined}
-      secondarySpotsLeft={shouldShowHostPrivateBadge ? 'Private' : undefined}
+      secondarySpotsLeft={shouldShowPrivateBadge ? 'Private' : undefined}
       secondarySpotsTone="red"
       spotsLeft={imageBadgeLabel}
       spotsTone={statusBadgeTone}

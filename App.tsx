@@ -30,7 +30,7 @@ import {
 } from './src/features/auth/authRepository';
 import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
-import type { CreateLobbyDraft } from './src/features/lobbies/lobbyCreateTypes';
+import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -43,6 +43,7 @@ import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { EmailVerifiedScreen } from './src/screens/EmailVerifiedScreen';
 import { GamesScreen } from './src/screens/GamesScreen';
 import { HelpSupportScreen } from './src/screens/HelpSupportScreen';
+import { HostLobbyManagementScreen } from './src/screens/HostLobbyManagementScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { InviteComposerScreen, type InviteComposerParams } from './src/screens/InviteComposerScreen';
 import { LobbyChatSheet, LobbyDetailsScreen, LobbyFloatingChatButton } from './src/screens/LobbyDetailsScreen';
@@ -98,6 +99,7 @@ export default function App() {
   const [isLobbyChatOpen, setIsLobbyChatOpen] = useState(false);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
+  const [isHostManagementOpen, setIsHostManagementOpen] = useState(false);
   const [pendingLobbyActionKey, setPendingLobbyActionKey] = useState<string | null>(null);
   const pendingLobbyActionRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -129,6 +131,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (authFlow !== 'app') {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      void lobbyStore.refreshLobbyData();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [authFlow, lobbyStore.refreshLobbyData]);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
   }, [
     activeTab,
@@ -139,6 +153,7 @@ export default function App() {
     isCommunityGuidelinesOpen,
     isEditProfileOpen,
     isHelpSupportOpen,
+    isHostManagementOpen,
     isNotificationsOpen,
     isReportProblemOpen,
     isDeleteAccountOpen,
@@ -193,6 +208,7 @@ export default function App() {
     setLegalScreen(null);
     setInviteParams(null);
     setIsLobbyChatOpen(false);
+    setIsHostManagementOpen(false);
     setSelectedLobbyId(null);
     setActiveTab(tab);
   }
@@ -211,6 +227,7 @@ export default function App() {
     setLegalScreen(null);
     setInviteParams(null);
     setIsLobbyChatOpen(false);
+    setIsHostManagementOpen(false);
     setSelectedLobbyId(null);
     setActiveTab('games');
   }
@@ -346,6 +363,7 @@ export default function App() {
     setInviteParams(null);
     setSelectedLobbyId(null);
     setIsLobbyChatOpen(false);
+    setIsHostManagementOpen(false);
     setActiveTab('create');
     setLegalScreen(null);
   }
@@ -361,9 +379,19 @@ export default function App() {
     setIsReportProblemOpen(false);
     setInviteParams(null);
     setIsLobbyChatOpen(false);
+    setIsHostManagementOpen(false);
     setSelectedLobbyId(lobby.id);
     setActiveTab('games');
     setLegalScreen(null);
+  }
+
+  function openHostManagement() {
+    setIsLobbyChatOpen(false);
+    setIsHostManagementOpen(true);
+  }
+
+  function closeHostManagement() {
+    setIsHostManagementOpen(false);
   }
 
   function openSideMenu() {
@@ -744,6 +772,82 @@ export default function App() {
       showActionError(error);
     } finally {
       setIsCreatingLobby(false);
+    }
+  }
+
+  async function handleUpdateLobbySettings(lobby: Lobby, draft: LobbySettingsDraft) {
+    try {
+      const result = await runLobbyAction(`update-lobby:${lobby.id}`, () => lobbyStore.updateLobbySettings(lobby, draft));
+
+      if (!result) {
+        return;
+      }
+
+      if (result.success) {
+        setIsHostManagementOpen(false);
+        Alert.alert('Lobby saved', 'Your changes were saved.', [
+          {
+            text: 'OK',
+          },
+        ]);
+        return;
+      }
+
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleMoveLobbyParticipantToWaitlist(lobby: Lobby, playerId: string) {
+    try {
+      const result = await runLobbyAction(`move-waitlist:${lobby.id}:${playerId}`, () =>
+        lobbyStore.moveLobbyParticipantToWaitlist(lobby, playerId),
+      );
+
+      if (!result) {
+        return;
+      }
+
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleKickLobbyParticipant(lobby: Lobby, playerId: string) {
+    try {
+      const result = await runLobbyAction(`kick-player:${lobby.id}:${playerId}`, () => lobbyStore.kickLobbyParticipant(lobby, playerId));
+
+      if (!result) {
+        return;
+      }
+
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleCloseLobby(lobby: Lobby) {
+    try {
+      const result = await runLobbyAction(`close-lobby:${lobby.id}`, () => lobbyStore.closeLobby(lobby));
+
+      if (!result) {
+        return;
+      }
+
+      showLobbyActionMessages(result.messages);
+
+      if (result.success) {
+        setIsHostManagementOpen(false);
+        setIsLobbyChatOpen(false);
+        setSelectedLobbyId(null);
+        setGamesInitialSection('Find Games');
+        setActiveTab('games');
+      }
+    } catch (error) {
+      showActionError(error);
     }
   }
 
@@ -1131,37 +1235,55 @@ export default function App() {
                   )}
                   {activeTab === 'games' && (
                     selectedLobby ? (
-                      <LobbyDetailsScreen
-                        currentPlayer={profilePlayer}
-                        lobby={selectedLobby}
-                        lobbyIndex={selectedLobbyIndex}
-                        notificationCount={unreadNotificationCount}
-                        allLobbies={lobbyStore.lobbies}
-                        hasPrivateAccess={lobbyStore.hasPrivateAccess(selectedLobby.id)}
-                        isActionPending={Boolean(pendingLobbyActionKey)}
-                        onBack={() => {
-                          setIsLobbyChatOpen(false);
-                          setSelectedLobbyId(null);
-                        }}
-                        onEnterPrivatePin={(pin) => handleEnterPrivatePin(selectedLobby, pin)}
-                        onCancelJoinRequest={() => handleCancelJoinRequest(selectedLobby)}
-                        onInvite={() =>
-                          openInviteComposer({
-                            inviteTargetLobbyId: selectedLobby.id,
-                            source: 'lobby',
-                          })
-                        }
-                        onJoinGame={() => handleJoinGame(selectedLobby)}
-                        onJoinWaitlist={() => handleJoinWaitlist(selectedLobby)}
-                        onLeaveLobby={() => handleLeaveLobby(selectedLobby)}
-                        onOpenMenu={openSideMenu}
-                        onOpenNotifications={openNotifications}
-                        onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
-                        onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
-                        onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
-                        onViewPlayerProfile={openViewedProfile}
-                        players={playersForInvite}
-                      />
+                      isHostManagementOpen ? (
+                        <HostLobbyManagementScreen
+                          currentPlayer={profilePlayer}
+                          isActionPending={Boolean(pendingLobbyActionKey)}
+                          lobby={selectedLobby}
+                          notificationCount={unreadNotificationCount}
+                          onBack={closeHostManagement}
+                          onCloseLobby={() => handleCloseLobby(selectedLobby)}
+                          onOpenMenu={openSideMenu}
+                          onOpenNotifications={openNotifications}
+                          onSaveSettings={(draft) => handleUpdateLobbySettings(selectedLobby, draft)}
+                        />
+                      ) : (
+                        <LobbyDetailsScreen
+                          currentPlayer={profilePlayer}
+                          lobby={selectedLobby}
+                          lobbyIndex={selectedLobbyIndex}
+                          notificationCount={unreadNotificationCount}
+                          allLobbies={lobbyStore.lobbies}
+                          hasPrivateAccess={lobbyStore.hasPrivateAccess(selectedLobby.id)}
+                          isActionPending={Boolean(pendingLobbyActionKey)}
+                          onBack={() => {
+                            setIsLobbyChatOpen(false);
+                            setIsHostManagementOpen(false);
+                            setSelectedLobbyId(null);
+                          }}
+                          onEnterPrivatePin={(pin) => handleEnterPrivatePin(selectedLobby, pin)}
+                          onCancelJoinRequest={() => handleCancelJoinRequest(selectedLobby)}
+                          onInvite={() =>
+                            openInviteComposer({
+                              inviteTargetLobbyId: selectedLobby.id,
+                              source: 'lobby',
+                            })
+                          }
+                          onJoinGame={() => handleJoinGame(selectedLobby)}
+                          onJoinWaitlist={() => handleJoinWaitlist(selectedLobby)}
+                          onKickPlayer={(playerId) => handleKickLobbyParticipant(selectedLobby, playerId)}
+                          onLeaveLobby={() => handleLeaveLobby(selectedLobby)}
+                          onMovePlayerToWaitlist={(playerId) => handleMoveLobbyParticipantToWaitlist(selectedLobby, playerId)}
+                          onOpenHostManagement={openHostManagement}
+                          onOpenMenu={openSideMenu}
+                          onOpenNotifications={openNotifications}
+                          onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
+                          onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
+                          onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
+                          onViewPlayerProfile={openViewedProfile}
+                          players={playersForInvite}
+                        />
+                      )
                     ) : (
                       <GamesScreen
                         currentPlayer={profilePlayer}
@@ -1213,7 +1335,7 @@ export default function App() {
                   )}
                 </ScrollView>
                 <BottomNav activeTab={activeTab} onChange={handleTabChange} />
-                {activeTab === 'games' && selectedLobby && visibleSelectedLobby && selectedLobby.status !== 'rating_open' ? (
+                {activeTab === 'games' && selectedLobby && visibleSelectedLobby && !isHostManagementOpen && selectedLobby.status !== 'rating_open' ? (
                   <>
                     <LobbyFloatingChatButton lobby={visibleSelectedLobby} onPress={() => openLobbyChat(selectedLobby)} />
                     <LobbyChatSheet

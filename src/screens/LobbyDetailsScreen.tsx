@@ -41,7 +41,10 @@ type LobbyDetailsScreenProps = {
   onInvite: () => void;
   onJoinGame: () => void;
   onJoinWaitlist: () => void;
+  onKickPlayer: (playerId: string) => Promise<void> | void;
   onLeaveLobby: () => void;
+  onMovePlayerToWaitlist: (playerId: string) => Promise<void> | void;
+  onOpenHostManagement: () => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRequestWaitlistApproval: () => void;
@@ -86,7 +89,10 @@ export function LobbyDetailsScreen({
   onInvite,
   onJoinGame,
   onJoinWaitlist,
+  onKickPlayer,
   onLeaveLobby,
+  onMovePlayerToWaitlist,
+  onOpenHostManagement,
   onOpenMenu,
   onOpenNotifications,
   onRequestWaitlistApproval,
@@ -159,13 +165,27 @@ export function LobbyDetailsScreen({
 
   function openPlayerActions(player: Player) {
     const isFriend = currentPlayer.friendIds.includes(player.id);
+    const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
 
     setActionSheetPlayer({
       contextLabel: `${player.level} rank`,
       initials: player.initials,
       name: player.name,
     });
-    setActionSheetActions(getLobbyPlayerActions(player, isFriend, () => openProfile(player), onInvite, !isRatingOpen));
+    setActionSheetActions(
+      getLobbyPlayerActions({
+        canInvite: !isRatingOpen,
+        currentPlayer,
+        isCurrentUserAdmin,
+        isFriend,
+        onInvite,
+        onKickPlayer,
+        onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
+        onViewProfile: () => openProfile(player, participant),
+        participant,
+        player,
+      }),
+    );
   }
 
   function submitPin() {
@@ -204,12 +224,14 @@ export function LobbyDetailsScreen({
         <RoomHeroCard
           admin={admin}
           currentParticipant={currentParticipant}
+          isActionPending={isActionPending}
+          isHost={isCurrentUserAdmin}
           lobby={lobby}
           lobbyIndex={lobbyIndex}
           onInvite={onInvite}
+          onOpenHostManagement={onOpenHostManagement}
           playerCount={playerCount}
           primaryAction={primaryAction}
-          isActionPending={isActionPending}
         />
 
         <GameInfoStrip
@@ -234,7 +256,7 @@ export function LobbyDetailsScreen({
           <PendingApprovalPanel />
         ) : null}
 
-        {isCurrentUserAdmin && isPrivateLobby(lobby) && lobby.accessCode ? (
+        {currentParticipant && isPrivateLobby(lobby) && lobby.accessCode ? (
           <HostPrivatePinPanel pin={lobby.accessCode} />
         ) : null}
 
@@ -307,13 +329,17 @@ export function LobbyDetailsScreen({
         meta={profilePreviewPlayer ? `${profilePreviewPlayer.tocaPoints} TOCA points` : undefined}
         moreActions={
           profilePreviewPlayer
-            ? getLobbyPlayerActions(
-                profilePreviewPlayer,
-                currentPlayer.friendIds.includes(profilePreviewPlayer.id),
-                () => onViewPlayerProfile(profilePreviewPlayer),
+            ? getLobbyPlayerActions({
+                canInvite: !isRatingOpen,
+                currentPlayer,
+                isCurrentUserAdmin: false,
+                isFriend: currentPlayer.friendIds.includes(profilePreviewPlayer.id),
                 onInvite,
-                !isRatingOpen,
-              )
+                onKickPlayer,
+                onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
+                onViewProfile: () => onViewPlayerProfile(profilePreviewPlayer),
+                player: profilePreviewPlayer,
+              })
             : undefined
         }
         name={profilePreviewPlayer?.name ?? ''}
@@ -324,7 +350,6 @@ export function LobbyDetailsScreen({
             ? getLobbyProfilePreviewPrimaryAction(
                 profilePreviewSelection,
                 currentPlayer,
-                isCurrentUserAdmin,
                 onViewPlayerProfile,
               )
             : undefined
@@ -336,7 +361,6 @@ export function LobbyDetailsScreen({
                 profilePreviewSelection,
                 currentPlayer,
                 currentPlayer.friendIds.includes(profilePreviewSelection.player.id),
-                isCurrentUserAdmin,
                 onInvite,
                 onViewPlayerProfile,
                 !isRatingOpen,
@@ -369,18 +393,22 @@ function RoomHeroCard({
   admin,
   currentParticipant,
   isActionPending,
+  isHost,
   lobby,
   lobbyIndex,
   onInvite,
+  onOpenHostManagement,
   playerCount,
   primaryAction,
 }: {
   admin?: Player;
   currentParticipant?: LobbyParticipant;
   isActionPending: boolean;
+  isHost: boolean;
   lobby: Lobby;
   lobbyIndex: number;
   onInvite: () => void;
+  onOpenHostManagement: () => void;
   playerCount: string;
   primaryAction: LobbyPrimaryAction;
 }) {
@@ -456,6 +484,11 @@ function RoomHeroCard({
             </AppText>
             <Ionicons color={primaryAction.iconColor} name={primaryAction.icon} size={17} />
           </Pressable>
+          {isHost ? (
+            <Pressable accessibilityRole="button" onPress={onOpenHostManagement} style={styles.secondaryButton}>
+              <Ionicons color={colors.primaryDark} name="settings-outline" size={18} />
+            </Pressable>
+          ) : null}
           {showShareAction ? (
             <Pressable accessibilityRole="button" onPress={onInvite} style={styles.secondaryButton}>
               <Ionicons color={colors.accentLime} name="share-social-outline" size={18} />
@@ -1540,13 +1573,56 @@ function getPlayerRating(player: Player, currentPlayerId: string) {
   return '3.2';
 }
 
-function getLobbyPlayerActions(
-  player: Player,
-  isFriend: boolean,
-  onViewProfile: () => void,
-  onInvite: () => void,
+function getLobbyPlayerActions({
   canInvite = true,
-): PlayerAction[] {
+  currentPlayer,
+  isCurrentUserAdmin,
+  isFriend,
+  onInvite,
+  onKickPlayer,
+  onMovePlayerToWaitlist,
+  onViewProfile,
+  participant,
+  player,
+}: {
+  canInvite?: boolean;
+  currentPlayer: Player;
+  isCurrentUserAdmin: boolean;
+  isFriend: boolean;
+  onInvite: () => void;
+  onKickPlayer: (playerId: string) => Promise<void> | void;
+  onMovePlayerToWaitlist: (player: Player) => Promise<void> | void;
+  onViewProfile: () => void;
+  participant?: LobbyParticipant;
+  player: Player;
+}): PlayerAction[] {
+  const isSelf = player.id === currentPlayer.id;
+  const hostActions: PlayerAction[] =
+    isCurrentUserAdmin && participant && !isSelf
+      ? [
+          ...(participant.role !== 'waitlist'
+            ? [
+                {
+                  icon: 'swap-horizontal-outline' as const,
+                  label: lobbyLabels.moveToWaitlist,
+                  onPress: () => onMovePlayerToWaitlist(player),
+                },
+              ]
+            : []),
+          {
+            confirmation: {
+              body: `${player.name} will be removed from this lobby, but can join or request again later.`,
+              confirmLabel: 'Remove',
+              title: 'Remove player?',
+            },
+            destructive: true,
+            icon: 'remove-circle-outline' as const,
+            label: 'Kick from lobby',
+            onPress: () => onKickPlayer(player.id),
+          },
+        ]
+      : [];
+
   return [
     {
       icon: 'person-circle-outline',
@@ -1561,6 +1637,7 @@ function getLobbyPlayerActions(
     ...(isFriend
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend' }]
       : []),
+    ...hostActions,
     { destructive: true, icon: 'ban-outline', label: 'Report & block' },
   ];
 }
@@ -1568,19 +1645,11 @@ function getLobbyPlayerActions(
 function getLobbyProfilePreviewPrimaryAction(
   selection: LobbyProfilePreviewSelection,
   currentPlayer: Player,
-  isCurrentUserAdmin: boolean,
   onViewPlayerProfile: (player: Player) => void,
 ) {
-  if (!isCurrentUserAdmin || !selection.participant || selection.player.id === currentPlayer.id) {
-    return {
-      label: 'View full profile',
-      onPress: () => onViewPlayerProfile(selection.player),
-    };
-  }
-
   return {
-    label: selection.participant.role === 'waitlist' ? 'Move to players' : lobbyLabels.moveToWaitlist,
-    onPress: () => undefined,
+    label: selection.player.id === currentPlayer.id ? 'View your profile' : 'View full profile',
+    onPress: () => onViewPlayerProfile(selection.player),
   };
 }
 
@@ -1588,20 +1657,12 @@ function getLobbyProfilePreviewSecondaryAction(
   selection: LobbyProfilePreviewSelection,
   currentPlayer: Player,
   isFriend: boolean,
-  isCurrentUserAdmin: boolean,
   onInvite: () => void,
   onViewPlayerProfile: (player: Player) => void,
   canInvite = true,
 ) {
   if (selection.player.id === currentPlayer.id) {
     return undefined;
-  }
-
-  if (isCurrentUserAdmin && selection.participant) {
-    return {
-      label: isFriend ? 'View full profile' : 'Add friend',
-      onPress: isFriend ? () => onViewPlayerProfile(selection.player) : () => undefined,
-    };
   }
 
   if (!canInvite && isFriend) {

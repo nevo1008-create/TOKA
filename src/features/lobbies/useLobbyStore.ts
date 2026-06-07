@@ -12,18 +12,22 @@ import {
   markNotificationsRead,
 } from '../notifications/notificationRepository';
 import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player } from '../../types';
-import type { CreateLobbyDraft } from './lobbyCreateTypes';
+import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { getMinutesUntilLobbyStart } from './lobbyDateTime';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
+  closeLobby as persistCloseLobby,
   createLobby as persistCreateLobby,
   joinGame as persistJoinGame,
   joinWaitlist as persistJoinWaitlist,
+  kickLobbyParticipant as persistKickLobbyParticipant,
   leaveLobby as persistLeaveLobby,
   listLobbies,
+  moveLobbyParticipantToWaitlist as persistMoveLobbyParticipantToWaitlist,
   rejectJoinRequest as persistRejectJoinRequest,
   requestWaitlistApproval as persistRequestWaitlistApproval,
+  updateLobbySettings as persistUpdateLobbySettings,
 } from './lobbyRepository';
 import {
   defaultCancellationPenaltyMinutes,
@@ -284,6 +288,106 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     return result;
   }
 
+  async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraft): Promise<LobbyStoreActionResult> {
+    const result = await persistUpdateLobbySettings(lobby, draft, currentPlayer.id);
+
+    if (result.success) {
+      setLobbies((current) =>
+        current.map((candidate) => (candidate.id === lobby.id ? getOptimisticLobbyAfterSettingsUpdate(candidate, draft) : candidate)),
+      );
+      addLobbyNotification({
+        body: `${draft.title} settings were saved.`,
+        lobbyId: lobby.id,
+        title: 'Lobby updated',
+        type: 'lobby_changed',
+      });
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after settings update.', error);
+      });
+    }
+
+    return result;
+  }
+
+  async function moveLobbyParticipantToWaitlist(lobby: Lobby, playerId: string): Promise<LobbyStoreActionResult> {
+    const player = players.find((candidate) => candidate.id === playerId);
+
+    if (!player) {
+      return {
+        messages: ['Could not find this player in the player list.'],
+        success: false,
+      };
+    }
+
+    const result = await persistMoveLobbyParticipantToWaitlist(lobby, player, currentPlayer.id);
+
+    if (result.success) {
+      setLobbies((current) =>
+        current.map((candidate) => (candidate.id === lobby.id ? moveParticipantToWaitlistLocal(candidate, playerId) : candidate)),
+      );
+      addLobbyNotification({
+        body: `${player.name} moved to waitlist.`,
+        lobbyId: lobby.id,
+        title: 'Player moved',
+        type: 'waitlist_update',
+      });
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after moving player.', error);
+      });
+    }
+
+    return result;
+  }
+
+  async function kickLobbyParticipant(lobby: Lobby, playerId: string): Promise<LobbyStoreActionResult> {
+    const player = players.find((candidate) => candidate.id === playerId);
+
+    if (!player) {
+      return {
+        messages: ['Could not find this player in the player list.'],
+        success: false,
+      };
+    }
+
+    const result = await persistKickLobbyParticipant(lobby, player, currentPlayer.id);
+
+    if (result.success) {
+      setLobbies((current) =>
+        current.map((candidate) => (candidate.id === lobby.id ? removeParticipantLocal(candidate, playerId) : candidate)),
+      );
+      addLobbyNotification({
+        body: `${player.name} was removed from ${lobby.title}.`,
+        lobbyId: lobby.id,
+        title: 'Player removed',
+        type: 'waitlist_update',
+      });
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after removing player.', error);
+      });
+    }
+
+    return result;
+  }
+
+  async function closeLobby(lobby: Lobby): Promise<LobbyStoreActionResult> {
+    const result = await persistCloseLobby(lobby, currentPlayer.id);
+
+    if (result.success) {
+      setLobbies((current) => current.filter((candidate) => candidate.id !== lobby.id));
+      addLobbyNotification({
+        body: `${lobby.title} was closed.`,
+        lobbyId: lobby.id,
+        title: 'Lobby closed',
+        type: 'lobby_changed',
+      });
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after closing lobby.', error);
+      });
+    }
+
+    return result;
+  }
+
   function markLobbyChatRead(lobby: Lobby) {
     setLobbies((current) =>
       current.map((candidate) =>
@@ -383,6 +487,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
   return {
     approveWaitlistRequest,
     cancelJoinRequest,
+    closeLobby,
     createLobby,
     enterPrivatePin,
     getFilteredLobbies,
@@ -394,18 +499,75 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     hasPrivateAccess,
     joinGame,
     joinWaitlist,
+    kickLobbyParticipant,
     leaveLobby,
     lobbies,
     markAllNotificationsRead,
     markLobbyChatRead,
     markNotificationRead,
     notifications,
+    moveLobbyParticipantToWaitlist,
     rejectJoinRequest,
     requestWaitlistApproval,
+    refreshLobbyData,
     sendLobbyChatMessage,
     shouldConfirmMoveToWaitlist,
+    updateLobbySettings,
     unreadNotificationCount,
     unreadNotifications,
+  };
+}
+
+function getOptimisticLobbyAfterSettingsUpdate(lobby: Lobby, draft: LobbySettingsDraft): Lobby {
+  const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
+  const visibilityChangedToPrivate = draft.visibility === 'password';
+
+  return {
+    ...lobby,
+    accessCode: visibilityChangedToPrivate ? draft.accessCode ?? lobby.accessCode : undefined,
+    capacityMode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
+    genderRule: draft.genderRule,
+    location: {
+      ...lobby.location,
+      city: draft.locationCity,
+      description: draft.meetingPoint,
+      name: draft.locationName,
+    },
+    locationDescription: draft.meetingPoint,
+    maxPlayers: Math.max(...selectedPlayerCounts),
+    minPlayers: Math.min(...selectedPlayerCounts),
+    note: draft.visibility === 'password'
+      ? `Private game. ${draft.meetingPoint}`
+      : draft.meetingPoint,
+    rankExact: draft.rankRuleType === 'exact' ? draft.rankExact : undefined,
+    rankMax: draft.rankRuleType === 'range' ? draft.rankMax : undefined,
+    rankMin: draft.rankRuleType === 'range' ? draft.rankMin : undefined,
+    rankRuleType: draft.rankRuleType,
+    startsAt: draft.startsAt,
+    title: draft.title,
+    visibility: draft.visibility,
+  };
+}
+
+function moveParticipantToWaitlistLocal(lobby: Lobby, playerId: string): Lobby {
+  return {
+    ...lobby,
+    participants: lobby.participants.map((participant) =>
+      participant.playerId === playerId
+        ? {
+            ...participant,
+            role: 'waitlist',
+          }
+        : participant,
+    ),
+  };
+}
+
+function removeParticipantLocal(lobby: Lobby, playerId: string): Lobby {
+  return {
+    ...lobby,
+    joinRequests: lobby.joinRequests.filter((request) => request.playerId !== playerId),
+    participants: lobby.participants.filter((participant) => participant.playerId !== playerId),
   };
 }
 

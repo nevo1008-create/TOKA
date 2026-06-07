@@ -1,8 +1,14 @@
 import { supabase } from '../../lib/supabase';
 import type { DbLobbyMembership, DbLobbyWithRelations } from '../../lib/database.types';
 import type { Lobby, Player } from '../../types';
-import type { CreateLobbyDraft } from './lobbyCreateTypes';
-import { getCancellationStatus, getJoinGameDecision, getJoinWaitlistDecision, getRuleExceptionReasons } from './lobbyRules';
+import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
+import {
+  getCancellationStatus,
+  getJoinGameDecision,
+  getJoinedParticipants,
+  getJoinWaitlistDecision,
+  getRuleExceptionReasons,
+} from './lobbyRules';
 import { mapDbLobbyToLobby } from './lobbyMappers';
 
 export async function listLobbies(): Promise<Lobby[]> {
@@ -25,18 +31,15 @@ export async function listLobbies(): Promise<Lobby[]> {
     });
   }
 
-  const lobbies = activeRows.map(mapDbLobbyToLobby);
-  const hostRepairs = activeRows
-    .map((row, index) => ({ lobby: lobbies[index], row }))
-    .filter(({ lobby, row }) => lobby.adminId !== row.host_player_id);
+  const hostRepairs = activeRows.filter(shouldSyncLobbyHost);
 
   if (hostRepairs.length > 0) {
-    void Promise.all(hostRepairs.map(({ lobby, row }) => transferLobbyHost(row.id, lobby.adminId))).catch((repairError) => {
+    void Promise.all(hostRepairs.map((row) => syncLobbyHostBestEffort(row.id))).catch((repairError) => {
       console.warn('Could not repair lobby host ownership.', repairError);
     });
   }
 
-  return lobbies;
+  return activeRows.map(mapDbLobbyToLobby);
 }
 
 export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player): Promise<Lobby> {
@@ -320,14 +323,241 @@ export async function cancelJoinRequest(lobby: Lobby, player: Player) {
   };
 }
 
+export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraft, hostPlayerId: string) {
+  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+
+  if (!hostCheck.success) {
+    return hostCheck;
+  }
+
+  const activePlayerCount = getJoinedParticipants(lobby).length;
+  const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
+  const nextMaxPlayers = Math.max(...selectedPlayerCounts);
+
+  if (nextMaxPlayers < activePlayerCount) {
+    return {
+      messages: [`Player limit cannot be lower than current joined players (${activePlayerCount}).`],
+      success: false,
+    };
+  }
+
+  const accessCode = draft.visibility === 'password'
+    ? draft.accessCode ?? lobby.accessCode ?? generatePrivateAccessCode()
+    : null;
+
+  const { error } = await supabase.rpc('host_update_lobby_settings', {
+    next_capacity_mode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
+    next_gender_rule: draft.genderRule,
+    next_location_city: draft.locationCity,
+    next_location_description: draft.meetingPoint,
+    next_location_name: draft.locationName,
+    next_max_players: nextMaxPlayers,
+    next_min_players: Math.min(...selectedPlayerCounts),
+    next_note: draft.visibility === 'password'
+      ? `Private game. ${draft.meetingPoint}`
+      : draft.meetingPoint,
+    next_pin_code_hash: accessCode,
+    next_rank_exact: draft.rankRuleType === 'exact' ? draft.rankExact ?? null : null,
+    next_rank_max: draft.rankRuleType === 'range' ? draft.rankMax ?? null : null,
+    next_rank_min: draft.rankRuleType === 'range' ? draft.rankMin ?? null : null,
+    next_rank_rule_type: draft.rankRuleType,
+    next_starts_at: draft.startsAt,
+    next_title: draft.title,
+    next_visibility: draft.visibility,
+    target_lobby_id: lobby.id,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await notifyCurrentLobbyMembers(lobby, hostPlayerId, {
+    body: `${lobby.title} details were updated by the host.`,
+    title: 'Lobby updated',
+    type: 'lobby_changed',
+  });
+
+  return {
+    messages: ['Lobby settings updated.'],
+    success: true,
+  };
+}
+
+export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Player, hostPlayerId: string) {
+  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+
+  if (!hostCheck.success) {
+    return hostCheck;
+  }
+
+  const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
+
+  if (!participant || participant.role === 'waitlist') {
+    return {
+      messages: ['Only joined players can be moved to the waitlist.'],
+      success: false,
+    };
+  }
+
+  if (player.id === hostPlayerId) {
+    return {
+      messages: ['Use the lobby action to move yourself to the waitlist.'],
+      success: false,
+    };
+  }
+
+  let { data, error } = await supabase.rpc('host_move_lobby_member_to_waitlist', {
+    target_lobby_id: lobby.id,
+    target_player_id: player.id,
+  });
+
+  if (error) {
+    if (error.message.toLowerCase().includes('could not find the function')) {
+      const fallback = await moveLobbyParticipantToWaitlistDirectly(lobby.id, player.id, hostPlayerId);
+
+      data = fallback.data;
+      error = fallback.error;
+    }
+  }
+
+  if (error) {
+    if (error.message.toLowerCase().includes('could not find the function')) {
+      throw new Error('Host membership actions are not installed in Supabase. Run the latest migration and try again.');
+    }
+
+    throw new Error(error.message);
+  }
+
+  if (!data || data.status !== 'waitlisted') {
+    return {
+      messages: ['Could not move this player. The host update did not persist.'],
+      success: false,
+    };
+  }
+
+  await createNotificationBestEffort({
+    body: `The host moved you to the waitlist for ${lobby.title}.`,
+    lobbyId: lobby.id,
+    playerId: hostPlayerId,
+    recipientPlayerId: player.id,
+    title: 'Moved to waitlist',
+    type: 'waitlist_update',
+  });
+
+  return {
+    messages: [`${player.name} moved to waitlist.`],
+    success: true,
+  };
+}
+
+async function moveLobbyParticipantToWaitlistDirectly(lobbyId: string, playerId: string, hostPlayerId: string) {
+  return supabase
+    .from('lobby_memberships')
+    .update({
+      approved_at: new Date().toISOString(),
+      approved_by_player_id: hostPlayerId,
+      left_at: null,
+      role: 'member',
+      status: 'waitlisted',
+    })
+    .eq('lobby_id', lobbyId)
+    .eq('player_id', playerId)
+    .in('status', ['joined', 'attended'])
+    .select('id,status,role')
+    .maybeSingle();
+}
+
+export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPlayerId: string) {
+  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+
+  if (!hostCheck.success) {
+    return hostCheck;
+  }
+
+  if (player.id === hostPlayerId) {
+    return {
+      messages: ['Hosts cannot kick themselves. Use Leave game or Close lobby.'],
+      success: false,
+    };
+  }
+
+  const { error } = await supabase
+    .from('lobby_memberships')
+    .update({
+      left_at: new Date().toISOString(),
+      role: 'member',
+      status: 'removed',
+    })
+    .eq('lobby_id', lobby.id)
+    .eq('player_id', player.id)
+    .in('status', ['joined', 'waitlisted', 'attended']);
+
+  if (error) {
+    throw error;
+  }
+
+  await createNotificationBestEffort({
+    body: `The host removed you from ${lobby.title}. You can join or request again later.`,
+    lobbyId: lobby.id,
+    playerId: hostPlayerId,
+    recipientPlayerId: player.id,
+    title: 'Removed from lobby',
+    type: 'waitlist_update',
+  });
+
+  return {
+    messages: [`${player.name} was removed from the lobby.`],
+    success: true,
+  };
+}
+
+export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
+  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+
+  if (!hostCheck.success) {
+    return hostCheck;
+  }
+
+  await notifyCurrentLobbyMembers(lobby, hostPlayerId, {
+    body: `${lobby.title} was closed by the host.`,
+    title: 'Lobby closed',
+    type: 'lobby_changed',
+  });
+
+  const { error: lobbyError } = await supabase
+    .from('lobbies')
+    .update({ status: 'closed' })
+    .eq('id', lobby.id);
+
+  if (lobbyError) {
+    throw lobbyError;
+  }
+
+  const { error: membershipsError } = await supabase
+    .from('lobby_memberships')
+    .update({
+      left_at: new Date().toISOString(),
+      status: 'removed',
+    })
+    .eq('lobby_id', lobby.id)
+    .in('status', ['joined', 'waitlisted', 'pending_approval', 'attended']);
+
+  if (membershipsError) {
+    throw membershipsError;
+  }
+
+  return {
+    messages: ['Lobby closed.'],
+    success: true,
+  };
+}
+
 export async function leaveLobby(lobby: Lobby, player: Player) {
   const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
 
   if (!participant) {
     if (lobby.adminId === player.id) {
-      await transferOrCloseLobbyAfterHostLeaves(lobby, player.id).catch((error) => {
-        console.warn('Could not finish host cleanup after stale leave.', error);
-      });
+      await syncLobbyHostBestEffort(lobby.id);
 
       return {
         messages: [],
@@ -347,9 +577,11 @@ export async function leaveLobby(lobby: Lobby, player: Player) {
   await markMembershipLeft(lobby.id, player.id, status);
 
   if (lobby.adminId === player.id) {
-    await transferOrCloseLobbyAfterHostLeaves(lobby, player.id).catch((error) => {
-      console.warn('Could not finish host transfer after leaving.', error);
-    });
+    if (remainingParticipants.length === 0) {
+      await closeAndDeleteLobbyBestEffort(lobby.id);
+    } else {
+      await syncLobbyHostBestEffort(lobby.id);
+    }
   } else if (remainingParticipants.length === 0) {
     await closeAndDeleteLobbyBestEffort(lobby.id);
   }
@@ -358,6 +590,67 @@ export async function leaveLobby(lobby: Lobby, player: Player) {
     messages: [],
     success: true,
   };
+}
+
+function assertLobbyHost(lobby: Lobby, hostPlayerId: string) {
+  const hostParticipant = lobby.participants.find((participant) => participant.playerId === hostPlayerId);
+  const isHost = lobby.adminId === hostPlayerId || hostParticipant?.role === 'admin';
+
+  if (!isHost) {
+    return {
+      messages: ['Only the host can manage this lobby.'],
+      success: false,
+    };
+  }
+
+  return {
+    messages: [],
+    success: true,
+  };
+}
+
+async function notifyCurrentLobbyMembers(
+  lobby: Lobby,
+  actorPlayerId: string,
+  notification: {
+    body: string;
+    title: string;
+    type: string;
+  },
+) {
+  const recipientIds = Array.from(
+    new Set(lobby.participants.map((participant) => participant.playerId).filter((playerId) => playerId !== actorPlayerId)),
+  );
+
+  await Promise.all(
+    recipientIds.map((recipientPlayerId) =>
+      createNotificationBestEffort({
+        ...notification,
+        lobbyId: lobby.id,
+        playerId: actorPlayerId,
+        recipientPlayerId,
+      }),
+    ),
+  );
+}
+
+async function createNotificationBestEffort(options: {
+  body: string;
+  lobbyId: string;
+  playerId: string;
+  recipientPlayerId: string;
+  title: string;
+  type: string;
+}) {
+  try {
+    await createNotification(options);
+  } catch (error) {
+    console.warn('Could not create lobby notification.', error);
+  }
+}
+
+function generatePrivateAccessCode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 async function markMembershipLeft(
@@ -380,17 +673,6 @@ async function markMembershipLeft(
   }
 }
 
-async function transferOrCloseLobbyAfterHostLeaves(lobby: Lobby, leavingPlayerId: string) {
-  const remainingParticipants = lobby.participants.filter((candidate) => candidate.playerId !== leavingPlayerId);
-
-  if (remainingParticipants.length === 0) {
-    await closeAndDeleteLobbyBestEffort(lobby.id);
-    return;
-  }
-
-  await transferLobbyHost(lobby.id, getNextHostParticipant(remainingParticipants).playerId);
-}
-
 async function closeAndDeleteLobbyBestEffort(lobbyId: string) {
   const { error: closeError } = await supabase
     .from('lobbies')
@@ -406,39 +688,27 @@ async function closeAndDeleteLobbyBestEffort(lobbyId: string) {
   });
 }
 
-function getNextHostParticipant(participants: Lobby['participants'][number][]) {
-  return participants.find((candidate) => candidate.role === 'joined') ?? participants[0];
+function shouldSyncLobbyHost(row: DbLobbyWithRelations) {
+  const memberships = row.lobby_memberships ?? [];
+  const currentMemberships = memberships.filter(isCurrentMembership);
+  const canonicalHostIsCurrent = currentMemberships.some((membership) => membership.player_id === row.host_player_id);
+  const hasStaleHostRole = memberships.some((membership) =>
+    membership.role === 'host' &&
+    (membership.player_id !== row.host_player_id || !isCurrentMembership(membership)),
+  );
+  const canonicalHostRoleNeedsRepair = currentMemberships.some((membership) =>
+    membership.player_id === row.host_player_id &&
+    membership.role !== 'host',
+  );
+
+  return !canonicalHostIsCurrent || hasStaleHostRole || canonicalHostRoleNeedsRepair;
 }
 
-async function transferLobbyHost(lobbyId: string, nextHostPlayerId: string) {
-  const { error: demoteError } = await supabase
-    .from('lobby_memberships')
-    .update({ role: 'member' })
-    .eq('lobby_id', lobbyId)
-    .in('status', ['joined', 'waitlisted', 'attended'])
-    .neq('player_id', nextHostPlayerId);
+async function syncLobbyHostBestEffort(lobbyId: string) {
+  const { error } = await supabase.rpc('sync_lobby_host', { target_lobby_id: lobbyId });
 
-  if (demoteError) {
-    throw demoteError;
-  }
-
-  const { error: roleError } = await supabase
-    .from('lobby_memberships')
-    .update({ role: 'host' })
-    .eq('lobby_id', lobbyId)
-    .eq('player_id', nextHostPlayerId);
-
-  if (roleError) {
-    throw roleError;
-  }
-
-  const { error: hostError } = await supabase
-    .from('lobbies')
-    .update({ host_player_id: nextHostPlayerId })
-    .eq('id', lobbyId);
-
-  if (hostError) {
-    throw hostError;
+  if (error) {
+    throw error;
   }
 }
 
