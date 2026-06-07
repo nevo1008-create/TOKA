@@ -16,3 +16,5 @@ export type CreateLobbyDraft = {
   genderRule: GenderRule;
   visibility: LobbyVisibility;
 };
+
+export type LobbySettingsDraft = CreateLobbyDraft;

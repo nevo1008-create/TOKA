@@ -171,7 +171,43 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      host_update_lobby_settings: {
+        Args: {
+          next_capacity_mode: CapacityMode;
+          next_gender_rule: GenderRule;
+          next_location_city: string;
+          next_location_description: string;
+          next_location_name: string;
+          next_max_players: number;
+          next_min_players: number;
+          next_note: string;
+          next_pin_code_hash: string | null;
+          next_rank_exact: PlayerLevel | null;
+          next_rank_max: PlayerLevel | null;
+          next_rank_min: PlayerLevel | null;
+          next_rank_rule_type: RankRuleType;
+          next_starts_at: string;
+          next_title: string;
+          next_visibility: LobbyVisibility;
+          target_lobby_id: string;
+        };
+        Returns: void;
+      };
+      host_move_lobby_member_to_waitlist: {
+        Args: {
+          target_lobby_id: string;
+          target_player_id: string;
+        };
+        Returns: DbLobbyMembership;
+      };
+      sync_lobby_host: {
+        Args: {
+          target_lobby_id: string;
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

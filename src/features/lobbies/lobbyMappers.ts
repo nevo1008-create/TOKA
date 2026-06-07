@@ -19,9 +19,9 @@ export function mapDbLobbyToLobby(row: DbLobbyWithRelations): Lobby {
   const currentMemberships = memberships
     .filter(isCurrentMembership)
     .sort(sortMemberships);
+  const adminId = getRenderableAdminId(row.host_player_id, currentMemberships);
   const participants = currentMemberships
-    .map(mapMembershipToParticipant);
-  const adminId = getEffectiveAdminId(row.host_player_id, currentMemberships, participants);
+    .map((membership) => mapMembershipToParticipant(membership, adminId));
   const joinRequests = memberships
     .filter(isPendingRequest)
     .sort(sortMemberships)
@@ -116,14 +116,14 @@ export function mapDbNotificationToNotification(row: DbNotification): Notificati
   };
 }
 
-function mapMembershipToParticipant(membership: DbLobbyMembership): LobbyParticipant {
+function mapMembershipToParticipant(membership: DbLobbyMembership, hostPlayerId: string): LobbyParticipant {
   return {
     bringsBall: membership.brings_ball,
     bringsCourtMarks: membership.brings_court_marks,
     playerId: membership.player_id,
     role: membership.status === 'waitlisted'
       ? 'waitlist'
-      : membership.role === 'host'
+      : membership.player_id === hostPlayerId
         ? 'admin'
         : 'joined',
     status: mapMembershipStatusToParticipantStatus(membership.status),
@@ -181,25 +181,18 @@ function isCurrentMembership(membership: DbLobbyMembership) {
   return membership.status === 'joined' || membership.status === 'waitlisted' || membership.status === 'attended';
 }
 
-function getEffectiveAdminId(
-  savedAdminId: string,
-  memberships: DbLobbyMembership[],
-  participants: LobbyParticipant[],
-) {
-  const currentHostMembership = memberships.find((membership) => membership.role === 'host');
+function getRenderableAdminId(savedAdminId: string, memberships: DbLobbyMembership[]) {
+  const savedHostIsCurrent = memberships.some((membership) => membership.player_id === savedAdminId);
 
-  if (currentHostMembership) {
-    return currentHostMembership.player_id;
+  if (savedHostIsCurrent) {
+    return savedAdminId;
   }
 
-  return getNextHostParticipant(participants)?.playerId ?? savedAdminId;
-}
-
-function getNextHostParticipant(participants: LobbyParticipant[]) {
   return (
-    participants.find((participant) => participant.role === 'admin') ??
-    participants.find((participant) => participant.role === 'joined') ??
-    participants.find((participant) => participant.role === 'waitlist')
+    memberships.find((membership) => membership.status === 'joined')?.player_id ??
+    memberships.find((membership) => membership.status === 'waitlisted')?.player_id ??
+    memberships[0]?.player_id ??
+    savedAdminId
   );
 }
 

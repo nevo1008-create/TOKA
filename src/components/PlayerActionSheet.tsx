@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, shadows, spacing } from '../theme';
@@ -7,10 +8,15 @@ import { AppText } from './AppText';
 type IconName = keyof typeof Ionicons.glyphMap;
 
 export type PlayerAction = {
+  confirmation?: {
+    body: string;
+    confirmLabel: string;
+    title: string;
+  };
   destructive?: boolean;
   icon: IconName;
   label: string;
-  onPress?: () => void;
+  onPress?: () => Promise<void> | void;
 };
 
 export type PlayerActionSheetPlayer = {
@@ -36,9 +42,22 @@ export function PlayerActionSheet({
   onClose,
   visible,
 }: PlayerActionSheetProps) {
+  const [confirmingAction, setConfirmingAction] = useState<PlayerAction | null>(null);
+
+  async function runAction(action: PlayerAction) {
+    await action.onPress?.();
+    setConfirmingAction(null);
+    onClose();
+  }
+
+  function closeSheet() {
+    setConfirmingAction(null);
+    onClose();
+  }
+
   return (
-    <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" onPress={onClose} style={styles.backdrop}>
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={closeSheet}>
+      <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdrop}>
         <Pressable accessibilityRole="menu" onPress={(event) => event.stopPropagation()} style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.header}>
@@ -57,12 +76,49 @@ export function PlayerActionSheet({
                 </AppText>
               ) : null}
             </View>
-            <Pressable accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
+            <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.closeButton}>
               <Ionicons color={colors.muted} name="close" size={18} />
             </Pressable>
           </View>
 
-          <View style={styles.actionList}>
+          {confirmingAction ? (
+            <View style={styles.confirmPanel}>
+              <View style={[styles.confirmIcon, confirmingAction.destructive && styles.confirmIconDanger]}>
+                <Ionicons
+                  color={confirmingAction.destructive ? colors.danger : colors.primaryDark}
+                  name={confirmingAction.icon}
+                  size={20}
+                />
+              </View>
+              <View style={styles.confirmCopy}>
+                <AppText align="center" variant="uiBody" weight="900">
+                  {confirmingAction.confirmation?.title}
+                </AppText>
+                <AppText align="center" tone="muted" variant="metadata" weight="600">
+                  {confirmingAction.confirmation?.body}
+                </AppText>
+              </View>
+              <View style={styles.confirmActions}>
+                <Pressable accessibilityRole="button" onPress={() => setConfirmingAction(null)} style={styles.confirmCancelButton}>
+                  <AppText align="center" tone="muted" variant="button" weight="800">
+                    Cancel
+                  </AppText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    void runAction(confirmingAction);
+                  }}
+                  style={[styles.confirmButton, confirmingAction.destructive && styles.confirmDangerButton]}
+                >
+                  <AppText align="center" tone="inverse" variant="button" weight="900">
+                    {confirmingAction.confirmation?.confirmLabel}
+                  </AppText>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.actionList}>
             {actions.map((action, index) => {
               const isFirstDestructive = action.destructive && !actions[index - 1]?.destructive;
 
@@ -71,8 +127,12 @@ export function PlayerActionSheet({
                 accessibilityRole="menuitem"
                 key={action.label}
                 onPress={() => {
-                  action.onPress?.();
-                  onClose();
+                  if (action.confirmation) {
+                    setConfirmingAction(action);
+                    return;
+                  }
+
+                  void runAction(action);
                 }}
                 style={[
                   styles.actionRow,
@@ -98,7 +158,8 @@ export function PlayerActionSheet({
               </Pressable>
               );
             })}
-          </View>
+            </View>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
@@ -157,6 +218,54 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: 'center',
     width: 36,
+  },
+  confirmActions: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  confirmButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  confirmCancelButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  confirmCopy: {
+    gap: spacing.xs,
+  },
+  confirmDangerButton: {
+    backgroundColor: colors.danger,
+  },
+  confirmIcon: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  confirmIconDanger: {
+    backgroundColor: 'rgba(217, 74, 58, 0.10)',
+    borderColor: 'rgba(217, 74, 58, 0.18)',
+  },
+  confirmPanel: {
+    alignItems: 'center',
+    gap: spacing.md,
   },
   dangerText: {
     color: colors.danger,
