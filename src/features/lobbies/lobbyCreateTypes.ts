@@ -5,7 +5,9 @@ export type CreateLobbyDraft = {
   locationName: string;
   locationCity: string;
   meetingPoint: string;
+  matchDate: string;
   playerCounts: number[];
+  startTime: string;
   startsAt: string;
   maxPlayers: number;
   rankRuleType: RankRuleType;

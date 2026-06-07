@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { formatRankRange, getRankIndex, rankOptions, RankBar, RankRangeBar } from '../components/RankRangeBar';
 import type { CreateLobbyDraft } from '../features/lobbies/lobbyCreateTypes';
+import { buildFutureDateOptions, buildLobbyStartsAt, buildStartTimeOptions, isFutureLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { GenderRule, LobbyVisibility, Player, PlayerLevel, RankRuleType } from '../types';
 
@@ -34,8 +35,8 @@ export function CreateLobbyScreen({
   const [step, setStep] = useState<1 | 2>(1);
   const [title, setTitle] = useState('Sunset Footvolley');
   const [meetingPoint, setMeetingPoint] = useState('Meet near the north workout area by the showers');
-  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [selectedTimeIndex, setSelectedTimeIndex] = useState(0);
+  const [selectedDateValue, setSelectedDateValue] = useState<string | null>(null);
+  const [selectedTimeValue, setSelectedTimeValue] = useState<string | null>(null);
   const [selectedLocationIndex, setSelectedLocationIndex] = useState(0);
   const [playerCounts, setPlayerCounts] = useState<number[]>([4, 6]);
   const [rankRuleType, setRankRuleType] = useState<RankRuleType>('range');
@@ -45,19 +46,36 @@ export function CreateLobbyScreen({
   const [activePicker, setActivePicker] = useState<CreatePicker | null>(null);
   const [genderRule, setGenderRule] = useState<GenderRule>('everyone');
   const [visibility, setVisibility] = useState<LobbyVisibility>('public');
-  const selectedDate = dateOptions[selectedDateIndex];
-  const selectedTime = timeOptions[selectedTimeIndex];
+  const dateOptions = useMemo(() => buildFutureDateOptions(), []);
+  const timeOptions = useMemo(() => buildStartTimeOptions({ matchDate: selectedDateValue }), [selectedDateValue]);
+  const selectedDate = selectedDateValue
+    ? dateOptions.find((option) => option.value === selectedDateValue)
+    : undefined;
+  const selectedTime = selectedTimeValue
+    ? timeOptions.find((option) => option.value === selectedTimeValue)
+    : undefined;
   const selectedLocation = locationOptions[selectedLocationIndex];
-  const startsAt = `${selectedDate.value}T${selectedTime.value}:00+03:00`;
+  const startsAt = selectedDateValue && selectedTimeValue ? buildLobbyStartsAt(selectedDateValue, selectedTimeValue) : '';
   const isTitleValid = title.trim().length > 2;
   const isMeetingPointValid = meetingPoint.trim().length > 4;
+  const isScheduleValid = Boolean(
+    selectedDateValue &&
+      selectedTimeValue &&
+      isFutureLobbyStart(selectedDateValue, selectedTimeValue),
+  );
   const isRankRangeValid = rankRuleType !== 'range' || getRankIndex(rankMin) <= getRankIndex(rankMax);
   const maxPlayers = Math.max(...playerCounts);
-  const canContinue = isTitleValid && isMeetingPointValid;
+  const canContinue = isTitleValid && isMeetingPointValid && isScheduleValid;
   const canCreate = canContinue && isRankRangeValid && playerCounts.length > 0;
 
+  useEffect(() => {
+    if (selectedTimeValue && !timeOptions.some((option) => option.value === selectedTimeValue)) {
+      setSelectedTimeValue(null);
+    }
+  }, [selectedTimeValue, timeOptions]);
+
   function createLobby() {
-    if (!canCreate || isCreating) {
+    if (!canCreate || isCreating || !selectedDateValue || !selectedTimeValue) {
       return;
     }
 
@@ -68,6 +86,7 @@ export function CreateLobbyScreen({
       genderRule,
       locationCity: selectedLocation.city,
       locationName: selectedLocation.name,
+      matchDate: selectedDateValue,
       maxPlayers,
       meetingPoint: meetingPoint.trim(),
       playerCounts,
@@ -75,6 +94,7 @@ export function CreateLobbyScreen({
       rankMax: rankRuleType === 'range' ? rankMax : undefined,
       rankMin: rankRuleType === 'range' ? rankMin : undefined,
       rankRuleType,
+      startTime: selectedTimeValue,
       startsAt,
       title: title.trim(),
       visibility,
@@ -124,7 +144,7 @@ export function CreateLobbyScreen({
           <>
             <View style={styles.wizardTopSpacer} />
             <WhenWhereStep
-              dateLabel={selectedDate.label}
+              dateLabel={selectedDate?.label ?? 'Choose date'}
               locationLabel={`${selectedLocation.name}, ${selectedLocation.city}`}
               meetingPoint={meetingPoint}
               onChangeMeetingPoint={setMeetingPoint}
@@ -132,7 +152,7 @@ export function CreateLobbyScreen({
               onOpenDate={() => setActivePicker('date')}
               onOpenLocation={() => setActivePicker('location')}
               onOpenTime={() => setActivePicker('time')}
-              timeLabel={selectedTime.label}
+              timeLabel={selectedTime?.label ?? 'Choose time'}
               title={title}
             />
           </>
@@ -164,7 +184,7 @@ export function CreateLobbyScreen({
 
         {!canContinue && step === 1 ? (
           <AppText align="center" tone="danger" variant="metadata" weight="700">
-            Add a clear title and meeting point before continuing.
+            Add a clear title, future date, start time, and meeting point before continuing.
           </AppText>
         ) : null}
 
@@ -191,18 +211,21 @@ export function CreateLobbyScreen({
       <OptionPickerSheet
         onClose={() => setActivePicker(null)}
         onSelect={(index) => {
+          const options = getPickerOptions(activePicker, dateOptions, timeOptions);
+          const selectedOption = options[index];
+
           if (activePicker === 'date') {
-            setSelectedDateIndex(index);
+            setSelectedDateValue(selectedOption?.value ?? null);
           } else if (activePicker === 'time') {
-            setSelectedTimeIndex(index);
+            setSelectedTimeValue(selectedOption?.value ?? null);
           } else if (activePicker === 'location') {
             selectLocation(index);
           }
 
           setActivePicker(null);
         }}
-        options={getPickerOptions(activePicker)}
-        selectedIndex={getPickerSelectedIndex(activePicker, selectedDateIndex, selectedTimeIndex, selectedLocationIndex)}
+        options={getPickerOptions(activePicker, dateOptions, timeOptions)}
+        selectedIndex={getPickerSelectedIndex(activePicker, selectedDateValue, selectedTimeValue, selectedLocationIndex, dateOptions, timeOptions)}
         title={getPickerTitle(activePicker)}
         visible={Boolean(activePicker)}
       />
@@ -435,7 +458,7 @@ function OptionPickerSheet({
 }: {
   onClose: () => void;
   onSelect: (index: number) => void;
-  options: Array<{ description?: string; label: string }>;
+  options: Array<{ description?: string; label: string; value?: string }>;
   selectedIndex: number;
   title: string;
   visible: boolean;
@@ -656,20 +679,6 @@ function PolicyCard({
   );
 }
 
-const dateOptions = [
-  { label: 'Tue, Jun 9', value: '2026-06-09' },
-  { label: 'Wed, Jun 10', value: '2026-06-10' },
-  { label: 'Thu, Jun 11', value: '2026-06-11' },
-  { label: 'Fri, Jun 12', value: '2026-06-12' },
-  { label: 'Sat, Jun 13', value: '2026-06-13' },
-];
-const timeOptions = [
-  { label: '07:00', value: '07:00' },
-  { label: '08:30', value: '08:30' },
-  { label: '16:30', value: '16:30' },
-  { label: '18:30', value: '18:30' },
-  { label: '20:00', value: '20:00' },
-];
 const locationOptions = [
   {
     city: 'Tel Aviv',
@@ -694,19 +703,24 @@ const locationOptions = [
 ];
 const playerCountOptions = [4, 5, 6];
 
-function getPickerOptions(picker: CreatePicker | null) {
+function getPickerOptions(
+  picker: CreatePicker | null,
+  dateOptions: Array<{ description?: string; label: string; value: string }>,
+  timeOptions: Array<{ description?: string; label: string; value: string }>,
+) {
   if (picker === 'date') {
-    return dateOptions.map((option) => ({ label: option.label }));
+    return dateOptions.map((option) => ({ description: option.description, label: option.label, value: option.value }));
   }
 
   if (picker === 'time') {
-    return timeOptions.map((option) => ({ label: option.label }));
+    return timeOptions.map((option) => ({ description: option.description, label: option.label, value: option.value }));
   }
 
   if (picker === 'location') {
-    return locationOptions.map((option) => ({
+    return locationOptions.map((option, index) => ({
       description: option.city,
       label: option.name,
+      value: String(index),
     }));
   }
 
@@ -715,16 +729,18 @@ function getPickerOptions(picker: CreatePicker | null) {
 
 function getPickerSelectedIndex(
   picker: CreatePicker | null,
-  selectedDateIndex: number,
-  selectedTimeIndex: number,
+  selectedDateValue: string | null,
+  selectedTimeValue: string | null,
   selectedLocationIndex: number,
+  dateOptions: Array<{ value: string }>,
+  timeOptions: Array<{ value: string }>,
 ) {
   if (picker === 'date') {
-    return selectedDateIndex;
+    return dateOptions.findIndex((option) => option.value === selectedDateValue);
   }
 
   if (picker === 'time') {
-    return selectedTimeIndex;
+    return timeOptions.findIndex((option) => option.value === selectedTimeValue);
   }
 
   if (picker === 'location') {

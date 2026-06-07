@@ -13,7 +13,7 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
-import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, hasLobbyStarted, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
 import { isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
 import {
   getJoinGameDecision,
@@ -122,7 +122,8 @@ export function LobbyDetailsScreen({
   const [pinError, setPinError] = useState<string | null>(null);
   const profilePreviewPlayer = profilePreviewSelection?.player;
   const isCurrentUserAdmin = isLobbyHost(lobby, currentPlayer.id, currentParticipant);
-  const isRatingOpen = lobby.status === 'rating_open';
+  const isActionLockedByTime = hasLobbyStarted(lobby.startsAt);
+  const isRatingOpen = isLobbyReadyForRatings(lobby);
   const primaryAction = getLobbyPrimaryAction({
     allLobbies,
     currentParticipant,
@@ -155,8 +156,7 @@ export function LobbyDetailsScreen({
   const canLeaveRoom =
     currentParticipant &&
     (currentParticipant.status === 'approved' || currentParticipant.status === 'attended') &&
-    lobby.status !== 'rating_open' &&
-    lobby.status !== 'completed' &&
+    !isActionLockedByTime &&
     lobby.status !== 'closed';
 
   function openProfile(player: Player, participant = lobby.participants.find((candidate) => candidate.playerId === player.id)) {
@@ -174,7 +174,8 @@ export function LobbyDetailsScreen({
     });
     setActionSheetActions(
       getLobbyPlayerActions({
-        canInvite: !isRatingOpen,
+        canInvite: !isActionLockedByTime,
+        canManageLobby: !isActionLockedByTime,
         currentPlayer,
         isCurrentUserAdmin,
         isFriend,
@@ -260,7 +261,7 @@ export function LobbyDetailsScreen({
           <HostPrivatePinPanel pin={lobby.accessCode} />
         ) : null}
 
-        {isCurrentUserAdmin ? (
+        {isCurrentUserAdmin && !isActionLockedByTime ? (
           <HostPanel
             currentPlayerId={currentPlayer.id}
             isActionPending={isActionPending}
@@ -285,7 +286,7 @@ export function LobbyDetailsScreen({
 
         <ParticipantsSection
           actionIcon={playerSectionAction?.icon}
-          actionLabel={isRatingOpen ? undefined : playerSectionAction?.label}
+          actionLabel={isActionLockedByTime ? undefined : playerSectionAction?.label}
           count={activeParticipants.length}
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
@@ -295,13 +296,13 @@ export function LobbyDetailsScreen({
           currentPlayerId={currentPlayer.id}
           participants={activeParticipants}
           players={players}
-          showRatingAction={lobby.status === 'rating_open'}
+          showRatingAction={isRatingOpen}
           title="Players"
         />
 
         <ParticipantsSection
           actionIcon={waitlistSectionAction?.icon}
-          actionLabel={isRatingOpen ? undefined : waitlistSectionAction?.label}
+          actionLabel={isActionLockedByTime ? undefined : waitlistSectionAction?.label}
           count={waitlistedParticipants.length}
           onAction={waitlistSectionAction?.onPress}
           onOpenActions={openPlayerActions}
@@ -330,7 +331,8 @@ export function LobbyDetailsScreen({
         moreActions={
           profilePreviewPlayer
             ? getLobbyPlayerActions({
-                canInvite: !isRatingOpen,
+                canInvite: !isActionLockedByTime,
+                canManageLobby: false,
                 currentPlayer,
                 isCurrentUserAdmin: false,
                 isFriend: currentPlayer.friendIds.includes(profilePreviewPlayer.id),
@@ -412,7 +414,8 @@ function RoomHeroCard({
   playerCount: string;
   primaryAction: LobbyPrimaryAction;
 }) {
-  const showShareAction = lobby.status !== 'rating_open';
+  const areLobbyActionsOpen = !hasLobbyStarted(lobby.startsAt);
+  const showShareAction = areLobbyActionsOpen;
 
   return (
     <View style={styles.heroCard}>
@@ -484,7 +487,7 @@ function RoomHeroCard({
             </AppText>
             <Ionicons color={primaryAction.iconColor} name={primaryAction.icon} size={17} />
           </Pressable>
-          {isHost ? (
+          {isHost && areLobbyActionsOpen ? (
             <Pressable accessibilityRole="button" onPress={onOpenHostManagement} style={styles.secondaryButton}>
               <Ionicons color={colors.primaryDark} name="settings-outline" size={18} />
             </Pressable>
@@ -1219,8 +1222,12 @@ function getStatusLabel(lobby: Lobby) {
     return 'Full';
   }
 
-  if (lobby.status === 'rating_open') {
-    return 'Rating open';
+  if (isLobbyReadyForRatings(lobby)) {
+    return 'Completed';
+  }
+
+  if (lobby.status === 'in_progress') {
+    return 'Started';
   }
 
   if (lobby.visibility === 'approval_required') {
@@ -1301,7 +1308,7 @@ function getLobbyPrimaryAction({
   onOpenPinEntry: () => void;
   onRequestWaitlistApproval: () => void;
 }): LobbyPrimaryAction {
-  if (lobby.status === 'rating_open') {
+  if (isLobbyReadyForRatings(lobby)) {
     return {
       disabled: false,
       icon: 'star-outline',
@@ -1312,12 +1319,23 @@ function getLobbyPrimaryAction({
     };
   }
 
-  if (lobby.status === 'completed' || lobby.status === 'closed') {
+  if (lobby.status === 'closed') {
     return {
       disabled: true,
       icon: 'checkmark',
       iconColor: colors.muted,
       label: 'Finished',
+      textTone: 'muted',
+      tone: 'muted',
+    };
+  }
+
+  if (hasLobbyStarted(lobby.startsAt)) {
+    return {
+      disabled: true,
+      icon: 'time-outline',
+      iconColor: colors.muted,
+      label: 'Started',
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1474,10 +1492,10 @@ function getPlayerSectionAction({
   const activeCurrentParticipant = getActiveCurrentParticipant(lobby, currentPlayer.id);
 
   if (
+    hasLobbyStarted(lobby.startsAt) ||
     activeCurrentParticipant?.role === 'admin' ||
     relationship === 'joined' ||
-    relationship === 'attended' ||
-    lobby.status === 'rating_open'
+    relationship === 'attended'
   ) {
     return undefined;
   }
@@ -1511,7 +1529,7 @@ function getWaitlistSectionAction({
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
 
-  if (relationship === 'waitlist' || lobby.status === 'rating_open') {
+  if (hasLobbyStarted(lobby.startsAt) || relationship === 'waitlist') {
     return undefined;
   }
 
@@ -1575,6 +1593,7 @@ function getPlayerRating(player: Player, currentPlayerId: string) {
 
 function getLobbyPlayerActions({
   canInvite = true,
+  canManageLobby = true,
   currentPlayer,
   isCurrentUserAdmin,
   isFriend,
@@ -1586,6 +1605,7 @@ function getLobbyPlayerActions({
   player,
 }: {
   canInvite?: boolean;
+  canManageLobby?: boolean;
   currentPlayer: Player;
   isCurrentUserAdmin: boolean;
   isFriend: boolean;
@@ -1598,7 +1618,7 @@ function getLobbyPlayerActions({
 }): PlayerAction[] {
   const isSelf = player.id === currentPlayer.id;
   const hostActions: PlayerAction[] =
-    isCurrentUserAdmin && participant && !isSelf
+    canManageLobby && isCurrentUserAdmin && participant && !isSelf
       ? [
           ...(participant.role !== 'waitlist'
             ? [

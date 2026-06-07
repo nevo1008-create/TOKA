@@ -8,6 +8,8 @@ import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerStatusStrip } from '../components/home/ProgressCard';
 import { QuickActionRow } from '../components/home/QuickActionRow';
+import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
+import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, homeTypography, spacing } from '../theme';
 import type { Lobby, Notification, Player } from '../types';
 
@@ -34,12 +36,15 @@ export function HomeScreen({
   onOpenLobby,
   onOpenNotifications,
 }: HomeScreenProps) {
-  const featuredLobby = lobbies[0];
-  const nearbyLeagueLobby = lobbies[1] ?? featuredLobby;
-  const nearbyWomenLobby = lobbies[2] ?? featuredLobby;
+  const upcomingLobbies = lobbies.filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
+  const joinedUpcomingLobbies = upcomingLobbies.filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id));
+  const featuredLobby = joinedUpcomingLobbies[0] ?? upcomingLobbies[0];
+  const nearbyLobbies = upcomingLobbies.filter((lobby) => lobby.id !== featuredLobby?.id).slice(0, 2);
+  const ratingLobbies = lobbies
+    .filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id) && isLobbyReadyForRatings(lobby))
+    .sort((left, right) => getLobbyStartTime(right) - getLobbyStartTime(left))
+    .slice(0, 2);
   const firstName = currentPlayer.name.split(' ')[0];
-  const showNearbyLeagueLobby = nearbyLeagueLobby ? isLobbyDiscoverable(nearbyLeagueLobby) : false;
-  const showNearbyWomenLobby = nearbyWomenLobby ? isLobbyDiscoverable(nearbyWomenLobby) : false;
 
   return (
     <View style={styles.screen}>
@@ -114,38 +119,23 @@ export function HomeScreen({
           </View>
 
           <View style={styles.nearbyStack}>
-            {showNearbyLeagueLobby ? (
+            {nearbyLobbies.map((lobby) => (
               <NearbyGameCard
-                audience="Everyone"
-                distance="18.1 km"
-                level="A+"
-                location="Poleg Beach"
-                onPress={() => (nearbyLeagueLobby ? onOpenLobby(nearbyLeagueLobby) : onOpenGames())}
-                players="3 / 6"
-                spotsLeft="3 spots left"
-                status="Full"
-                time="Sat 08:00"
-                title="League morning"
-                variant="morning"
+                audience={getGenderAudience(lobby)}
+                distance={getDistanceLabel(lobby)}
+                key={lobby.id}
+                level={getRankLabel(lobby)}
+                location={lobby.location.name}
+                onPress={() => onOpenLobby(lobby)}
+                players={getPlayersLabel(lobby)}
+                spotsLeft={getSpotsLabel(lobby)}
+                status={lobby.visibility === 'public' ? 'Full' : 'Approval'}
+                time={formatLobbyStart(lobby.startsAt)}
+                title={lobby.title}
+                variant={isEveningLobbyStart(lobby.startsAt) ? 'sunset' : 'morning'}
                 useHomeTypography
               />
-            ) : null}
-            {showNearbyWomenLobby ? (
-              <NearbyGameCard
-                audience="Women"
-                distance="49.5 km"
-                level="C/D"
-                location="Aqueduct Beach"
-                onPress={() => (nearbyWomenLobby ? onOpenLobby(nearbyWomenLobby) : onOpenGames())}
-                players="1 / 6"
-                spotsLeft="5 spots left"
-                status="Approval"
-                time="Sun 19:00"
-                title="Women evening"
-                variant="sunset"
-                useHomeTypography
-              />
-            ) : null}
+            ))}
           </View>
         </View>
 
@@ -157,22 +147,25 @@ export function HomeScreen({
           </View>
 
           <View style={styles.nearbyStack}>
-            <NearbyGameCard
-              actionLabel="Rate players"
-              actionTone="warning"
-              audience="Everyone"
-              distance="18.1 km"
-              level="A+"
-              location="Poleg Beach"
-              onPress={() => (nearbyLeagueLobby ? onOpenLobby(nearbyLeagueLobby) : onOpenGames())}
-              players="3 / 6"
-              spotsLeft="Rating open"
-              status="Full"
-              time="Sat 08:00"
-              title="League morning"
-              variant="morning"
-              useHomeTypography
-            />
+            {ratingLobbies.map((lobby) => (
+              <NearbyGameCard
+                actionLabel="Rate players"
+                actionTone="warning"
+                audience={getGenderAudience(lobby)}
+                distance={getDistanceLabel(lobby)}
+                key={lobby.id}
+                level={getRankLabel(lobby)}
+                location={lobby.location.name}
+                onPress={() => onOpenLobby(lobby)}
+                players={getPlayersLabel(lobby)}
+                spotsLeft="Completed"
+                status="Full"
+                time={formatLobbyStart(lobby.startsAt)}
+                title={lobby.title}
+                variant={isEveningLobbyStart(lobby.startsAt) ? 'sunset' : 'morning'}
+                useHomeTypography
+              />
+            ))}
           </View>
         </View>
 
@@ -182,7 +175,65 @@ export function HomeScreen({
 }
 
 function isLobbyDiscoverable(lobby: Lobby) {
-  return lobby.participants.length > 0 && (lobby.status === 'open' || lobby.status === 'full');
+  const status = getEffectiveLobbyStatus(lobby);
+
+  return lobby.participants.length > 0 && (status === 'open' || status === 'full');
+}
+
+function isCurrentPlayerJoined(lobby: Lobby, currentPlayerId: string) {
+  return lobby.participants.some((participant) => participant.playerId === currentPlayerId && isJoinedParticipant(participant));
+}
+
+function getActiveParticipants(lobby: Lobby) {
+  return lobby.participants.filter(isJoinedParticipant);
+}
+
+function getPlayersLabel(lobby: Lobby) {
+  return `${getActiveParticipants(lobby).length} / ${lobby.maxPlayers}`;
+}
+
+function getSpotsLabel(lobby: Lobby) {
+  const spotsLeft = Math.max(lobby.maxPlayers - getActiveParticipants(lobby).length, 0);
+
+  if (spotsLeft === 0) {
+    return 'Full';
+  }
+
+  return spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`;
+}
+
+function getDistanceLabel(lobby: Lobby) {
+  return lobby.location.distanceKm ? `${lobby.location.distanceKm.toFixed(1)} km` : 'New';
+}
+
+function getRankLabel(lobby: Lobby) {
+  if (lobby.rankRuleType === 'any') {
+    return 'Any';
+  }
+
+  if (lobby.rankRuleType === 'exact') {
+    return lobby.rankExact ?? 'Exact';
+  }
+
+  return `${lobby.rankMin}/${lobby.rankMax}`;
+}
+
+function getGenderAudience(lobby: Lobby) {
+  if (lobby.genderRule === 'male') {
+    return 'Men';
+  }
+
+  if (lobby.genderRule === 'female') {
+    return 'Women';
+  }
+
+  return 'Everyone';
+}
+
+function getLobbyStartTime(lobby: Lobby) {
+  const startsAtTime = new Date(lobby.startsAt).getTime();
+
+  return Number.isNaN(startsAtTime) ? Number.MAX_SAFE_INTEGER : startsAtTime;
 }
 
 const styles = StyleSheet.create({

@@ -1,5 +1,5 @@
 import { playerLevels, type ChatChannel, type JoinRequestReason, type Lobby, type LobbyParticipant, type Player } from '../../types';
-import { getMinutesBetweenLobbyStarts, getMinutesUntilLobbyStart } from './lobbyDateTime';
+import { getEffectiveLobbyStatus, getMinutesBetweenLobbyStarts, getMinutesUntilLobbyStart, hasLobbyStarted } from './lobbyDateTime';
 import { lobbyLabels } from './lobbyLabels';
 
 export const commitmentConflictWindowMinutes = 90;
@@ -514,5 +514,7 @@ function isParticipationCurrent(participant: LobbyParticipant) {
 }
 
 function isLobbyClosedForJoining(lobby: Lobby) {
-  return lobby.status === 'completed' || lobby.status === 'closed' || lobby.status === 'in_progress' || lobby.status === 'rating_open';
+  const status = getEffectiveLobbyStatus(lobby);
+
+  return status === 'completed' || status === 'closed' || status === 'in_progress' || status === 'rating_open' || hasLobbyStarted(lobby.startsAt);
 }

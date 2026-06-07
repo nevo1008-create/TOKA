@@ -13,7 +13,7 @@ import {
 } from '../notifications/notificationRepository';
 import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player } from '../../types';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
-import { getMinutesUntilLobbyStart } from './lobbyDateTime';
+import { applyLobbyLifecycle, getMinutesUntilLobbyStart } from './lobbyDateTime';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
@@ -54,7 +54,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
       setLobbies(nextLobbies);
     } catch (error) {
       console.warn('Falling back to mock lobby data after lobby load failed.', error);
-      setLobbies(mockLobbies);
+      setLobbies(mockLobbies.map((lobby) => applyLobbyLifecycle(lobby)));
     }
 
     try {

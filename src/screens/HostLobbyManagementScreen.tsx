@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { AppText } from '../components/AppText';
@@ -8,7 +8,15 @@ import { HomeHeader } from '../components/home/HomeHeader';
 import { formatRankRange, getRankIndex, rankOptions, RankBar, RankRangeBar } from '../components/RankRangeBar';
 import { israelPlaces } from '../data/israelPlaces';
 import type { LobbySettingsDraft } from '../features/lobbies/lobbyCreateTypes';
-import { formatLobbyStart, getLobbyLocalDateValue, getLobbyLocalTimeValue } from '../features/lobbies/lobbyDateTime';
+import {
+  buildFutureDateOptions,
+  buildLobbyStartsAt,
+  buildStartTimeOptions,
+  formatLobbyStart,
+  getLobbyLocalDateValue,
+  getLobbyLocalTimeValue,
+  isFutureLobbyStart,
+} from '../features/lobbies/lobbyDateTime';
 import { getJoinedParticipants } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { GenderRule, Lobby, LobbyVisibility, Player, PlayerLevel, RankRuleType } from '../types';
@@ -44,13 +52,11 @@ export function HostLobbyManagementScreen({
     israelPlaces.findIndex((place) => place.name === lobby.location.name && place.city === lobby.location.city),
     0,
   );
-  const dateOptions = useMemo(() => buildDateOptions(initialDate), [initialDate]);
-  const timeOptions = useMemo(() => buildTimeOptions(initialTime), [initialTime]);
-  const initialTimeIndex = Math.max(timeOptions.findIndex((option) => option.value === initialTime), 0);
+  const dateOptions = useMemo(() => buildFutureDateOptions({ includeDate: initialDate }), [initialDate]);
   const [title, setTitle] = useState(lobby.title);
   const [meetingPoint, setMeetingPoint] = useState(lobby.locationDescription ?? lobby.note.replace(/^Private game\.\s*/i, ''));
-  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [selectedTimeIndex, setSelectedTimeIndex] = useState(initialTimeIndex);
+  const [selectedDateValue, setSelectedDateValue] = useState(initialDate);
+  const [selectedTimeValue, setSelectedTimeValue] = useState(initialTime);
   const [selectedLocationIndex, setSelectedLocationIndex] = useState(initialLocationIndex);
   const [playerCounts, setPlayerCounts] = useState<number[]>(getInitialPlayerCounts(lobby));
   const [rankRuleType, setRankRuleType] = useState<RankRuleType>(lobby.rankRuleType);
@@ -62,15 +68,30 @@ export function HostLobbyManagementScreen({
   const [accessCode, setAccessCode] = useState(lobby.accessCode);
   const [activePicker, setActivePicker] = useState<PickerType | null>(null);
   const [isCloseConfirmed, setIsCloseConfirmed] = useState(false);
+  const timeOptions = useMemo(
+    () => buildStartTimeOptions({ includeTime: initialTime, matchDate: selectedDateValue }),
+    [initialTime, selectedDateValue],
+  );
   const joinedParticipants = getJoinedParticipants(lobby);
   const activePlayerCount = joinedParticipants.length;
-  const selectedDate = dateOptions[selectedDateIndex];
-  const selectedTime = timeOptions[selectedTimeIndex];
+  const selectedDate = dateOptions.find((option) => option.value === selectedDateValue) ?? dateOptions[0];
+  const selectedTime = timeOptions.find((option) => option.value === selectedTimeValue);
   const selectedLocation = israelPlaces[selectedLocationIndex] ?? israelPlaces[0];
   const maxPlayers = Math.max(...playerCounts);
   const isPlayerLimitValid = maxPlayers >= activePlayerCount;
   const isRankRangeValid = rankRuleType !== 'range' || getRankIndex(rankMin) <= getRankIndex(rankMax);
-  const canSave = title.trim().length > 2 && meetingPoint.trim().length > 4 && isPlayerLimitValid && isRankRangeValid && !isActionPending;
+  const isScheduleValid = Boolean(
+    selectedDateValue &&
+      selectedTimeValue &&
+      isFutureLobbyStart(selectedDateValue, selectedTimeValue),
+  );
+  const canSave = title.trim().length > 2 && meetingPoint.trim().length > 4 && isPlayerLimitValid && isRankRangeValid && isScheduleValid && !isActionPending;
+
+  useEffect(() => {
+    if (selectedTimeValue && !timeOptions.some((option) => option.value === selectedTimeValue)) {
+      setSelectedTimeValue('');
+    }
+  }, [selectedTimeValue, timeOptions]);
 
   function togglePlayerCount(count: number) {
     setPlayerCounts((current) => {
@@ -91,7 +112,7 @@ export function HostLobbyManagementScreen({
   }
 
   function saveSettings() {
-    if (!canSave) {
+    if (!canSave || !selectedDateValue || !selectedTimeValue) {
       return;
     }
 
@@ -100,6 +121,7 @@ export function HostLobbyManagementScreen({
       genderRule,
       locationCity: selectedLocation.city,
       locationName: selectedLocation.name,
+      matchDate: selectedDateValue,
       maxPlayers,
       meetingPoint: meetingPoint.trim(),
       playerCounts,
@@ -107,7 +129,8 @@ export function HostLobbyManagementScreen({
       rankMax: rankRuleType === 'range' ? rankMax : undefined,
       rankMin: rankRuleType === 'range' ? rankMin : undefined,
       rankRuleType,
-      startsAt: `${selectedDate.value}T${selectedTime.value}:00+03:00`,
+      startTime: selectedTimeValue,
+      startsAt: buildLobbyStartsAt(selectedDateValue, selectedTimeValue),
       title: title.trim(),
       visibility,
     });
@@ -190,9 +213,15 @@ export function HostLobbyManagementScreen({
               <InputShell icon="calendar-outline" onPress={() => setActivePicker('date')} value={selectedDate.label} />
             </Field>
             <Field label="Start time" style={styles.fieldInRow}>
-              <InputShell icon="time-outline" onPress={() => setActivePicker('time')} value={selectedTime.label} />
+              <InputShell icon="time-outline" onPress={() => setActivePicker('time')} value={selectedTime?.label ?? 'Choose time'} />
             </Field>
           </View>
+
+          {!isScheduleValid ? (
+            <AppText tone="danger" variant="metadata" weight="700">
+              Choose a future date and start time.
+            </AppText>
+          ) : null}
 
           <Field label="Location">
             <InputShell
@@ -312,10 +341,13 @@ export function HostLobbyManagementScreen({
       <OptionPickerSheet
         onClose={() => setActivePicker(null)}
         onSelect={(index) => {
+          const options = getPickerOptions(activePicker, dateOptions, timeOptions);
+          const selectedOption = options[index];
+
           if (activePicker === 'date') {
-            setSelectedDateIndex(index);
+            setSelectedDateValue(selectedOption?.value ?? selectedDateValue);
           } else if (activePicker === 'time') {
-            setSelectedTimeIndex(index);
+            setSelectedTimeValue(selectedOption?.value ?? selectedTimeValue);
           } else if (activePicker === 'location') {
             setSelectedLocationIndex(index);
           }
@@ -323,7 +355,7 @@ export function HostLobbyManagementScreen({
           setActivePicker(null);
         }}
         options={getPickerOptions(activePicker, dateOptions, timeOptions)}
-        selectedIndex={getPickerSelectedIndex(activePicker, selectedDateIndex, selectedTimeIndex, selectedLocationIndex)}
+        selectedIndex={getPickerSelectedIndex(activePicker, selectedDateValue, selectedTimeValue, selectedLocationIndex, dateOptions, timeOptions)}
         title={getPickerTitle(activePicker)}
         visible={Boolean(activePicker)}
       />
@@ -463,7 +495,7 @@ function OptionPickerSheet({
 }: {
   onClose: () => void;
   onSelect: (index: number) => void;
-  options: Array<{ description?: string; label: string }>;
+  options: Array<{ description?: string; label: string; value?: string }>;
   selectedIndex: number;
   title: string;
   visible: boolean;
@@ -563,45 +595,24 @@ function getGenderLabel(genderRule: GenderRule) {
   return 'Everyone';
 }
 
-function buildDateOptions(currentDate: string) {
-  const baseDate = new Date(`${currentDate}T12:00:00`);
-
-  return Array.from({ length: 7 }, (_item, index) => {
-    const date = new Date(baseDate);
-
-    date.setDate(baseDate.getDate() + index);
-
-    return {
-      label: date.toLocaleDateString([], { day: 'numeric', month: 'short', weekday: 'short' }),
-      value: date.toISOString().slice(0, 10),
-    };
-  });
-}
-
-function buildTimeOptions(currentTime: string) {
-  const baseTimes = ['07:00', '08:30', '16:30', '18:30', '20:00'];
-  const times = baseTimes.includes(currentTime) ? baseTimes : [currentTime, ...baseTimes];
-
-  return times.map((time) => ({ label: time, value: time }));
-}
-
 function getPickerOptions(
   picker: PickerType | null,
-  dateOptions: Array<{ label: string; value: string }>,
-  timeOptions: Array<{ label: string; value: string }>,
+  dateOptions: Array<{ description?: string; label: string; value: string }>,
+  timeOptions: Array<{ description?: string; label: string; value: string }>,
 ) {
   if (picker === 'date') {
-    return dateOptions.map((option) => ({ label: option.label }));
+    return dateOptions.map((option) => ({ description: option.description, label: option.label, value: option.value }));
   }
 
   if (picker === 'time') {
-    return timeOptions.map((option) => ({ label: option.label }));
+    return timeOptions.map((option) => ({ description: option.description, label: option.label, value: option.value }));
   }
 
   if (picker === 'location') {
-    return israelPlaces.map((option) => ({
+    return israelPlaces.map((option, index) => ({
       description: option.city,
       label: option.name,
+      value: String(index),
     }));
   }
 
@@ -610,16 +621,18 @@ function getPickerOptions(
 
 function getPickerSelectedIndex(
   picker: PickerType | null,
-  selectedDateIndex: number,
-  selectedTimeIndex: number,
+  selectedDateValue: string,
+  selectedTimeValue: string,
   selectedLocationIndex: number,
+  dateOptions: Array<{ value: string }>,
+  timeOptions: Array<{ value: string }>,
 ) {
   if (picker === 'date') {
-    return selectedDateIndex;
+    return dateOptions.findIndex((option) => option.value === selectedDateValue);
   }
 
   if (picker === 'time') {
-    return selectedTimeIndex;
+    return timeOptions.findIndex((option) => option.value === selectedTimeValue);
   }
 
   if (picker === 'location') {

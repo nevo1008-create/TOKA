@@ -2,6 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { formatLobbyStart, getMinutesUntilLobbyStart } from '../../features/lobbies/lobbyDateTime';
+import { isJoinedParticipant } from '../../features/lobbies/lobbyRules';
 import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
 import type { Lobby } from '../../types';
 import { AppText } from '../AppText';
@@ -13,7 +15,11 @@ type FeaturedGameCardProps = {
   onOpenRoom: () => void;
 };
 
-export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
+export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
+  const activeParticipants = lobby?.participants.filter(isJoinedParticipant) ?? [];
+  const startLabel = lobby ? formatLobbyStart(lobby.startsAt) : 'Choose a game';
+  const [dateLabel, timeLabel] = splitStartLabel(startLabel);
+
   return (
     <Pressable accessibilityRole="button" onPress={onOpenRoom} style={styles.card}>
       <BeachGameVisual variant="hero" />
@@ -28,43 +34,43 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
         <View style={styles.topPillsRow}>
           <View style={styles.adminPill}>
             <AppText style={styles.chipText} tone="accent" variant="chip" weight="700">
-              Joined
+              {lobby ? 'Joined' : 'Ready'}
             </AppText>
           </View>
           <View style={styles.countdownPill}>
             <Ionicons color={colors.accentGoldDark} name="time-outline" size={15} />
             <AppText style={[styles.countdownText, styles.chipText]} variant="chip" weight="700">
-              In 3h 20m
+              {lobby ? formatCountdown(lobby.startsAt) : 'Find games'}
             </AppText>
           </View>
         </View>
 
         <View style={styles.titleBlock}>
           <AppText style={styles.title} variant="heroTitle" weight="900">
-            Tonight at Gordon
+            {lobby?.title ?? 'No upcoming game'}
           </AppText>
           <View style={styles.locationRow}>
             <Ionicons color={colors.accentSea} name="location" size={20} />
             <AppText style={styles.locationText} tone="primary" variant="uiBody" weight="600">
-              Gordon Beach
+              {lobby?.location.name ?? 'Games'}
             </AppText>
           </View>
         </View>
 
         <View style={styles.infoRow}>
-          <InfoCell icon="calendar-outline" label="Today" value="20:30" />
-          <InfoCell icon="cellular" iconColor={colors.accentLime} label="Rank" value="B/C+" />
-          <InfoCell icon="people-outline" label="Joined" value="5/8" />
+          <InfoCell icon="calendar-outline" label={dateLabel} value={timeLabel} />
+          <InfoCell icon="cellular" iconColor={colors.accentLime} label="Rank" value={lobby ? getRankLabel(lobby) : '-'} />
+          <InfoCell icon="people-outline" label="Joined" value={lobby ? `${activeParticipants.length}/${lobby.maxPlayers}` : '-'} />
         </View>
 
         <View style={styles.genderPill}>
             <Ionicons color={colors.muted} name="people-circle-outline" size={14} />
             <AppText style={styles.chipText} tone="muted" variant="chip" weight="700">
-            Everyone
+            {lobby ? getGenderAudience(lobby) : 'Everyone'}
           </AppText>
         </View>
 
-        <AvatarStack initials={['NV', 'OM', 'MY', '+2']} />
+        <AvatarStack initials={activeParticipants.map((participant) => participant.playerId.slice(0, 2).toUpperCase())} />
 
         <View style={styles.actions}>
           <Pressable onPress={onOpenRoom} style={styles.openButton}>
@@ -76,6 +82,49 @@ export function FeaturedGameCard({ onOpenRoom }: FeaturedGameCardProps) {
       </View>
     </Pressable>
   );
+}
+
+function splitStartLabel(label: string) {
+  const [dateLabel, timeLabel] = label.split(',').map((part) => part.trim());
+
+  return [dateLabel ?? 'Date', timeLabel ?? label] as const;
+}
+
+function formatCountdown(startsAt: string) {
+  const minutes = Math.max(Math.ceil(getMinutesUntilLobbyStart(startsAt)), 0);
+
+  if (minutes < 60) {
+    return `In ${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return remainingMinutes > 0 ? `In ${hours}h ${remainingMinutes}m` : `In ${hours}h`;
+}
+
+function getRankLabel(lobby: Lobby) {
+  if (lobby.rankRuleType === 'any') {
+    return 'Any';
+  }
+
+  if (lobby.rankRuleType === 'exact') {
+    return lobby.rankExact ?? 'Exact';
+  }
+
+  return `${lobby.rankMin}/${lobby.rankMax}`;
+}
+
+function getGenderAudience(lobby: Lobby) {
+  if (lobby.genderRule === 'male') {
+    return 'Men';
+  }
+
+  if (lobby.genderRule === 'female') {
+    return 'Women';
+  }
+
+  return 'Everyone';
 }
 
 function InfoCell({

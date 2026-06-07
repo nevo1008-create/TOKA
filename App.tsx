@@ -31,6 +31,7 @@ import {
 import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
+import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -386,6 +387,11 @@ export default function App() {
   }
 
   function openHostManagement() {
+    if (selectedLobby && hasLobbyStarted(selectedLobby.startsAt)) {
+      Alert.alert('Game started', 'Host tools close when the match starts.');
+      return;
+    }
+
     setIsLobbyChatOpen(false);
     setIsHostManagementOpen(true);
   }
@@ -1335,7 +1341,7 @@ export default function App() {
                   )}
                 </ScrollView>
                 <BottomNav activeTab={activeTab} onChange={handleTabChange} />
-                {activeTab === 'games' && selectedLobby && visibleSelectedLobby && !isHostManagementOpen && selectedLobby.status !== 'rating_open' ? (
+                {activeTab === 'games' && selectedLobby && visibleSelectedLobby && !isHostManagementOpen && !hasLobbyStarted(selectedLobby.startsAt) ? (
                   <>
                     <LobbyFloatingChatButton lobby={visibleSelectedLobby} onPress={() => openLobbyChat(selectedLobby)} />
                     <LobbyChatSheet

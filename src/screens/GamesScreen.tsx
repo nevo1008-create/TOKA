@@ -10,7 +10,7 @@ import { LobbyImageBadge } from '../components/LobbyImageBadge';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
 import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlaces';
-import { formatLobbyStart, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, getEffectiveLobbyStatus, hasLobbyStarted, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
 import { getLobbyMembershipBadgeLabel, getLobbyMembershipStatusLabel, isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -80,84 +80,6 @@ const areaFilterLocations: Location[] = [
 
 const gameSections = ['Find Games', 'My Games'] as const;
 type GameSection = (typeof gameSections)[number];
-
-const gameCards: GameListItem[] = [
-  {
-    audience: 'Everyone',
-    avatars: ['NV', 'OM', 'MY'],
-    badgeLabel: 'Host',
-    badgeTone: 'lime',
-    distance: '2.4 km',
-    gradient: ['#FFF2BD', '#8EDBD2', '#24C45A'],
-    level: 'B/C+',
-    lobbyId: 'l1',
-    lobbyIndex: 0,
-    location: 'Gordon Beach, Tel Aviv',
-    players: '3 / 4 players',
-    spotsLeft: '1 spot left',
-    startsAt: '2026-06-05T16:30:00+03:00',
-    title: 'Friday at Gordon',
-  },
-  {
-    audience: 'Everyone',
-    avatars: ['DN', 'NV', 'OM'],
-    distance: '18.1 km',
-    gradient: ['#F8F1E3', '#F6C945', '#8FCFBC'],
-    level: 'A+',
-    lobbyId: 'l2',
-    lobbyIndex: 1,
-    location: 'Poleg Beach, Netanya',
-    players: '3 / 6 players',
-    spotsLeft: '3 spots left',
-    startsAt: '2026-06-06T08:00:00+03:00',
-    title: 'League morning',
-  },
-  {
-    audience: 'Women',
-    avatars: ['MY'],
-    distance: '49.5 km',
-    gradient: ['#DDF5F1', '#1BB7A8', '#F6C945'],
-    level: 'C/D',
-    lobbyId: 'l3',
-    lobbyIndex: 2,
-    location: 'Aqueduct Beach, Caesarea',
-    metaTag: 'Women',
-    players: '1 / 6 players',
-    spotsLeft: '5 spots left',
-    startsAt: '2026-06-07T19:00:00+03:00',
-    title: 'Women evening',
-  },
-  {
-    audience: 'Everyone',
-    avatars: ['NV', 'OM', 'LB', '+1'],
-    badgeLabel: 'Joined',
-    badgeTone: 'lime',
-    distance: '3.1 km',
-    gradient: ['#EAF5EC', '#24C45A', '#1BB7A8'],
-    level: 'C/B+',
-    lobbyId: 'l4',
-    lobbyIndex: 3,
-    location: 'Hilton Beach, Tel Aviv',
-    players: '3 / 6 players',
-    spotsLeft: '3 spots left',
-    startsAt: '2026-06-07T07:30:00+03:00',
-    title: 'Sunrise challenge',
-  },
-  {
-    audience: 'Everyone',
-    avatars: ['OM', 'MY', 'ES', '+2'],
-    distance: '12.7 km',
-    gradient: ['#FFF9EC', '#F6C945', '#24C45A'],
-    level: 'B+',
-    lobbyId: 'l5',
-    lobbyIndex: 4,
-    location: 'Herzliya Beach, Herzliya',
-    players: '4 / 8 players',
-    spotsLeft: 'Finished',
-    startsAt: '2026-06-08T18:00:00+03:00',
-    title: 'Monday night',
-  },
-];
 
 export function getLobbyImageUrl(index: number) {
   return `gradient-placeholder-${index}`;
@@ -361,6 +283,7 @@ function SearchGamesView({
           (left, right) =>
             getFindGamesSortPriority(left.lobby, currentPlayer.id) -
               getFindGamesSortPriority(right.lobby, currentPlayer.id) ||
+            getLobbyStartTime(left.lobby) - getLobbyStartTime(right.lobby) ||
             left.originalIndex - right.originalIndex,
         )
         .map(({ lobby, originalIndex }) => getGameCardFromLobby(lobby, originalIndex, currentPlayer.id, players)),
@@ -533,7 +456,9 @@ function SearchGamesView({
 }
 
 function isLobbyDiscoverable(lobby: Lobby) {
-  return lobby.participants.length > 0 && (lobby.status === 'open' || lobby.status === 'full');
+  const status = getEffectiveLobbyStatus(lobby);
+
+  return lobby.participants.length > 0 && !hasLobbyStarted(lobby.startsAt) && (status === 'open' || status === 'full');
 }
 
 function getFindGamesSortPriority(lobby: Lobby, currentPlayerId: string) {
@@ -783,7 +708,8 @@ function MyGamesView({
 }) {
   const uniqueLobbies = getUniqueLobbies(lobbies);
   const activeGames = uniqueLobbies
-    .filter((lobby) => isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayer.id) && (lobby.status === 'open' || lobby.status === 'full' || lobby.status === 'in_progress'))
+    .filter((lobby) => isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayer.id) && isLobbyDiscoverable(lobby))
+    .sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right))
     .map((lobby, index) => {
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
       const pendingRequest = getCurrentPlayerPendingRequest(lobby, currentPlayer.id);
@@ -803,12 +729,13 @@ function MyGamesView({
       };
     });
   const finishedGames = uniqueLobbies
-    .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (lobby.status === 'rating_open' || lobby.status === 'completed' || lobby.status === 'closed'))
+    .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (isLobbyReadyForRatings(lobby) || lobby.status === 'closed'))
+    .sort((left, right) => getLobbyStartTime(right) - getLobbyStartTime(left))
     .map((lobby, index) => ({
       ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
-      actionLabel: lobby.status === 'rating_open' ? 'Rate players' : 'View recap',
-      statusLabel: lobby.status === 'rating_open' ? 'Rating open' : 'Finished',
-      statusTone: lobby.status === 'rating_open' ? 'gold' as const : 'muted' as const,
+      actionLabel: isLobbyReadyForRatings(lobby) ? 'Rate players' : 'View recap',
+      statusLabel: isLobbyReadyForRatings(lobby) ? 'Completed' : 'Finished',
+      statusTone: isLobbyReadyForRatings(lobby) ? 'gold' as const : 'muted' as const,
     }));
 
   return (
@@ -971,6 +898,12 @@ function getGameLobby(lobbies: Lobby[], game: GameListItem) {
   return game.lobbyId
     ? lobbies.find((lobby) => lobby.id === game.lobbyId)
     : lobbies[game.lobbyIndex % Math.max(lobbies.length, 1)];
+}
+
+function getLobbyStartTime(lobby: Lobby) {
+  const startsAtTime = new Date(lobby.startsAt).getTime();
+
+  return Number.isNaN(startsAtTime) ? Number.MAX_SAFE_INTEGER : startsAtTime;
 }
 
 function getUniqueLobbies(lobbies: Lobby[]) {

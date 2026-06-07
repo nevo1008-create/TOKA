@@ -7,7 +7,7 @@ import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
-import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, hasLobbyStarted } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby, LobbyParticipant, Player } from '../types';
@@ -634,7 +634,7 @@ function getInvitePlayerAction(
 }
 
 function isLobbyDisabled(lobby: Lobby) {
-  return lobby.status === 'completed' || lobby.status === 'closed';
+  return hasLobbyStarted(lobby.startsAt) || lobby.status === 'completed' || lobby.status === 'closed';
 }
 
 function isActiveParticipant(participant: LobbyParticipant) {

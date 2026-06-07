@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase';
 import type { DbLobbyMembership, DbLobbyWithRelations } from '../../lib/database.types';
 import type { Lobby, Player } from '../../types';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
+import { applyLobbyLifecycle, hasLobbyStarted, isFutureStartsAt } from './lobbyDateTime';
 import {
   getCancellationStatus,
   getJoinGameDecision,
@@ -39,10 +40,16 @@ export async function listLobbies(): Promise<Lobby[]> {
     });
   }
 
-  return activeRows.map(mapDbLobbyToLobby);
+  return activeRows.map((row) => applyLobbyLifecycle(mapDbLobbyToLobby(row)));
 }
 
 export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player): Promise<Lobby> {
+  const scheduleCheck = assertFutureSchedule(draft.startsAt);
+
+  if (!scheduleCheck.success) {
+    throw new Error(scheduleCheck.messages[0]);
+  }
+
   const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
   const { data: location, error: locationError } = await supabase
     .from('locations')
@@ -128,6 +135,12 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
 }
 
 export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   const decision = getJoinGameDecision(player, lobby, { accessCode, allLobbies });
 
   if (!decision.canJoin) {
@@ -146,6 +159,12 @@ export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[]
 }
 
 export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   const decision = getJoinWaitlistDecision(player, lobby, { accessCode, allLobbies });
 
   if (!decision.canJoinWaitlist) {
@@ -164,6 +183,12 @@ export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lob
 }
 
 export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   if (!lobby.exceptionRequestsEnabled) {
     return {
       messages: ['This game does not accept exception requests.'],
@@ -198,6 +223,12 @@ export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
 }
 
 export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('lobby_memberships')
@@ -246,6 +277,12 @@ export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostP
 }
 
 export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   const { data, error } = await supabase
     .from('lobby_memberships')
     .update({
@@ -289,6 +326,12 @@ export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayer
 }
 
 export async function cancelJoinRequest(lobby: Lobby, player: Player) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   const pendingRequest = lobby.joinRequests.find(
     (request) => request.playerId === player.id && request.status === 'pending',
   );
@@ -328,6 +371,18 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
 
   if (!hostCheck.success) {
     return hostCheck;
+  }
+
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
+  const scheduleCheck = assertFutureSchedule(draft.startsAt);
+
+  if (!scheduleCheck.success) {
+    return scheduleCheck;
   }
 
   const activePlayerCount = getJoinedParticipants(lobby).length;
@@ -388,6 +443,12 @@ export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Playe
 
   if (!hostCheck.success) {
     return hostCheck;
+  }
+
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
   }
 
   const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
@@ -474,6 +535,12 @@ export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPla
     return hostCheck;
   }
 
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   if (player.id === hostPlayerId) {
     return {
       messages: ['Hosts cannot kick themselves. Use Leave game or Close lobby.'],
@@ -518,6 +585,12 @@ export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
     return hostCheck;
   }
 
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   await notifyCurrentLobbyMembers(lobby, hostPlayerId, {
     body: `${lobby.title} was closed by the host.`,
     title: 'Lobby closed',
@@ -553,6 +626,12 @@ export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
 }
 
 export async function leaveLobby(lobby: Lobby, player: Player) {
+  const timingCheck = assertLobbyBeforeStart(lobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
   const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
 
   if (!participant) {
@@ -599,6 +678,34 @@ function assertLobbyHost(lobby: Lobby, hostPlayerId: string) {
   if (!isHost) {
     return {
       messages: ['Only the host can manage this lobby.'],
+      success: false,
+    };
+  }
+
+  return {
+    messages: [],
+    success: true,
+  };
+}
+
+function assertFutureSchedule(startsAt: string) {
+  if (!isFutureStartsAt(startsAt)) {
+    return {
+      messages: ['Choose a future match date and start time.'],
+      success: false,
+    };
+  }
+
+  return {
+    messages: [],
+    success: true,
+  };
+}
+
+function assertLobbyBeforeStart(lobby: Lobby) {
+  if (hasLobbyStarted(lobby.startsAt)) {
+    return {
+      messages: ['This game has already started, so lobby actions are closed.'],
       success: false,
     };
   }
