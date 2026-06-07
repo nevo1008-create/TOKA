@@ -12,9 +12,10 @@ import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../com
 import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlaces';
 import { formatLobbyStart, getEffectiveLobbyStatus, hasLobbyStarted, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
 import { getLobbyMembershipBadgeLabel, getLobbyMembershipStatusLabel, isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
-import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
+import { getJoinedParticipants, isJoinedParticipant } from '../features/lobbies/lobbyRules';
+import { getRemainingRatingTargetIds, shouldShowRatingLobby } from '../features/ratings/ratingRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { Lobby, Location, Player, PlayerLevel } from '../types';
+import type { Lobby, Location, Player, PlayerLevel, RatingTask } from '../types';
 
 type GamesScreenProps = {
   currentPlayer: Player;
@@ -27,6 +28,7 @@ type GamesScreenProps = {
   hasPrivateAccess: (lobbyId: string) => boolean;
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
+  ratingTasks: RatingTask[];
   selectedFilter: string;
   setSelectedFilter: (filter: string) => void;
 };
@@ -49,6 +51,7 @@ type GameListItem = {
   lobbyIndex: number;
   location: string;
   metaTag?: string;
+  actionDisabled?: boolean;
   players: string;
   secondarySpotsLeft?: string;
   secondarySpotsTone?: 'green' | 'red' | 'yellow';
@@ -95,6 +98,7 @@ export function GamesScreen({
   onOpenNotifications,
   onOpenLobby,
   players,
+  ratingTasks,
   selectedFilter,
   setSelectedFilter,
 }: GamesScreenProps) {
@@ -158,7 +162,13 @@ export function GamesScreen({
             setSelectedFilter={setSelectedFilter}
           />
         ) : (
-          <MyGamesView currentPlayer={currentPlayer} lobbies={lobbies} onOpenLobby={onOpenLobby} players={players} />
+          <MyGamesView
+            currentPlayer={currentPlayer}
+            lobbies={lobbies}
+            onOpenLobby={onOpenLobby}
+            players={players}
+            ratingTasks={ratingTasks}
+          />
         )}
       </View>
     </View>
@@ -700,11 +710,13 @@ function MyGamesView({
   lobbies,
   onOpenLobby,
   players,
+  ratingTasks,
 }: {
   currentPlayer: Player;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
   players: Player[];
+  ratingTasks: RatingTask[];
 }) {
   const uniqueLobbies = getUniqueLobbies(lobbies);
   const activeGames = uniqueLobbies
@@ -729,14 +741,19 @@ function MyGamesView({
       };
     });
   const finishedGames = uniqueLobbies
-    .filter((lobby) => isCurrentPlayerInLobby(lobby, currentPlayer.id) && (isLobbyReadyForRatings(lobby) || lobby.status === 'closed'))
+    .filter((lobby) => isFinishedLobbyVisibleToCurrentPlayer(lobby, currentPlayer.id))
     .sort((left, right) => getLobbyStartTime(right) - getLobbyStartTime(left))
-    .map((lobby, index) => ({
-      ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
-      actionLabel: isLobbyReadyForRatings(lobby) ? 'Rate players' : 'View recap',
-      statusLabel: isLobbyReadyForRatings(lobby) ? 'Completed' : 'Finished',
-      statusTone: isLobbyReadyForRatings(lobby) ? 'gold' as const : 'muted' as const,
-    }));
+    .map((lobby, index) => {
+      const ratingState = getFinishedGameRatingState(lobby, currentPlayer.id, ratingTasks);
+
+      return {
+        ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
+        actionDisabled: ratingState.actionDisabled,
+        actionLabel: ratingState.actionLabel,
+        statusLabel: ratingState.statusLabel,
+        statusTone: ratingState.statusTone,
+      };
+    });
 
   return (
     <View style={styles.myGamesContent}>
@@ -767,7 +784,7 @@ function GameHistorySection({
   title,
 }: {
   countLabel: string;
-  games: Array<GameListItem & { actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' }>;
+  games: Array<GameListItem & { actionDisabled?: boolean; actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' }>;
   lobbies: Lobby[];
   onOpenLobby: (lobby: Lobby) => void;
   title: string;
@@ -1549,7 +1566,7 @@ function MyGameCard({
   game,
   onPress,
 }: {
-  game: GameListItem & { actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
+  game: GameListItem & { actionDisabled?: boolean; actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
   onPress: () => void;
 }) {
   const isFinished = game.statusTone === 'muted';
@@ -1557,7 +1574,8 @@ function MyGameCard({
   return (
     <NearbyGameCard
       actionLabel={isFinished ? 'Finished' : game.actionLabel}
-      actionTone={isFinished ? 'muted' : game.actionLabel === 'Rate players' ? 'warning' : 'accent'}
+      actionDisabled={game.actionDisabled}
+      actionTone={isFinished || game.actionDisabled ? 'muted' : game.actionLabel === 'Rate players' ? 'warning' : 'accent'}
       audience={game.audience}
       distance={game.distance}
       level={game.level}
@@ -1619,6 +1637,42 @@ function getCurrentPlayerAnyParticipant(lobby: Lobby, currentPlayerId: string) {
 
 function isCurrentPlayerInLobby(lobby: Lobby, currentPlayerId: string) {
   return Boolean(getCurrentPlayerAnyParticipant(lobby, currentPlayerId));
+}
+
+function isCurrentPlayerFinalParticipant(lobby: Lobby, currentPlayerId: string) {
+  return getJoinedParticipants(lobby).some((participant) => participant.playerId === currentPlayerId);
+}
+
+function isFinishedLobbyVisibleToCurrentPlayer(lobby: Lobby, currentPlayerId: string) {
+  if (isLobbyReadyForRatings(lobby)) {
+    return shouldShowRatingLobby(lobby, currentPlayerId);
+  }
+
+  return (
+    lobby.status === 'closed' &&
+    isCurrentPlayerFinalParticipant(lobby, currentPlayerId)
+  );
+}
+
+function getFinishedGameRatingState(lobby: Lobby, currentPlayerId: string, ratingTasks: RatingTask[]) {
+  if (!isLobbyReadyForRatings(lobby)) {
+    return {
+      actionDisabled: true,
+      actionLabel: 'Finished',
+      statusLabel: 'Finished',
+      statusTone: 'muted' as const,
+    };
+  }
+
+  const remainingRatings = getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayerId).length;
+  const hasRatedEveryone = remainingRatings === 0;
+
+  return {
+    actionDisabled: hasRatedEveryone,
+    actionLabel: hasRatedEveryone ? 'Finished' : 'Rate players',
+    statusLabel: hasRatedEveryone ? 'Finished' : 'Rating is open',
+    statusTone: hasRatedEveryone ? 'lime' as const : 'gold' as const,
+  };
 }
 
 function isCurrentPlayerActiveOrPendingInLobby(lobby: Lobby, currentPlayerId: string) {

@@ -24,8 +24,9 @@ import {
   getWaitlistParticipants,
   isJoinedParticipant,
 } from '../features/lobbies/lobbyRules';
+import { canPlayerRateLobby, canRatePlayer, getRemainingRatingTargetIds } from '../features/ratings/ratingRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player } from '../types';
+import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player, RatingTask } from '../types';
 
 type LobbyDetailsScreenProps = {
   allLobbies: Lobby[];
@@ -49,8 +50,10 @@ type LobbyDetailsScreenProps = {
   onOpenNotifications: () => void;
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
+  onSubmitPlayerRating: (rating: { behaviorRating: number; rank: Player['level']; targetPlayerId: string }) => boolean | Promise<boolean>;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
+  ratingTasks: RatingTask[];
   isActionPending?: boolean;
 };
 
@@ -97,8 +100,10 @@ export function LobbyDetailsScreen({
   onOpenNotifications,
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
+  onSubmitPlayerRating,
   onViewPlayerProfile,
   players,
+  ratingTasks,
   isActionPending = false,
 }: LobbyDetailsScreenProps) {
   const admin = players.find((player) => player.id === lobby.adminId);
@@ -124,10 +129,14 @@ export function LobbyDetailsScreen({
   const isCurrentUserAdmin = isLobbyHost(lobby, currentPlayer.id, currentParticipant);
   const isActionLockedByTime = hasLobbyStarted(lobby.startsAt);
   const isRatingOpen = isLobbyReadyForRatings(lobby);
+  const canCurrentPlayerRateLobby = canPlayerRateLobby(lobby, currentPlayer.id);
+  const hasRatedEveryPlayer = canCurrentPlayerRateLobby && getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayer.id).length === 0;
   const primaryAction = getLobbyPrimaryAction({
     allLobbies,
+    canCurrentPlayerRateLobby,
     currentParticipant,
     currentPlayer,
+    hasRatedEveryPlayer,
     hasPrivateAccess,
     lobby,
     onJoinGame,
@@ -294,9 +303,11 @@ export function LobbyDetailsScreen({
           onAction={playerSectionAction?.onPress}
           emptyLabel="No players yet."
           currentPlayerId={currentPlayer.id}
+          lobby={lobby}
           participants={activeParticipants}
           players={players}
-          showRatingAction={isRatingOpen}
+          ratingTasks={ratingTasks}
+          showRatingAction={canCurrentPlayerRateLobby}
           title="Players"
         />
 
@@ -309,8 +320,10 @@ export function LobbyDetailsScreen({
           onOpenProfile={openProfile}
           emptyLabel="Waitlist is empty."
           currentPlayerId={currentPlayer.id}
+          lobby={lobby}
           participants={waitlistedParticipants}
           players={players}
+          ratingTasks={ratingTasks}
           title="Waitlist"
         />
 
@@ -383,6 +396,11 @@ export function LobbyDetailsScreen({
           setLocalFriendIds((current) => (current.includes(player.id) ? current : [...current, player.id]));
         }}
         onClose={() => setRatingWizardPlayer(null)}
+        onSubmitRating={({ behaviorRating, rank, targetPlayer }) => onSubmitPlayerRating({
+          behaviorRating,
+          rank,
+          targetPlayerId: targetPlayer.id,
+        })}
         onViewProfile={onViewPlayerProfile}
         player={ratingWizardPlayer}
         visible={Boolean(ratingWizardPlayer)}
@@ -661,8 +679,10 @@ function ParticipantsSection({
   onOpenActions,
   onOpenProfile,
   onRatePlayer,
+  lobby,
   participants,
   players,
+  ratingTasks,
   showRatingAction = false,
   title,
 }: {
@@ -675,8 +695,10 @@ function ParticipantsSection({
   onOpenActions: (player: Player) => void;
   onOpenProfile: (player: Player, participant: LobbyParticipant) => void;
   onRatePlayer?: (player: Player) => void;
+  lobby: Lobby;
   participants: LobbyParticipant[];
   players: Player[];
+  ratingTasks: RatingTask[];
   showRatingAction?: boolean;
   title: string;
 }) {
@@ -712,8 +734,11 @@ function ParticipantsSection({
                 onMore={() => onOpenActions(player)}
                 onPressProfile={() => onOpenProfile(player, participant)}
                 onRatePlayer={() => onRatePlayer?.(player)}
+                currentPlayerId={currentPlayerId}
+                lobby={lobby}
                 participant={participant}
                 player={player}
+                ratingTasks={ratingTasks}
                 rating={getPlayerRating(player, currentPlayerId)}
                 showRatingAction={showRatingAction}
               />
@@ -736,19 +761,28 @@ function ParticipantRow({
   onMore,
   onPressProfile,
   onRatePlayer,
+  currentPlayerId,
+  lobby,
   participant,
   player,
+  ratingTasks,
   rating,
   showRatingAction,
 }: {
   onMore: () => void;
   onPressProfile: () => void;
   onRatePlayer?: () => void;
+  currentPlayerId: string;
+  lobby: Lobby;
   participant: LobbyParticipant;
   player: Player;
+  ratingTasks: RatingTask[];
   rating: string;
   showRatingAction?: boolean;
 }) {
+  const isRatingTarget = showRatingAction && player.id !== currentPlayerId;
+  const canRateTarget = isRatingTarget && canRatePlayer(ratingTasks, lobby, currentPlayerId, player.id);
+
   return (
     <PlayerRow
       context={participant.role}
@@ -759,11 +793,13 @@ function ParticipantRow({
       onMore={showRatingAction ? undefined : onMore}
       onPressProfile={onPressProfile}
       primaryAction={
-        showRatingAction
+        isRatingTarget
           ? {
-              label: 'Rate player',
-              onPress: onRatePlayer,
-              variant: 'warning',
+              disabled: !canRateTarget,
+              icon: canRateTarget ? undefined : 'checkmark-circle',
+              label: canRateTarget ? 'Rate player' : 'Rated',
+              onPress: canRateTarget ? onRatePlayer : undefined,
+              variant: canRateTarget ? 'warning' : 'muted',
             }
           : undefined
       }
@@ -1287,8 +1323,10 @@ function getCompactRankLabel(lobby: Lobby) {
 
 function getLobbyPrimaryAction({
   allLobbies,
+  canCurrentPlayerRateLobby,
   currentParticipant,
   currentPlayer,
+  hasRatedEveryPlayer,
   hasPrivateAccess,
   lobby,
   onJoinGame,
@@ -1298,8 +1336,10 @@ function getLobbyPrimaryAction({
   onRequestWaitlistApproval,
 }: {
   allLobbies: Lobby[];
+  canCurrentPlayerRateLobby: boolean;
   currentParticipant?: LobbyParticipant;
   currentPlayer: Player;
+  hasRatedEveryPlayer: boolean;
   hasPrivateAccess: boolean;
   lobby: Lobby;
   onJoinGame: () => void;
@@ -1309,6 +1349,17 @@ function getLobbyPrimaryAction({
   onRequestWaitlistApproval: () => void;
 }): LobbyPrimaryAction {
   if (isLobbyReadyForRatings(lobby)) {
+    if (!canCurrentPlayerRateLobby || hasRatedEveryPlayer) {
+      return {
+        disabled: true,
+        icon: 'checkmark',
+        iconColor: colors.muted,
+        label: 'Finished',
+        textTone: 'muted',
+        tone: 'muted',
+      };
+    }
+
     return {
       disabled: false,
       icon: 'star-outline',

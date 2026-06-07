@@ -131,6 +131,16 @@ export type DbNotification = {
   created_at: string;
 };
 
+export type DbPlayerRating = {
+  id: string;
+  lobby_id: string;
+  rater_player_id: string;
+  rated_player_id: string;
+  rank_vote: PlayerLevel;
+  behavior_rating: number;
+  created_at: string;
+};
+
 export type DbLobbyWithRelations = DbLobby & {
   locations: DbLocation | null;
   lobby_memberships: DbLobbyMembership[];
@@ -168,6 +178,11 @@ export type Database = {
         Row: DbNotification;
         Insert: Partial<DbNotification> & Pick<DbNotification, 'type' | 'title' | 'body'>;
         Update: Partial<DbNotification>;
+      };
+      player_ratings: {
+        Row: DbPlayerRating;
+        Insert: Partial<DbPlayerRating> & Pick<DbPlayerRating, 'lobby_id' | 'rater_player_id' | 'rated_player_id' | 'rank_vote' | 'behavior_rating'>;
+        Update: Partial<DbPlayerRating>;
       };
     };
     Views: Record<string, never>;

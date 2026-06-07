@@ -80,7 +80,7 @@ export default function App() {
   const [resetPasswordNotice, setResetPasswordNotice] = useState<string | null>(null);
   const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
-  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite);
+  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, { enabled: authFlow === 'app' });
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isAddFriendsOpen, setIsAddFriendsOpen] = useState(false);
@@ -1237,6 +1237,7 @@ export default function App() {
                       onOpenGames={openGamesSearch}
                       onOpenLobby={openLobbyDetails}
                       onOpenNotifications={openNotifications}
+                      ratingTasks={lobbyStore.ratingTasks}
                     />
                   )}
                   {activeTab === 'games' && (
@@ -1286,8 +1287,14 @@ export default function App() {
                           onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
+                          onSubmitPlayerRating={async ({ behaviorRating, rank, targetPlayerId }) => {
+                            const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank });
+
+                            return result.success;
+                          }}
                           onViewPlayerProfile={openViewedProfile}
                           players={playersForInvite}
+                          ratingTasks={lobbyStore.ratingTasks}
                         />
                       )
                     ) : (
@@ -1302,6 +1309,7 @@ export default function App() {
                         onOpenNotifications={openNotifications}
                         onOpenLobby={openLobbyDetails}
                         players={playersForInvite}
+                        ratingTasks={lobbyStore.ratingTasks}
                         selectedFilter={selectedFilter}
                         setSelectedFilter={setSelectedFilter}
                       />

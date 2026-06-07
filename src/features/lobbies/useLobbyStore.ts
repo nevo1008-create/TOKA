@@ -4,6 +4,7 @@ import {
   chatMessages as mockChatMessages,
   lobbies as mockLobbies,
   notifications as mockNotifications,
+  ratingTasks as mockRatingTasks,
 } from '../../data/mock';
 import { listLobbyMessages, sendLobbyMessage as persistLobbyMessage } from '../chat/chatRepository';
 import {
@@ -11,7 +12,12 @@ import {
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
 } from '../notifications/notificationRepository';
-import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player } from '../../types';
+import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player, RatingTask } from '../../types';
+import {
+  listSubmittedRatingTasks,
+  submitPlayerRating as persistSubmitPlayerRating,
+} from '../ratings/ratingRepository';
+import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle, getMinutesUntilLobbyStart } from './lobbyDateTime';
 import {
@@ -41,20 +47,38 @@ export type LobbyStoreActionResult = {
   success: boolean;
 };
 
-export function useLobbyStore(currentPlayer: Player, players: Player[]) {
+type LobbyStoreOptions = {
+  enabled?: boolean;
+};
+
+export function useLobbyStore(currentPlayer: Player, players: Player[], options: LobbyStoreOptions = {}) {
+  const isEnabled = options.enabled ?? true;
   const [lobbies, setLobbies] = useState<Lobby[]>([]);
   const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [ratingTasks, setRatingTasks] = useState<RatingTask[]>(mockRatingTasks);
 
   const refreshLobbyData = useCallback(async () => {
+    if (!isEnabled) {
+      return;
+    }
+
     try {
       const nextLobbies = await listLobbies();
 
       setLobbies(nextLobbies);
+
+      try {
+        setRatingTasks(await listSubmittedRatingTasks(currentPlayer.id, nextLobbies));
+      } catch (error) {
+        console.warn('Could not load submitted player ratings.', error);
+        setRatingTasks([]);
+      }
     } catch (error) {
       console.warn('Falling back to mock lobby data after lobby load failed.', error);
       setLobbies(mockLobbies.map((lobby) => applyLobbyLifecycle(lobby)));
+      setRatingTasks(mockRatingTasks);
     }
 
     try {
@@ -70,11 +94,15 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
       console.warn('Falling back to mock notification data after Supabase load failed.', error);
       setNotifications(mockNotifications);
     }
-  }, [currentPlayer.id]);
+  }, [currentPlayer.id, isEnabled]);
 
   useEffect(() => {
+    if (!isEnabled) {
+      return;
+    }
+
     void refreshLobbyData();
-  }, [refreshLobbyData]);
+  }, [isEnabled, refreshLobbyData]);
 
   const unreadNotifications = useMemo(
     () => notifications.filter((notification) => !notification.read),
@@ -469,6 +497,71 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     );
   }
 
+  async function submitPlayerRating(
+    lobby: Lobby,
+    targetPlayerId: string,
+    rating: { behaviorRating: number; rank: Player['level'] },
+  ): Promise<LobbyStoreActionResult> {
+    const targetIds = getRatingTargetIds(lobby, currentPlayer.id);
+    const remainingTargetIds = getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayer.id);
+
+    if (!targetIds.includes(targetPlayerId)) {
+      return {
+        messages: ['Only players from the final players list can rate this match.'],
+        success: false,
+      };
+    }
+
+    if (!remainingTargetIds.includes(targetPlayerId)) {
+      return {
+        messages: ['You already rated this player.'],
+        success: false,
+      };
+    }
+
+    try {
+      const result = await persistSubmitPlayerRating({
+        behaviorRating: rating.behaviorRating,
+        lobby,
+        rank: rating.rank,
+        ratedPlayerId: targetPlayerId,
+        raterPlayerId: currentPlayer.id,
+      });
+
+      if (!result.success) {
+        return result;
+      }
+    } catch (error) {
+      return {
+        messages: [error instanceof Error ? error.message : 'Rating could not be saved.'],
+        success: false,
+      };
+    }
+
+    setRatingTasks((current) => {
+      const existingTask = current.find((task) => task.lobbyId === lobby.id && task.playerId === currentPlayer.id);
+      const remainingPlayerIds = (existingTask?.remainingPlayerIds ?? targetIds).filter((playerId) => playerId !== targetPlayerId);
+      const nextTask: RatingTask = {
+        id: existingTask?.id ?? `local-rating-${lobby.id}-${currentPlayer.id}`,
+        lobbyId: lobby.id,
+        openedAt: existingTask?.openedAt ?? new Date().toISOString(),
+        playerId: currentPlayer.id,
+        remainingPlayerIds,
+        skippedPlayerIds: existingTask?.skippedPlayerIds ?? [],
+        status: remainingPlayerIds.length === 0 ? 'completed' : 'open',
+      };
+
+      return existingTask
+        ? current.map((task) => (task.id === existingTask.id ? nextTask : task))
+        : [nextTask, ...current];
+    });
+
+    return {
+      messages: ['Rating saved.'],
+      success: true,
+    };
+  }
+
   function addLobbyNotification(notification: Omit<Notification, 'id' | 'read'>) {
     setNotifications((current) => [
       {
@@ -510,8 +603,10 @@ export function useLobbyStore(currentPlayer: Player, players: Player[]) {
     rejectJoinRequest,
     requestWaitlistApproval,
     refreshLobbyData,
+    ratingTasks,
     sendLobbyChatMessage,
     shouldConfirmMoveToWaitlist,
+    submitPlayerRating,
     updateLobbySettings,
     unreadNotificationCount,
     unreadNotifications,

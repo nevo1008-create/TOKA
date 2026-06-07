@@ -8,10 +8,11 @@ import { HomeHeader } from '../components/home/HomeHeader';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerStatusStrip } from '../components/home/ProgressCard';
 import { QuickActionRow } from '../components/home/QuickActionRow';
-import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
+import { getRemainingRatingTargetIds, shouldShowRatingLobby } from '../features/ratings/ratingRules';
 import { colors, homeTypography, spacing } from '../theme';
-import type { Lobby, Notification, Player } from '../types';
+import type { Lobby, Notification, Player, RatingTask } from '../types';
 
 type HomeScreenProps = {
   currentPlayer: Player;
@@ -23,6 +24,7 @@ type HomeScreenProps = {
   onOpenGames: () => void;
   onOpenLobby: (lobby: Lobby) => void;
   onOpenNotifications: () => void;
+  ratingTasks: RatingTask[];
 };
 
 export function HomeScreen({
@@ -35,13 +37,14 @@ export function HomeScreen({
   onOpenGames,
   onOpenLobby,
   onOpenNotifications,
+  ratingTasks,
 }: HomeScreenProps) {
   const upcomingLobbies = lobbies.filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
   const joinedUpcomingLobbies = upcomingLobbies.filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id));
-  const featuredLobby = joinedUpcomingLobbies[0] ?? upcomingLobbies[0];
+  const featuredLobby = joinedUpcomingLobbies[0];
   const nearbyLobbies = upcomingLobbies.filter((lobby) => lobby.id !== featuredLobby?.id).slice(0, 2);
   const ratingLobbies = lobbies
-    .filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id) && isLobbyReadyForRatings(lobby))
+    .filter((lobby) => shouldShowRatingLobby(lobby, currentPlayer.id))
     .sort((left, right) => getLobbyStartTime(right) - getLobbyStartTime(left))
     .slice(0, 2);
   const firstName = currentPlayer.name.split(' ')[0];
@@ -139,35 +142,44 @@ export function HomeScreen({
           </View>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
-              Rate games
-            </AppText>
-          </View>
+        {ratingLobbies.length > 0 ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <AppText style={styles.sectionTitle} variant="sectionHeading" weight="800">
+                Rate games
+              </AppText>
+            </View>
 
-          <View style={styles.nearbyStack}>
-            {ratingLobbies.map((lobby) => (
-              <NearbyGameCard
-                actionLabel="Rate players"
-                actionTone="warning"
-                audience={getGenderAudience(lobby)}
-                distance={getDistanceLabel(lobby)}
-                key={lobby.id}
-                level={getRankLabel(lobby)}
-                location={lobby.location.name}
-                onPress={() => onOpenLobby(lobby)}
-                players={getPlayersLabel(lobby)}
-                spotsLeft="Completed"
-                status="Full"
-                time={formatLobbyStart(lobby.startsAt)}
-                title={lobby.title}
-                variant={isEveningLobbyStart(lobby.startsAt) ? 'sunset' : 'morning'}
-                useHomeTypography
-              />
-            ))}
+            <View style={styles.nearbyStack}>
+              {ratingLobbies.map((lobby) => {
+                const remainingRatings = getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayer.id).length;
+                const isRated = remainingRatings === 0;
+
+                return (
+                  <NearbyGameCard
+                    actionDisabled={isRated}
+                    actionLabel={isRated ? 'Finished' : 'Rate players'}
+                    actionTone={isRated ? 'muted' : 'warning'}
+                    audience={getGenderAudience(lobby)}
+                    distance={getDistanceLabel(lobby)}
+                    key={lobby.id}
+                    level={getRankLabel(lobby)}
+                    location={lobby.location.name}
+                    onPress={() => onOpenLobby(lobby)}
+                    players={getPlayersLabel(lobby)}
+                    spotsLeft={isRated ? 'Finished' : 'Rating is open'}
+                    spotsTone={isRated ? 'green' : 'yellow'}
+                    status="Full"
+                    time={formatLobbyStart(lobby.startsAt)}
+                    title={lobby.title}
+                    variant={isEveningLobbyStart(lobby.startsAt) ? 'sunset' : 'morning'}
+                    useHomeTypography
+                  />
+                );
+              })}
+            </View>
           </View>
-        </View>
+        ) : null}
 
       </View>
     </View>
