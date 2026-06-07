@@ -16,6 +16,24 @@ type FeaturedGameCardProps = {
 };
 
 export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
+  if (!lobby) {
+    return (
+      <View style={styles.emptyCard}>
+        <View style={styles.emptyIcon}>
+          <Ionicons color={colors.accentLime} name="calendar-outline" size={22} />
+        </View>
+        <AppText align="center" style={styles.emptyTitle} variant="sectionHeading" weight="900">
+          No scheduled games yet
+        </AppText>
+        <Pressable accessibilityRole="button" onPress={onOpenRoom} style={styles.emptyButton}>
+          <AppText align="center" tone="accent" variant="button" weight="800">
+            Find games
+          </AppText>
+        </Pressable>
+      </View>
+    );
+  }
+
   const activeParticipants = lobby?.participants.filter(isJoinedParticipant) ?? [];
   const startLabel = lobby ? formatLobbyStart(lobby.startsAt) : 'Choose a game';
   const [dateLabel, timeLabel] = splitStartLabel(startLabel);
@@ -47,12 +65,12 @@ export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
 
         <View style={styles.titleBlock}>
           <AppText style={styles.title} variant="heroTitle" weight="900">
-            {lobby?.title ?? 'No upcoming game'}
+            {lobby.title}
           </AppText>
           <View style={styles.locationRow}>
             <Ionicons color={colors.accentSea} name="location" size={20} />
             <AppText style={styles.locationText} tone="primary" variant="uiBody" weight="600">
-              {lobby?.location.name ?? 'Games'}
+              {lobby.location.name}
             </AppText>
           </View>
         </View>
@@ -204,6 +222,44 @@ const styles = StyleSheet.create({
   },
   countdownText: {
     color: colors.accentGoldDark,
+  },
+  emptyButton: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderColor: 'rgba(255, 255, 255, 0.82)',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 150,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+    ...shadows.soft,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(234, 245, 236, 0.92)',
+    borderColor: 'rgba(36, 196, 90, 0.22)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  emptyTitle: {
+    color: colors.ink,
+    ...homeTypography.sectionTitle,
   },
   genderPill: {
     alignItems: 'center',

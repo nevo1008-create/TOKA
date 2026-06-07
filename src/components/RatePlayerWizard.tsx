@@ -13,6 +13,7 @@ type RatePlayerWizardProps = {
   isFriend: boolean;
   onAddFriend?: (player: Player) => void;
   onClose: () => void;
+  onSubmitRating?: (rating: { behaviorRating: number; rank: PlayerLevel; targetPlayer: Player }) => boolean | void | Promise<boolean | void>;
   onViewProfile: (player: Player) => void;
   player: Player | null;
   visible: boolean;
@@ -26,6 +27,7 @@ export function RatePlayerWizard({
   isFriend,
   onAddFriend,
   onClose,
+  onSubmitRating,
   onViewProfile,
   player,
   visible,
@@ -34,6 +36,8 @@ export function RatePlayerWizard({
   const [rankIndex, setRankIndex] = useState(getRankIndex(currentRank));
   const [rating, setRating] = useState(behaviorRating);
   const [friendRequested, setFriendRequested] = useState(false);
+  const [hasSubmittedRating, setHasSubmittedRating] = useState(false);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const selectedRank = playerLevels[rankIndex];
 
   useEffect(() => {
@@ -45,10 +49,17 @@ export function RatePlayerWizard({
     setRankIndex(getRankIndex(currentRank));
     setRating(behaviorRating);
     setFriendRequested(false);
+    setHasSubmittedRating(false);
+    setIsSubmittingRating(false);
   }, [behaviorRating, currentRank, player?.id, visible]);
 
   function handleBack() {
     if (step === 'done') {
+      if (hasSubmittedRating) {
+        onClose();
+        return;
+      }
+
       setStep('behavior');
       return;
     }
@@ -63,6 +74,31 @@ export function RatePlayerWizard({
 
   if (!player) {
     return null;
+  }
+
+  async function submitRating() {
+    if (!player || isSubmittingRating) {
+      return;
+    }
+
+    setIsSubmittingRating(true);
+
+    try {
+      const result = await onSubmitRating?.({
+        behaviorRating: rating,
+        rank: selectedRank,
+        targetPlayer: player,
+      });
+
+      if (result === false) {
+        return;
+      }
+
+      setHasSubmittedRating(true);
+      setStep('done');
+    } finally {
+      setIsSubmittingRating(false);
+    }
   }
 
   return (
@@ -103,8 +139,9 @@ export function RatePlayerWizard({
 
           {step === 'behavior' ? (
             <BehaviorStep
+              isSubmitting={isSubmittingRating}
               onChange={setRating}
-              onContinue={() => setStep('done')}
+              onContinue={submitRating}
               playerName={player.name}
               rating={rating}
             />
@@ -287,11 +324,13 @@ function SingleRankBar({ onChange, rankIndex }: { onChange: (index: number) => v
 }
 
 function BehaviorStep({
+  isSubmitting,
   onChange,
   onContinue,
   playerName,
   rating,
 }: {
+  isSubmitting: boolean;
   onChange: (rating: number) => void;
   onContinue: () => void;
   playerName: string;
@@ -322,7 +361,7 @@ function BehaviorStep({
         </View>
       </View>
 
-      <WizardButton label="Submit rating" onPress={onContinue} />
+      <WizardButton disabled={isSubmitting} label={isSubmitting ? 'Saving...' : 'Submit rating'} onPress={onContinue} />
     </View>
   );
 }
@@ -408,9 +447,9 @@ function DoneStep({
   );
 }
 
-function WizardButton({ label, onPress }: { label: string; onPress: () => void }) {
+function WizardButton({ disabled = false, label, onPress }: { disabled?: boolean; label: string; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.primaryWideButton}>
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.primaryWideButton, disabled && styles.disabledButton]}>
       <AppText align="center" tone="inverse" variant="button" weight="900">
         {label}
       </AppText>

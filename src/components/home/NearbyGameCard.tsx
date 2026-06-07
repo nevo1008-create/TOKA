@@ -8,6 +8,7 @@ import { BeachGameVisual } from './BeachGameVisual';
 
 type NearbyGameCardProps = {
   actionLabel?: string;
+  actionDisabled?: boolean;
   actionTone?: 'accent' | 'muted' | 'warning';
   audience?: string;
   disabled?: boolean;
@@ -32,6 +33,7 @@ type NearbyGameCardProps = {
 
 export function NearbyGameCard({
   actionLabel = 'View match',
+  actionDisabled = false,
   actionTone = 'accent',
   audience = 'Everyone',
   disabled = false,
@@ -144,13 +146,13 @@ export function NearbyGameCard({
             ) : null}
             <Pressable
               accessibilityRole="button"
-              disabled={disabled}
+              disabled={disabled || actionDisabled}
               onPress={onActionPress ?? onPress}
               style={[
                 styles.cardAction,
                 isWarningAction && styles.cardActionWarning,
                 isMutedAction && styles.cardActionMuted,
-                disabled && styles.cardActionDisabled,
+                (disabled || actionDisabled) && styles.cardActionDisabled,
               ]}
             >
               <AppText
