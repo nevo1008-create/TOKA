@@ -13,6 +13,7 @@ import {
   buildLobbyStartsAt,
   buildStartTimeOptions,
   formatLobbyStart,
+  getEffectiveLobbyStatus,
   getLobbyLocalDateValue,
   getLobbyLocalTimeValue,
   isFutureLobbyStart,
@@ -73,6 +74,8 @@ export function HostLobbyManagementScreen({
     [initialTime, selectedDateValue],
   );
   const joinedParticipants = getJoinedParticipants(lobby);
+  const lifecycleStatus = getEffectiveLobbyStatus(lobby);
+  const canEditSettings = lifecycleStatus === 'open' || lifecycleStatus === 'full';
   const activePlayerCount = joinedParticipants.length;
   const selectedDate = dateOptions.find((option) => option.value === selectedDateValue) ?? dateOptions[0];
   const selectedTime = timeOptions.find((option) => option.value === selectedTimeValue);
@@ -85,7 +88,7 @@ export function HostLobbyManagementScreen({
       selectedTimeValue &&
       isFutureLobbyStart(selectedDateValue, selectedTimeValue),
   );
-  const canSave = title.trim().length > 2 && meetingPoint.trim().length > 4 && isPlayerLimitValid && isRankRangeValid && isScheduleValid && !isActionPending;
+  const canSave = canEditSettings && title.trim().length > 2 && meetingPoint.trim().length > 4 && isPlayerLimitValid && isRankRangeValid && isScheduleValid && !isActionPending;
 
   useEffect(() => {
     if (selectedTimeValue && !timeOptions.some((option) => option.value === selectedTimeValue)) {
@@ -198,6 +201,12 @@ export function HostLobbyManagementScreen({
         </Section>
 
         <Section icon="settings-outline" title="Lobby settings">
+          {!canEditSettings ? (
+            <AppText tone="muted" variant="metadata" weight="700">
+              Settings are locked after the match starts. You can still close the lobby if plans changed.
+            </AppText>
+          ) : null}
+
           <Field label="Game title">
             <TextInput
               onChangeText={setTitle}

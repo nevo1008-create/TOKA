@@ -1,5 +1,6 @@
 import { playerLevels, type ChatChannel, type JoinRequestReason, type Lobby, type LobbyParticipant, type Player } from '../../types';
-import { getEffectiveLobbyStatus, getMinutesBetweenLobbyStarts, getMinutesUntilLobbyStart, hasLobbyStarted } from './lobbyDateTime';
+import { getEffectiveLobbyStatus, getMinutesBetweenLobbyStarts } from './lobbyDateTime';
+import { isLobbyClosedForLateLeavePenalty } from './lobbyLifecycle';
 import { lobbyLabels } from './lobbyLabels';
 
 export const commitmentConflictWindowMinutes = 90;
@@ -287,7 +288,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
     };
   }
 
-  if (isLobbyClosedForJoining(lobby)) {
+  if (isLobbyClosedForJoining(lobby, 'joined')) {
     return {
       canJoin: false,
       kind: 'closed',
@@ -390,7 +391,7 @@ export function getJoinWaitlistDecision(player: Player, lobby: Lobby, context: L
     };
   }
 
-  if (isLobbyClosedForJoining(lobby)) {
+  if (isLobbyClosedForJoining(lobby, 'waitlist')) {
     return {
       canJoinWaitlist: false,
       kind: 'closed',
@@ -453,9 +454,7 @@ export function getApprovalRoleDecision(
 }
 
 export function getCancellationStatus(lobby: Lobby, now = new Date()): Extract<LobbyParticipant['status'], 'cancelled_late' | 'cancelled_on_time'> {
-  const penaltyMinutes = lobby.cancellationPenaltyMinutes ?? defaultCancellationPenaltyMinutes;
-
-  return getMinutesUntilLobbyStart(lobby.startsAt, now) < penaltyMinutes ? 'cancelled_late' : 'cancelled_on_time';
+  return isLobbyClosedForLateLeavePenalty(lobby, now) ? 'cancelled_late' : 'cancelled_on_time';
 }
 
 export function getJoinedCommitmentConflict(playerId: string, targetLobby: Lobby, allLobbies: Lobby[]) {
@@ -513,8 +512,12 @@ function isParticipationCurrent(participant: LobbyParticipant) {
   return participant.status === 'approved' || participant.status === 'attended';
 }
 
-function isLobbyClosedForJoining(lobby: Lobby) {
+function isLobbyClosedForJoining(lobby: Lobby, targetRole: Extract<LobbyParticipant['role'], 'joined' | 'waitlist'>) {
   const status = getEffectiveLobbyStatus(lobby);
 
-  return status === 'completed' || status === 'closed' || status === 'in_progress' || status === 'rating_open' || hasLobbyStarted(lobby.startsAt);
+  if (status === 'closed' && targetRole === 'waitlist') {
+    return false;
+  }
+
+  return status === 'cancelled' || status === 'completed' || status === 'closed' || status === 'in_progress' || status === 'rating_open';
 }

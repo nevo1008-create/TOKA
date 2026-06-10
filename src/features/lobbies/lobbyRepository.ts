@@ -2,7 +2,8 @@ import { supabase } from '../../lib/supabase';
 import type { DbLobbyMembership, DbLobbyWithRelations } from '../../lib/database.types';
 import type { Lobby, Player } from '../../types';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
-import { applyLobbyLifecycle, hasLobbyStarted, isFutureStartsAt } from './lobbyDateTime';
+import { applyLobbyLifecycle, getEffectiveLobbyStatus, isFutureStartsAt } from './lobbyDateTime';
+import { getMatchParticipantIds } from './lobbyLifecycle';
 import {
   getCancellationStatus,
   getJoinGameDecision,
@@ -40,7 +41,13 @@ export async function listLobbies(): Promise<Lobby[]> {
     });
   }
 
-  return activeRows.map((row) => applyLobbyLifecycle(mapDbLobbyToLobby(row)));
+  const lobbies = activeRows.map((row) => applyLobbyLifecycle(mapDbLobbyToLobby(row)));
+
+  void Promise.all(lobbies.map((lobby, index) => syncLobbyLifecycleBestEffort(activeRows[index], lobby))).catch((syncError) => {
+    console.warn('Could not sync lobby lifecycle state.', syncError);
+  });
+
+  return lobbies;
 }
 
 export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player): Promise<Lobby> {
@@ -135,13 +142,16 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
 }
 
 export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+  const syncedLobbies = replaceLobbyInList(allLobbies, syncedLobby);
+
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  const decision = getJoinGameDecision(player, lobby, { accessCode, allLobbies });
+  const decision = getJoinGameDecision(player, syncedLobby, { accessCode, allLobbies: syncedLobbies });
 
   if (!decision.canJoin) {
     return {
@@ -150,7 +160,7 @@ export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[]
     };
   }
 
-  await upsertMembership(lobby.id, player, 'joined');
+  await upsertMembership(syncedLobby.id, player, 'joined');
 
   return {
     messages: [],
@@ -159,13 +169,16 @@ export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[]
 }
 
 export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+  const syncedLobbies = replaceLobbyInList(allLobbies, syncedLobby);
+
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  const decision = getJoinWaitlistDecision(player, lobby, { accessCode, allLobbies });
+  const decision = getJoinWaitlistDecision(player, syncedLobby, { accessCode, allLobbies: syncedLobbies });
 
   if (!decision.canJoinWaitlist) {
     return {
@@ -174,7 +187,7 @@ export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lob
     };
   }
 
-  await upsertMembership(lobby.id, player, 'waitlisted');
+  await upsertMembership(syncedLobby.id, player, 'waitlisted');
 
   return {
     messages: [],
@@ -183,35 +196,37 @@ export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lob
 }
 
 export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  if (!lobby.exceptionRequestsEnabled) {
+  if (!syncedLobby.exceptionRequestsEnabled) {
     return {
       messages: ['This game does not accept exception requests.'],
       success: false,
     };
   }
 
-  const reasons = getRuleExceptionReasons(player, lobby);
+  const reasons = getRuleExceptionReasons(player, syncedLobby);
 
-  if (lobby.visibility === 'password') {
+  if (syncedLobby.visibility === 'password') {
     reasons.unshift('private_access');
   }
 
-  await upsertMembership(lobby.id, player, 'pending_approval', {
+  await upsertMembership(syncedLobby.id, player, 'pending_approval', {
     requestMessage: 'Requesting host approval to join the waitlist.',
     requestedReasons: reasons.length > 0 ? reasons : ['approval_required'],
   });
 
   await createNotification({
-    body: `${player.name} requested approval for ${lobby.title}.`,
-    lobbyId: lobby.id,
+    body: `${player.name} requested approval for ${syncedLobby.title}.`,
+    lobbyId: syncedLobby.id,
     playerId: player.id,
-    recipientPlayerId: lobby.adminId,
+    recipientPlayerId: syncedLobby.adminId,
     title: 'New join request',
     type: 'join_request_received',
   });
@@ -223,7 +238,9 @@ export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
 }
 
 export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
@@ -241,10 +258,10 @@ export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostP
       request_message: null,
       requested_at: null,
       requested_reasons: [],
-      role: lobby.adminId === player.id ? 'host' : 'member',
+      role: syncedLobby.adminId === player.id ? 'host' : 'member',
       status: 'waitlisted',
     })
-    .eq('lobby_id', lobby.id)
+    .eq('lobby_id', syncedLobby.id)
     .eq('player_id', player.id)
     .eq('status', 'pending_approval')
     .select('id')
@@ -262,8 +279,8 @@ export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostP
   }
 
   await createNotification({
-    body: `You were added to the waitlist for ${lobby.title}.`,
-    lobbyId: lobby.id,
+    body: `You were added to the waitlist for ${syncedLobby.title}.`,
+    lobbyId: syncedLobby.id,
     playerId: hostPlayerId,
     recipientPlayerId: player.id,
     title: 'Request approved',
@@ -277,7 +294,9 @@ export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostP
 }
 
 export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
@@ -293,7 +312,7 @@ export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayer
       requested_reasons: [],
       status: 'declined',
     })
-    .eq('lobby_id', lobby.id)
+    .eq('lobby_id', syncedLobby.id)
     .eq('player_id', player.id)
     .eq('status', 'pending_approval')
     .select('id')
@@ -311,8 +330,8 @@ export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayer
   }
 
   await createNotification({
-    body: `Your request for ${lobby.title} was declined.`,
-    lobbyId: lobby.id,
+    body: `Your request for ${syncedLobby.title} was declined.`,
+    lobbyId: syncedLobby.id,
     playerId: hostPlayerId,
     recipientPlayerId: player.id,
     title: 'Request rejected',
@@ -326,13 +345,15 @@ export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayer
 }
 
 export async function cancelJoinRequest(lobby: Lobby, player: Player) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  const pendingRequest = lobby.joinRequests.find(
+  const pendingRequest = syncedLobby.joinRequests.find(
     (request) => request.playerId === player.id && request.status === 'pending',
   );
 
@@ -352,7 +373,7 @@ export async function cancelJoinRequest(lobby: Lobby, player: Player) {
       requested_reasons: [],
       status: 'left',
     })
-    .eq('lobby_id', lobby.id)
+    .eq('lobby_id', syncedLobby.id)
     .eq('player_id', player.id)
     .eq('status', 'pending_approval');
 
@@ -367,13 +388,15 @@ export async function cancelJoinRequest(lobby: Lobby, player: Player) {
 }
 
 export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraft, hostPlayerId: string) {
-  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
 
   if (!hostCheck.success) {
     return hostCheck;
   }
 
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
@@ -385,7 +408,7 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
     return scheduleCheck;
   }
 
-  const activePlayerCount = getJoinedParticipants(lobby).length;
+  const activePlayerCount = getJoinedParticipants(syncedLobby).length;
   const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
   const nextMaxPlayers = Math.max(...selectedPlayerCounts);
 
@@ -397,7 +420,7 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
   }
 
   const accessCode = draft.visibility === 'password'
-    ? draft.accessCode ?? lobby.accessCode ?? generatePrivateAccessCode()
+    ? draft.accessCode ?? syncedLobby.accessCode ?? generatePrivateAccessCode()
     : null;
 
   const { error } = await supabase.rpc('host_update_lobby_settings', {
@@ -419,15 +442,15 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
     next_starts_at: draft.startsAt,
     next_title: draft.title,
     next_visibility: draft.visibility,
-    target_lobby_id: lobby.id,
+    target_lobby_id: syncedLobby.id,
   });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  await notifyCurrentLobbyMembers(lobby, hostPlayerId, {
-    body: `${lobby.title} details were updated by the host.`,
+  await notifyCurrentLobbyMembers(syncedLobby, hostPlayerId, {
+    body: `${syncedLobby.title} details were updated by the host.`,
     title: 'Lobby updated',
     type: 'lobby_changed',
   });
@@ -439,19 +462,21 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
 }
 
 export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
 
   if (!hostCheck.success) {
     return hostCheck;
   }
 
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
+  const participant = syncedLobby.participants.find((candidate) => candidate.playerId === player.id);
 
   if (!participant || participant.role === 'waitlist') {
     return {
@@ -468,13 +493,13 @@ export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Playe
   }
 
   let { data, error } = await supabase.rpc('host_move_lobby_member_to_waitlist', {
-    target_lobby_id: lobby.id,
+    target_lobby_id: syncedLobby.id,
     target_player_id: player.id,
   });
 
   if (error) {
     if (error.message.toLowerCase().includes('could not find the function')) {
-      const fallback = await moveLobbyParticipantToWaitlistDirectly(lobby.id, player.id, hostPlayerId);
+      const fallback = await moveLobbyParticipantToWaitlistDirectly(syncedLobby.id, player.id, hostPlayerId);
 
       data = fallback.data;
       error = fallback.error;
@@ -497,8 +522,8 @@ export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Playe
   }
 
   await createNotificationBestEffort({
-    body: `The host moved you to the waitlist for ${lobby.title}.`,
-    lobbyId: lobby.id,
+    body: `The host moved you to the waitlist for ${syncedLobby.title}.`,
+    lobbyId: syncedLobby.id,
     playerId: hostPlayerId,
     recipientPlayerId: player.id,
     title: 'Moved to waitlist',
@@ -529,13 +554,15 @@ async function moveLobbyParticipantToWaitlistDirectly(lobbyId: string, playerId:
 }
 
 export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
 
   if (!hostCheck.success) {
     return hostCheck;
   }
 
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
@@ -555,7 +582,7 @@ export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPla
       role: 'member',
       status: 'removed',
     })
-    .eq('lobby_id', lobby.id)
+    .eq('lobby_id', syncedLobby.id)
     .eq('player_id', player.id)
     .in('status', ['joined', 'waitlisted', 'attended']);
 
@@ -564,8 +591,8 @@ export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPla
   }
 
   await createNotificationBestEffort({
-    body: `The host removed you from ${lobby.title}. You can join or request again later.`,
-    lobbyId: lobby.id,
+    body: `The host removed you from ${syncedLobby.title}. You can join or request again later.`,
+    lobbyId: syncedLobby.id,
     playerId: hostPlayerId,
     recipientPlayerId: player.id,
     title: 'Removed from lobby',
@@ -579,20 +606,22 @@ export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPla
 }
 
 export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
-  const hostCheck = assertLobbyHost(lobby, hostPlayerId);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
 
   if (!hostCheck.success) {
     return hostCheck;
   }
 
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const timingCheck = assertLobbyBeforeStart(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  await notifyCurrentLobbyMembers(lobby, hostPlayerId, {
-    body: `${lobby.title} was closed by the host.`,
+  await notifyCurrentLobbyMembers(syncedLobby, hostPlayerId, {
+    body: `${syncedLobby.title} was closed by the host.`,
     title: 'Lobby closed',
     type: 'lobby_changed',
   });
@@ -600,7 +629,7 @@ export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
   const { error: lobbyError } = await supabase
     .from('lobbies')
     .update({ status: 'closed' })
-    .eq('id', lobby.id);
+    .eq('id', syncedLobby.id);
 
   if (lobbyError) {
     throw lobbyError;
@@ -612,7 +641,7 @@ export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
       left_at: new Date().toISOString(),
       status: 'removed',
     })
-    .eq('lobby_id', lobby.id)
+    .eq('lobby_id', syncedLobby.id)
     .in('status', ['joined', 'waitlisted', 'pending_approval', 'attended']);
 
   if (membershipsError) {
@@ -626,17 +655,19 @@ export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
 }
 
 export async function leaveLobby(lobby: Lobby, player: Player) {
-  const timingCheck = assertLobbyBeforeStart(lobby);
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const timingCheck = assertLobbyAllowsLeave(syncedLobby);
 
   if (!timingCheck.success) {
     return timingCheck;
   }
 
-  const participant = lobby.participants.find((candidate) => candidate.playerId === player.id);
+  const participant = syncedLobby.participants.find((candidate) => candidate.playerId === player.id);
 
   if (!participant) {
-    if (lobby.adminId === player.id) {
-      await syncLobbyHostBestEffort(lobby.id);
+    if (syncedLobby.adminId === player.id) {
+      await syncLobbyHostBestEffort(syncedLobby.id);
 
       return {
         messages: [],
@@ -650,19 +681,19 @@ export async function leaveLobby(lobby: Lobby, player: Player) {
     };
   }
 
-  const remainingParticipants = lobby.participants.filter((candidate) => candidate.playerId !== player.id);
-  const status = participant.role === 'waitlist' ? 'cancelled_on_time' : getCancellationStatus(lobby);
+  const remainingParticipants = syncedLobby.participants.filter((candidate) => candidate.playerId !== player.id);
+  const status = participant.role === 'waitlist' ? 'cancelled_on_time' : getCancellationStatus(syncedLobby);
 
-  await markMembershipLeft(lobby.id, player.id, status);
+  await markMembershipLeft(syncedLobby.id, player.id, status);
 
-  if (lobby.adminId === player.id) {
+  if (syncedLobby.adminId === player.id) {
     if (remainingParticipants.length === 0) {
-      await closeAndDeleteLobbyBestEffort(lobby.id);
+      await closeAndDeleteLobbyBestEffort(syncedLobby.id);
     } else {
-      await syncLobbyHostBestEffort(lobby.id);
+      await syncLobbyHostBestEffort(syncedLobby.id);
     }
   } else if (remainingParticipants.length === 0) {
-    await closeAndDeleteLobbyBestEffort(lobby.id);
+    await closeAndDeleteLobbyBestEffort(syncedLobby.id);
   }
 
   return {
@@ -703,16 +734,18 @@ function assertFutureSchedule(startsAt: string) {
 }
 
 function assertLobbyBeforeStart(lobby: Lobby) {
-  if (hasLobbyStarted(lobby.startsAt)) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'open' || status === 'full' || status === 'closing_soon') {
     return {
-      messages: ['This game has already started, so lobby actions are closed.'],
-      success: false,
+      messages: [],
+      success: true,
     };
   }
 
   return {
-    messages: [],
-    success: true,
+    messages: ['This game has already started, so lobby actions are closed.'],
+    success: false,
   };
 }
 
@@ -795,6 +828,79 @@ async function closeAndDeleteLobbyBestEffort(lobbyId: string) {
   });
 }
 
+function assertLobbyOpenForHostRosterChanges(lobby: Lobby) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status !== 'open' && status !== 'full') {
+    return {
+      messages: ['Player and lobby settings can only be changed before the game starts.'],
+      success: false,
+    };
+  }
+
+  return {
+    messages: [],
+    success: true,
+  };
+}
+
+function assertLobbyAllowsLeave(lobby: Lobby) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'open' || status === 'full' || status === 'closing_soon' || status === 'cancelled') {
+    return {
+      messages: [],
+      success: true,
+    };
+  }
+
+  return {
+    messages: ['This game has already started, so lobby actions are closed.'],
+    success: false,
+  };
+}
+
+async function syncLobbyLifecycleBestEffort(row: DbLobbyWithRelations, lobby: Lobby) {
+  const hasLifecycleStatusChanged = row.status !== lobby.status;
+  const shouldPersistMatchLock = Boolean(
+    lobby.matchLockedAt &&
+      lobby.matchParticipantIds?.length &&
+      (!row.match_locked_at || !areStringArraysEqual(row.match_participant_ids ?? [], lobby.matchParticipantIds)),
+  );
+
+  if (!hasLifecycleStatusChanged && !shouldPersistMatchLock) {
+    return;
+  }
+
+  const update: Partial<{
+    match_locked_at: string;
+    match_participant_ids: string[];
+    status: Lobby['status'];
+  }> = {};
+
+  if (hasLifecycleStatusChanged) {
+    update.status = lobby.status;
+  }
+
+  if (shouldPersistMatchLock) {
+    update.match_locked_at = lobby.matchLockedAt;
+    update.match_participant_ids = getMatchParticipantIds(lobby);
+  }
+
+  const { error } = await supabase
+    .from('lobbies')
+    .update(update)
+    .eq('id', lobby.id);
+
+  if (error) {
+    console.warn('Could not persist derived lobby lifecycle state.', error.message);
+  }
+}
+
+function areStringArraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function shouldSyncLobbyHost(row: DbLobbyWithRelations) {
   const memberships = row.lobby_memberships ?? [];
   const currentMemberships = memberships.filter(isCurrentMembership);
@@ -817,6 +923,32 @@ async function syncLobbyHostBestEffort(lobbyId: string) {
   if (error) {
     throw error;
   }
+}
+
+async function syncLobbyLifecycleForAction(lobby: Lobby) {
+  const { error: syncError } = await supabase.rpc('sync_lobby_lifecycle', { target_lobby_id: lobby.id });
+
+  if (syncError) {
+    console.warn('Could not sync lobby lifecycle via RPC.', syncError.message);
+    return applyLobbyLifecycle(lobby);
+  }
+
+  const { data, error: loadError } = await supabase
+    .from('lobbies')
+    .select('*, locations (*), lobby_memberships (*)')
+    .eq('id', lobby.id)
+    .maybeSingle();
+
+  if (loadError || !data) {
+    console.warn('Could not reload lobby after lifecycle sync.', loadError?.message);
+    return applyLobbyLifecycle(lobby);
+  }
+
+  return applyLobbyLifecycle(mapDbLobbyToLobby(data as unknown as DbLobbyWithRelations));
+}
+
+function replaceLobbyInList(lobbies: Lobby[], lobby: Lobby) {
+  return lobbies.map((candidate) => (candidate.id === lobby.id ? lobby : candidate));
 }
 
 async function deleteLobbyCascade(lobbyId: string) {

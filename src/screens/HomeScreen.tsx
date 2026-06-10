@@ -9,6 +9,8 @@ import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerStatusStrip } from '../components/home/ProgressCard';
 import { QuickActionRow } from '../components/home/QuickActionRow';
 import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { getAutoCancelCountdownLabel } from '../features/lobbies/lobbyLifecycle';
+import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { getRemainingRatingTargetIds, shouldShowRatingLobby } from '../features/ratings/ratingRules';
 import { colors, homeTypography, spacing } from '../theme';
@@ -39,6 +41,7 @@ export function HomeScreen({
   onOpenNotifications,
   ratingTasks,
 }: HomeScreenProps) {
+  useLifecycleClock();
   const upcomingLobbies = lobbies.filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
   const joinedUpcomingLobbies = upcomingLobbies.filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id));
   const featuredLobby = joinedUpcomingLobbies[0];
@@ -189,7 +192,7 @@ export function HomeScreen({
 function isLobbyDiscoverable(lobby: Lobby) {
   const status = getEffectiveLobbyStatus(lobby);
 
-  return lobby.participants.length > 0 && (status === 'open' || status === 'full');
+  return lobby.participants.length > 0 && (status === 'open' || status === 'full' || status === 'closing_soon');
 }
 
 function isCurrentPlayerJoined(lobby: Lobby, currentPlayerId: string) {
@@ -205,6 +208,12 @@ function getPlayersLabel(lobby: Lobby) {
 }
 
 function getSpotsLabel(lobby: Lobby) {
+  const autoCancelLabel = getAutoCancelCountdownLabel(lobby);
+
+  if (autoCancelLabel) {
+    return autoCancelLabel;
+  }
+
   const spotsLeft = Math.max(lobby.maxPlayers - getActiveParticipants(lobby).length, 0);
 
   if (spotsLeft === 0) {

@@ -36,6 +36,8 @@ export async function submitPlayerRating({
   ratedPlayerId,
   raterPlayerId,
 }: SubmitPlayerRatingInput) {
+  await syncLobbyLifecycleBeforeRating(lobby.id);
+
   const { error } = await supabase
     .from('player_ratings')
     .insert({
@@ -95,4 +97,16 @@ function mapSubmittedRatingsToTasks(ratings: DbPlayerRating[], lobbies: Lobby[],
 
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function syncLobbyLifecycleBeforeRating(lobbyId: string) {
+  if (!isUuid(lobbyId)) {
+    return;
+  }
+
+  const { error } = await supabase.rpc('sync_lobby_lifecycle', { target_lobby_id: lobbyId });
+
+  if (error) {
+    console.warn('Could not sync lobby lifecycle before rating.', error.message);
+  }
 }

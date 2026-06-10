@@ -33,10 +33,12 @@ export type LobbyStatus =
   | 'draft'
   | 'open'
   | 'full'
+  | 'closed'
+  | 'closing_soon'
   | 'in_progress'
   | 'rating_open'
   | 'completed'
-  | 'closed';
+  | 'cancelled';
 
 export type LobbyVisibility = 'public' | 'approval_required' | 'password' | 'invite_link';
 export type RankRuleType = 'exact' | 'range' | 'any';
@@ -162,6 +164,8 @@ export type Lobby = {
   title: string;
   location: Location;
   locationDescription?: string;
+  matchLockedAt?: string;
+  matchParticipantIds?: string[];
   /**
    * ISO datetime string. UI should format this value for display.
    */

@@ -67,6 +67,8 @@ export function mapDbLobbyToLobby(row: DbLobbyWithRelations): Lobby {
       name: row.locations?.name ?? 'Unknown beach',
     },
     locationDescription: row.location_description ?? undefined,
+    matchLockedAt: row.match_locked_at ?? undefined,
+    matchParticipantIds: row.match_participant_ids?.length ? row.match_participant_ids : undefined,
     maxPlayers: row.max_players,
     minPlayers: row.min_players,
     note: row.note,

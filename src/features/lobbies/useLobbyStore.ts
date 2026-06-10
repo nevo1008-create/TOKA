@@ -19,7 +19,8 @@ import {
 } from '../ratings/ratingRepository';
 import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
-import { applyLobbyLifecycle, getMinutesUntilLobbyStart } from './lobbyDateTime';
+import { applyLobbyLifecycle } from './lobbyDateTime';
+import { shouldApplyLateLeavePenalty } from './lobbyLifecycle';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
@@ -36,9 +37,7 @@ import {
   updateLobbySettings as persistUpdateLobbySettings,
 } from './lobbyRepository';
 import {
-  defaultCancellationPenaltyMinutes,
   getVisibleChatChannels,
-  isJoinedParticipant,
   isLobbyFull,
 } from './lobbyRules';
 
@@ -152,12 +151,10 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
   function shouldConfirmMoveToWaitlist(lobby: Lobby) {
     const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
-    const penaltyMinutes = lobby.cancellationPenaltyMinutes ?? defaultCancellationPenaltyMinutes;
 
     return Boolean(
       participant &&
-        isJoinedParticipant(participant) &&
-        getMinutesUntilLobbyStart(lobby.startsAt) < penaltyMinutes,
+        shouldApplyLateLeavePenalty(lobby, participant),
     );
   }
 

@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { formatLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, getEffectiveLobbyStatus } from '../features/lobbies/lobbyDateTime';
+import { getAutoCancelCountdownLabel } from '../features/lobbies/lobbyLifecycle';
 import { getJoinedParticipants, getWaitlistParticipants } from '../features/lobbies/lobbyRules';
 import { colors, radius, spacing } from '../theme';
 import type { Lobby, Player } from '../types';
@@ -62,8 +63,35 @@ function Pill({ label }: { label: string }) {
 }
 
 function getStatusLabel(lobby: Lobby) {
-  if (lobby.status === 'full') {
+  const status = getEffectiveLobbyStatus(lobby);
+  const autoCancelLabel = getAutoCancelCountdownLabel(lobby);
+
+  if (autoCancelLabel) {
+    return autoCancelLabel;
+  }
+
+  if (status === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  if (status === 'full') {
     return 'Full';
+  }
+
+  if (status === 'completed') {
+    return 'Finished';
+  }
+
+  if (status === 'rating_open') {
+    return 'Rating';
+  }
+
+  if (status === 'in_progress') {
+    return 'Started';
+  }
+
+  if (status === 'closed') {
+    return 'Closed';
   }
 
   if (lobby.visibility === 'approval_required') {

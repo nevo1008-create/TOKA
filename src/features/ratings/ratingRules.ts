@@ -1,9 +1,9 @@
 import type { Lobby, RatingTask } from '../../types';
 import { isLobbyReadyForRatings } from '../lobbies/lobbyDateTime';
-import { getJoinedParticipants } from '../lobbies/lobbyRules';
+import { getMatchParticipantIds } from '../lobbies/lobbyLifecycle';
 
 export function getRatingParticipantIds(lobby: Lobby) {
-  return getJoinedParticipants(lobby).map((participant) => participant.playerId);
+  return getMatchParticipantIds(lobby);
 }
 
 export function canPlayerRateLobby(lobby: Lobby, playerId: string) {

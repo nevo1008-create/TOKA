@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { formatLobbyStart, getMinutesUntilLobbyStart } from '../../features/lobbies/lobbyDateTime';
+import { getAutoCancelCountdownLabel } from '../../features/lobbies/lobbyLifecycle';
 import { isJoinedParticipant } from '../../features/lobbies/lobbyRules';
 import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
 import type { Lobby } from '../../types';
@@ -58,7 +59,7 @@ export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
           <View style={styles.countdownPill}>
             <Ionicons color={colors.accentGoldDark} name="time-outline" size={15} />
             <AppText style={[styles.countdownText, styles.chipText]} variant="chip" weight="700">
-              {lobby ? formatCountdown(lobby.startsAt) : 'Find games'}
+              {lobby ? getFeaturedCountdownLabel(lobby) : 'Find games'}
             </AppText>
           </View>
         </View>
@@ -119,6 +120,10 @@ function formatCountdown(startsAt: string) {
   const remainingMinutes = minutes % 60;
 
   return remainingMinutes > 0 ? `In ${hours}h ${remainingMinutes}m` : `In ${hours}h`;
+}
+
+function getFeaturedCountdownLabel(lobby: Lobby) {
+  return getAutoCancelCountdownLabel(lobby) ?? formatCountdown(lobby.startsAt);
 }
 
 function getRankLabel(lobby: Lobby) {

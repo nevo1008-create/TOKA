@@ -7,7 +7,8 @@ import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
-import { formatLobbyStart, hasLobbyStarted } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, getEffectiveLobbyStatus } from '../features/lobbies/lobbyDateTime';
+import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby, LobbyParticipant, Player } from '../types';
@@ -39,6 +40,7 @@ export function InviteComposerScreen({
   params,
   players,
 }: InviteComposerScreenProps) {
+  useLifecycleClock();
   const targetPlayer = players.find((player) => player.id === params.inviteTargetPlayerId);
   const targetLobby = lobbies.find((lobby) => lobby.id === params.inviteTargetLobbyId);
   const mode = getInviteMode(Boolean(targetPlayer), Boolean(targetLobby));
@@ -634,7 +636,9 @@ function getInvitePlayerAction(
 }
 
 function isLobbyDisabled(lobby: Lobby) {
-  return hasLobbyStarted(lobby.startsAt) || lobby.status === 'completed' || lobby.status === 'closed';
+  const status = getEffectiveLobbyStatus(lobby);
+
+  return status === 'cancelled' || status === 'completed' || status === 'in_progress' || status === 'rating_open';
 }
 
 function isActiveParticipant(participant: LobbyParticipant) {

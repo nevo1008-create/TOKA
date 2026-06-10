@@ -1,7 +1,14 @@
 import type { Lobby, LobbyStatus } from '../../types';
+import {
+  applyLobbyLifecycle as applyLifecycleStatus,
+  canJoinedPlayersRateLobby,
+  getLobbyLifecycleStatus,
+  ratingOpenAfterStartMinutes,
+  ratingWindowMinutes,
+} from './lobbyLifecycle';
 
 export const israelTimeZone = 'Asia/Jerusalem';
-export const matchCompletionDelayMinutes = 60;
+export const matchCompletionDelayMinutes = ratingOpenAfterStartMinutes;
 
 export type DateOption = {
   description?: string;
@@ -151,7 +158,7 @@ export function getMinutesUntilLobbyStart(startsAt: string, now = new Date()) {
 }
 
 export function getMinutesUntilLobbyCompletion(startsAt: string, now = new Date()) {
-  return getMinutesUntilLobbyStart(startsAt, now) + matchCompletionDelayMinutes;
+  return getMinutesUntilLobbyStart(startsAt, now) + ratingOpenAfterStartMinutes + ratingWindowMinutes;
 }
 
 export function hasLobbyStarted(startsAt: string, now = new Date()) {
@@ -162,38 +169,20 @@ export function hasLobbyCompleted(startsAt: string, now = new Date()) {
   return getMinutesUntilLobbyCompletion(startsAt, now) <= 0;
 }
 
-export function getEffectiveLobbyStatus(lobby: Pick<Lobby, 'startsAt' | 'status'>, now = new Date()): LobbyStatus {
-  if (lobby.status === 'closed' || lobby.status === 'draft') {
-    return lobby.status;
-  }
-
-  if (hasLobbyCompleted(lobby.startsAt, now)) {
-    return 'completed';
-  }
-
-  if (hasLobbyStarted(lobby.startsAt, now)) {
-    return 'in_progress';
-  }
-
-  if (lobby.status === 'completed' || lobby.status === 'in_progress' || lobby.status === 'rating_open') {
-    return 'open';
-  }
-
-  return lobby.status;
+export function getEffectiveLobbyStatus(lobby: Pick<Lobby, 'maxPlayers' | 'participants' | 'startsAt' | 'status'>, now = new Date()): LobbyStatus {
+  return getLobbyLifecycleStatus(lobby, now);
 }
 
 export function applyLobbyLifecycle(lobby: Lobby, now = new Date()): Lobby {
-  const status = getEffectiveLobbyStatus(lobby, now);
-
-  return status === lobby.status ? lobby : { ...lobby, status };
+  return applyLifecycleStatus(lobby, now);
 }
 
 export function isLobbyBeforeStart(lobby: Pick<Lobby, 'startsAt'>, now = new Date()) {
   return !hasLobbyStarted(lobby.startsAt, now);
 }
 
-export function isLobbyReadyForRatings(lobby: Pick<Lobby, 'startsAt' | 'status'>, now = new Date()) {
-  return getEffectiveLobbyStatus(lobby, now) === 'completed';
+export function isLobbyReadyForRatings(lobby: Pick<Lobby, 'matchParticipantIds' | 'maxPlayers' | 'participants' | 'startsAt' | 'status'>, now = new Date()) {
+  return canJoinedPlayersRateLobby(lobby, now);
 }
 
 export function isEveningLobbyStart(startsAt: string) {

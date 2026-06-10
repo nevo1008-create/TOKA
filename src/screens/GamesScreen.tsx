@@ -10,8 +10,10 @@ import { LobbyImageBadge } from '../components/LobbyImageBadge';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { formatRankRange, getRankIndex, rankOptions, RankRangeBar } from '../components/RankRangeBar';
 import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlaces';
-import { formatLobbyStart, getEffectiveLobbyStatus, hasLobbyStarted, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
 import { getLobbyMembershipBadgeLabel, getLobbyMembershipStatusLabel, isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
+import { getAutoCancelCountdownLabel, getMatchParticipantIds } from '../features/lobbies/lobbyLifecycle';
+import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import { getJoinedParticipants, isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { getRemainingRatingTargetIds, shouldShowRatingLobby } from '../features/ratings/ratingRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -102,6 +104,7 @@ export function GamesScreen({
   selectedFilter,
   setSelectedFilter,
 }: GamesScreenProps) {
+  useLifecycleClock();
   const [activeSection, setActiveSection] = useState<GameSection>(initialSection);
 
   useEffect(() => {
@@ -468,7 +471,7 @@ function SearchGamesView({
 function isLobbyDiscoverable(lobby: Lobby) {
   const status = getEffectiveLobbyStatus(lobby);
 
-  return lobby.participants.length > 0 && !hasLobbyStarted(lobby.startsAt) && (status === 'open' || status === 'full');
+  return lobby.participants.length > 0 && (status === 'open' || status === 'full' || status === 'closing_soon');
 }
 
 function getFindGamesSortPriority(lobby: Lobby, currentPlayerId: string) {
@@ -720,7 +723,7 @@ function MyGamesView({
 }) {
   const uniqueLobbies = getUniqueLobbies(lobbies);
   const activeGames = uniqueLobbies
-    .filter((lobby) => isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayer.id) && isLobbyDiscoverable(lobby))
+    .filter((lobby) => isActiveLobbyVisibleToCurrentPlayer(lobby, currentPlayer.id))
     .sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right))
     .map((lobby, index) => {
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
@@ -732,12 +735,12 @@ function MyGamesView({
 
       return {
         ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
-        actionLabel: lobbyLabels.viewMatch,
+        actionLabel: getActiveGameActionLabel(lobby),
         imageBadgeLabel,
         requestStatusLabel: pendingRequest && !participant ? lobbyLabels.accessRequested : undefined,
         secondarySpotsLeft,
-        statusLabel: getLobbyMembershipStatusLabel(lobby, currentPlayer.id, participant),
-        statusTone: participant ? 'lime' as const : 'gold' as const,
+        statusLabel: getActiveGameStatusLabel(lobby, currentPlayer.id, participant),
+        statusTone: getActiveGameStatusTone(lobby, participant),
       };
     });
   const finishedGames = uniqueLobbies
@@ -1448,6 +1451,7 @@ function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: stri
   const currentParticipant = getCurrentPlayerParticipant(lobby, currentPlayerId);
   const isHost = isLobbyHost(lobby, currentPlayerId, currentParticipant);
   const spotsLeft = Math.max(lobby.maxPlayers - activeParticipants.length, 0);
+  const autoCancelLabel = getAutoCancelCountdownLabel(lobby);
 
   return {
     audience: getGenderAudience(lobby),
@@ -1461,7 +1465,7 @@ function getGameCardFromLobby(lobby: Lobby, index: number, currentPlayerId: stri
     lobbyIndex: index,
     location: `${lobby.location.name}, ${lobby.location.city}`,
     players: `${activeParticipants.length} / ${lobby.maxPlayers} players`,
-    spotsLeft: spotsLeft === 0 ? '' : spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`,
+    spotsLeft: autoCancelLabel ?? (spotsLeft === 0 ? '' : spotsLeft === 1 ? '1 spot left' : `${spotsLeft} spots left`),
     startsAt: lobby.startsAt,
     title: lobby.title,
   };
@@ -1569,25 +1573,25 @@ function MyGameCard({
   game: GameListItem & { actionDisabled?: boolean; actionLabel: string; imageBadgeLabel?: string; requestStatusLabel?: string; secondarySpotsLeft?: string; statusLabel: string; statusTone: 'gold' | 'lime' | 'muted' };
   onPress: () => void;
 }) {
-  const isFinished = game.statusTone === 'muted';
+  const isActionMuted = game.actionDisabled || game.statusTone === 'muted';
 
   return (
     <NearbyGameCard
-      actionLabel={isFinished ? 'Finished' : game.actionLabel}
+      actionLabel={game.actionLabel}
       actionDisabled={game.actionDisabled}
-      actionTone={isFinished || game.actionDisabled ? 'muted' : game.actionLabel === 'Rate players' ? 'warning' : 'accent'}
+      actionTone={isActionMuted ? 'muted' : game.actionLabel === 'Rate players' ? 'warning' : 'accent'}
       audience={game.audience}
       distance={game.distance}
       level={game.level}
       location={game.location}
-      onPress={isFinished ? undefined : onPress}
+      onPress={game.actionDisabled ? undefined : onPress}
       players={formatPlayersCount(game.players)}
       requestStatusLabel={game.requestStatusLabel}
       secondarySpotsLeft={game.secondarySpotsLeft}
       secondarySpotsTone="red"
       spotsLeft={game.imageBadgeLabel ?? (game.requestStatusLabel ? game.spotsLeft : game.statusLabel)}
       spotsTone={game.statusTone === 'lime' ? 'green' : 'yellow'}
-      status={game.statusTone === 'muted' ? 'Full' : 'Approval'}
+      status={game.statusTone === 'muted' ? 'Closed' : 'Approval'}
       time={formatLobbyStart(game.startsAt)}
       title={game.title}
       variant={getNearbyVariant(game)}
@@ -1640,18 +1644,35 @@ function isCurrentPlayerInLobby(lobby: Lobby, currentPlayerId: string) {
 }
 
 function isCurrentPlayerFinalParticipant(lobby: Lobby, currentPlayerId: string) {
-  return getJoinedParticipants(lobby).some((participant) => participant.playerId === currentPlayerId);
+  return getMatchParticipantIds(lobby).includes(currentPlayerId);
+}
+
+function isActiveLobbyVisibleToCurrentPlayer(lobby: Lobby, currentPlayerId: string) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'open' || status === 'full' || status === 'closing_soon') {
+    return isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayerId);
+  }
+
+  if (status === 'in_progress') {
+    return isCurrentPlayerFinalParticipant(lobby, currentPlayerId);
+  }
+
+  if (status === 'cancelled') {
+    return isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayerId);
+  }
+
+  return false;
 }
 
 function isFinishedLobbyVisibleToCurrentPlayer(lobby: Lobby, currentPlayerId: string) {
-  if (isLobbyReadyForRatings(lobby)) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'rating_open') {
     return shouldShowRatingLobby(lobby, currentPlayerId);
   }
 
-  return (
-    lobby.status === 'closed' &&
-    isCurrentPlayerFinalParticipant(lobby, currentPlayerId)
-  );
+  return status === 'completed' && isCurrentPlayerFinalParticipant(lobby, currentPlayerId);
 }
 
 function getFinishedGameRatingState(lobby: Lobby, currentPlayerId: string, ratingTasks: RatingTask[]) {
@@ -1677,6 +1698,72 @@ function getFinishedGameRatingState(lobby: Lobby, currentPlayerId: string, ratin
 
 function isCurrentPlayerActiveOrPendingInLobby(lobby: Lobby, currentPlayerId: string) {
   return isCurrentPlayerInLobby(lobby, currentPlayerId) || Boolean(getCurrentPlayerPendingRequest(lobby, currentPlayerId));
+}
+
+function getActiveGameActionLabel(lobby: Lobby) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'cancelled') {
+    return 'View cancelled';
+  }
+
+  if (status === 'full') {
+    return lobbyLabels.viewMatch;
+  }
+
+  if (status === 'closing_soon') {
+    return 'Join now';
+  }
+
+  if (status === 'in_progress') {
+    return 'View match';
+  }
+
+  return lobbyLabels.viewMatch;
+}
+
+function getActiveGameStatusLabel(lobby: Lobby, currentPlayerId: string, participant?: Lobby['participants'][number]) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  if (status === 'full') {
+    return 'Full';
+  }
+
+  if (status === 'closing_soon') {
+    return getAutoCancelCountdownLabel(lobby) ?? 'Closing soon';
+  }
+
+  if (status === 'in_progress') {
+    return 'In progress';
+  }
+
+  return getLobbyMembershipStatusLabel(lobby, currentPlayerId, participant);
+}
+
+function getActiveGameStatusTone(lobby: Lobby, participant?: Lobby['participants'][number]) {
+  const status = getEffectiveLobbyStatus(lobby);
+
+  if (status === 'cancelled') {
+    return 'muted' as const;
+  }
+
+  if (status === 'full') {
+    return 'lime' as const;
+  }
+
+  if (status === 'closing_soon') {
+    return 'gold' as const;
+  }
+
+  if (status === 'in_progress') {
+    return 'lime' as const;
+  }
+
+  return participant ? 'lime' as const : 'gold' as const;
 }
 
 function getCurrentPlayerPendingRequest(lobby: Lobby, currentPlayerId: string) {

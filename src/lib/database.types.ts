@@ -52,6 +52,8 @@ export type DbLobby = {
   location_id: string;
   title: string;
   location_description: string | null;
+  match_locked_at: string | null;
+  match_participant_ids: string[] | null;
   starts_at: string;
   status: LobbyStatus;
   visibility: LobbyVisibility;

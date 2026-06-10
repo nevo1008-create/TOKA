@@ -24,7 +24,7 @@ type NearbyGameCardProps = {
   selected?: boolean;
   spotsTone?: 'green' | 'red' | 'yellow';
   spotsLeft?: string;
-  status: 'Approval' | 'Full';
+  status: 'Approval' | 'Closed' | 'Full';
   time: string;
   title: string;
   useHomeTypography?: boolean;

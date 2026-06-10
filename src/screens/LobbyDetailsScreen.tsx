@@ -13,8 +13,10 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
-import { formatLobbyStart, hasLobbyStarted, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
+import { formatLobbyStart, getEffectiveLobbyStatus, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
 import { isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
+import { getAutoCancelCountdownLabel, getAutoCancelMessage } from '../features/lobbies/lobbyLifecycle';
+import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import {
   getJoinGameDecision,
   getJoinWaitlistDecision,
@@ -106,6 +108,7 @@ export function LobbyDetailsScreen({
   ratingTasks,
   isActionPending = false,
 }: LobbyDetailsScreenProps) {
+  useLifecycleClock();
   const admin = players.find((player) => player.id === lobby.adminId);
   const activeParticipants = getJoinedParticipants(lobby);
   const waitlistedParticipants = getWaitlistParticipants(lobby);
@@ -127,8 +130,12 @@ export function LobbyDetailsScreen({
   const [pinError, setPinError] = useState<string | null>(null);
   const profilePreviewPlayer = profilePreviewSelection?.player;
   const isCurrentUserAdmin = isLobbyHost(lobby, currentPlayer.id, currentParticipant);
-  const isActionLockedByTime = hasLobbyStarted(lobby.startsAt);
+  const lifecycleStatus = getEffectiveLobbyStatus(lobby);
+  const arePreStartActionsOpen = lifecycleStatus === 'open' || lifecycleStatus === 'full' || lifecycleStatus === 'closing_soon';
+  const canManageLobbyPlayers = arePreStartActionsOpen;
+  const canLeaveRoomAfterCancellation = lifecycleStatus === 'cancelled';
   const isRatingOpen = isLobbyReadyForRatings(lobby);
+  const autoCancelMessage = getAutoCancelMessage(lobby);
   const canCurrentPlayerRateLobby = canPlayerRateLobby(lobby, currentPlayer.id);
   const hasRatedEveryPlayer = canCurrentPlayerRateLobby && getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayer.id).length === 0;
   const primaryAction = getLobbyPrimaryAction({
@@ -165,8 +172,7 @@ export function LobbyDetailsScreen({
   const canLeaveRoom =
     currentParticipant &&
     (currentParticipant.status === 'approved' || currentParticipant.status === 'attended') &&
-    !isActionLockedByTime &&
-    lobby.status !== 'closed';
+    (arePreStartActionsOpen || canLeaveRoomAfterCancellation);
 
   function openProfile(player: Player, participant = lobby.participants.find((candidate) => candidate.playerId === player.id)) {
     setProfilePreviewSelection({ participant, player });
@@ -183,8 +189,8 @@ export function LobbyDetailsScreen({
     });
     setActionSheetActions(
       getLobbyPlayerActions({
-        canInvite: !isActionLockedByTime,
-        canManageLobby: !isActionLockedByTime,
+        canInvite: arePreStartActionsOpen,
+        canManageLobby: canManageLobbyPlayers,
         currentPlayer,
         isCurrentUserAdmin,
         isFriend,
@@ -253,10 +259,15 @@ export function LobbyDetailsScreen({
           ]}
         />
 
+        {autoCancelMessage ? (
+          <AutoCancelPanel message={autoCancelMessage} />
+        ) : null}
+
         {canLeaveRoom ? (
           <RoomMembershipPanel
             disabled={isActionPending}
             isHost={isCurrentUserAdmin}
+            isLobbyCancelled={lifecycleStatus === 'cancelled'}
             participant={currentParticipant}
             onLeave={onLeaveLobby}
           />
@@ -270,7 +281,7 @@ export function LobbyDetailsScreen({
           <HostPrivatePinPanel pin={lobby.accessCode} />
         ) : null}
 
-        {isCurrentUserAdmin && !isActionLockedByTime ? (
+        {isCurrentUserAdmin && arePreStartActionsOpen ? (
           <HostPanel
             currentPlayerId={currentPlayer.id}
             isActionPending={isActionPending}
@@ -295,7 +306,7 @@ export function LobbyDetailsScreen({
 
         <ParticipantsSection
           actionIcon={playerSectionAction?.icon}
-          actionLabel={isActionLockedByTime ? undefined : playerSectionAction?.label}
+          actionLabel={arePreStartActionsOpen ? playerSectionAction?.label : undefined}
           count={activeParticipants.length}
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
@@ -313,7 +324,7 @@ export function LobbyDetailsScreen({
 
         <ParticipantsSection
           actionIcon={waitlistSectionAction?.icon}
-          actionLabel={isActionLockedByTime ? undefined : waitlistSectionAction?.label}
+          actionLabel={arePreStartActionsOpen ? waitlistSectionAction?.label : undefined}
           count={waitlistedParticipants.length}
           onAction={waitlistSectionAction?.onPress}
           onOpenActions={openPlayerActions}
@@ -344,7 +355,7 @@ export function LobbyDetailsScreen({
         moreActions={
           profilePreviewPlayer
             ? getLobbyPlayerActions({
-                canInvite: !isActionLockedByTime,
+                canInvite: arePreStartActionsOpen,
                 canManageLobby: false,
                 currentPlayer,
                 isCurrentUserAdmin: false,
@@ -432,7 +443,8 @@ function RoomHeroCard({
   playerCount: string;
   primaryAction: LobbyPrimaryAction;
 }) {
-  const areLobbyActionsOpen = !hasLobbyStarted(lobby.startsAt);
+  const lifecycleStatus = getEffectiveLobbyStatus(lobby);
+  const areLobbyActionsOpen = lifecycleStatus === 'open' || lifecycleStatus === 'full' || lifecycleStatus === 'closing_soon';
   const showShareAction = areLobbyActionsOpen;
 
   return (
@@ -578,6 +590,24 @@ function PrivatePinPanel({
   );
 }
 
+function AutoCancelPanel({ message }: { message: string }) {
+  return (
+    <View style={styles.autoCancelPanel}>
+      <View style={styles.autoCancelIcon}>
+        <Ionicons color={colors.accentGoldDark} name="timer-outline" size={17} />
+      </View>
+      <View style={styles.autoCancelCopy}>
+        <AppText variant="uiBody" weight="900">
+          This room will close soon
+        </AppText>
+        <AppText tone="muted" variant="metadata" weight="700">
+          {message}
+        </AppText>
+      </View>
+    </View>
+  );
+}
+
 function PendingApprovalPanel() {
   return (
     <View style={styles.pendingApprovalPanel}>
@@ -622,11 +652,13 @@ function HostPrivatePinPanel({ pin }: { pin: string }) {
 function RoomMembershipPanel({
   disabled,
   isHost,
+  isLobbyCancelled,
   onLeave,
   participant,
 }: {
   disabled: boolean;
   isHost: boolean;
+  isLobbyCancelled: boolean;
   onLeave: () => void;
   participant: LobbyParticipant;
 }) {
@@ -638,6 +670,9 @@ function RoomMembershipPanel({
       ? 'You are on the waitlist.'
       : 'You are in players.';
   const buttonLabel = isHost ? 'Leave game' : 'Leave';
+  const helperText = isLobbyCancelled
+    ? 'This game was cancelled. Leave to remove it from My Games.'
+    : 'Leave the room completely when your plans change.';
 
   return (
     <View style={styles.membershipPanel}>
@@ -650,7 +685,7 @@ function RoomMembershipPanel({
             {statusLabel}
           </AppText>
           <AppText numberOfLines={1} tone="muted" variant="metadata" weight="600">
-            Leave the room completely when your plans change.
+            {helperText}
           </AppText>
         </View>
       </View>
@@ -1254,16 +1289,35 @@ function formatCompactPlayerCount(playerCount: string) {
 }
 
 function getStatusLabel(lobby: Lobby) {
-  if (lobby.status === 'full') {
+  if (isLobbyReadyForRatings(lobby)) {
+    return 'Rating open';
+  }
+
+  const status = getEffectiveLobbyStatus(lobby);
+  const autoCancelLabel = getAutoCancelCountdownLabel(lobby);
+
+  if (autoCancelLabel) {
+    return autoCancelLabel;
+  }
+
+  if (status === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  if (status === 'completed') {
+    return 'Finished';
+  }
+
+  if (status === 'full') {
     return 'Full';
   }
 
-  if (isLobbyReadyForRatings(lobby)) {
-    return 'Completed';
+  if (status === 'in_progress') {
+    return 'Started';
   }
 
-  if (lobby.status === 'in_progress') {
-    return 'Started';
+  if (status === 'closed') {
+    return 'Closed';
   }
 
   if (lobby.visibility === 'approval_required') {
@@ -1348,7 +1402,9 @@ function getLobbyPrimaryAction({
   onOpenPinEntry: () => void;
   onRequestWaitlistApproval: () => void;
 }): LobbyPrimaryAction {
-  if (isLobbyReadyForRatings(lobby)) {
+  const lifecycleStatus = getEffectiveLobbyStatus(lobby);
+
+  if (lifecycleStatus === 'rating_open') {
     if (!canCurrentPlayerRateLobby || hasRatedEveryPlayer) {
       return {
         disabled: true,
@@ -1370,7 +1426,7 @@ function getLobbyPrimaryAction({
     };
   }
 
-  if (lobby.status === 'closed') {
+  if (lifecycleStatus === 'completed') {
     return {
       disabled: true,
       icon: 'checkmark',
@@ -1381,7 +1437,18 @@ function getLobbyPrimaryAction({
     };
   }
 
-  if (hasLobbyStarted(lobby.startsAt)) {
+  if (lifecycleStatus === 'cancelled') {
+    return {
+      disabled: true,
+      icon: 'close-circle-outline',
+      iconColor: colors.muted,
+      label: 'Cancelled',
+      textTone: 'muted',
+      tone: 'muted',
+    };
+  }
+
+  if (lifecycleStatus === 'in_progress') {
     return {
       disabled: true,
       icon: 'time-outline',
@@ -1541,9 +1608,10 @@ function getPlayerSectionAction({
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
   const activeCurrentParticipant = getActiveCurrentParticipant(lobby, currentPlayer.id);
+  const lifecycleStatus = getEffectiveLobbyStatus(lobby);
 
   if (
-    hasLobbyStarted(lobby.startsAt) ||
+    (lifecycleStatus !== 'open' && lifecycleStatus !== 'full' && lifecycleStatus !== 'closing_soon') ||
     activeCurrentParticipant?.role === 'admin' ||
     relationship === 'joined' ||
     relationship === 'attended'
@@ -1579,8 +1647,9 @@ function getWaitlistSectionAction({
   onJoinWaitlist: () => void;
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
+  const lifecycleStatus = getEffectiveLobbyStatus(lobby);
 
-  if (hasLobbyStarted(lobby.startsAt) || relationship === 'waitlist') {
+  if ((lifecycleStatus !== 'open' && lifecycleStatus !== 'full' && lifecycleStatus !== 'closing_soon') || relationship === 'waitlist') {
     return undefined;
   }
 
@@ -1774,6 +1843,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: spacing.xs,
+  },
+  autoCancelCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  autoCancelIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceYellow,
+    borderColor: 'rgba(246, 201, 69, 0.40)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  autoCancelPanel: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 246, 215, 0.92)',
+    borderColor: 'rgba(239, 165, 26, 0.26)',
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    ...shadows.soft,
   },
   adminCopy: {
     flex: 1,
