@@ -449,11 +449,13 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
     throw new Error(error.message);
   }
 
-  await notifyCurrentLobbyMembers(syncedLobby, hostPlayerId, {
-    body: `${syncedLobby.title} details were updated by the host.`,
-    title: 'Lobby updated',
-    type: 'lobby_changed',
-  });
+  if (hasMeaningfulLobbyEdit(syncedLobby, draft, selectedPlayerCounts)) {
+    await notifyCurrentLobbyMembers(syncedLobby, hostPlayerId, {
+      body: `${syncedLobby.title} date, place, or player count was updated by the host.`,
+      title: 'Lobby updated',
+      type: 'lobby_changed',
+    });
+  }
 
   return {
     messages: ['Lobby settings updated.'],
@@ -751,7 +753,7 @@ function assertLobbyBeforeStart(lobby: Lobby) {
 
 async function notifyCurrentLobbyMembers(
   lobby: Lobby,
-  actorPlayerId: string,
+  actorPlayerId: string | null,
   notification: {
     body: string;
     title: string;
@@ -759,7 +761,11 @@ async function notifyCurrentLobbyMembers(
   },
 ) {
   const recipientIds = Array.from(
-    new Set(lobby.participants.map((participant) => participant.playerId).filter((playerId) => playerId !== actorPlayerId)),
+    new Set(
+      lobby.participants
+        .map((participant) => participant.playerId)
+        .filter((playerId) => (actorPlayerId ? playerId !== actorPlayerId : true)),
+    ),
   );
 
   await Promise.all(
@@ -767,7 +773,7 @@ async function notifyCurrentLobbyMembers(
       createNotificationBestEffort({
         ...notification,
         lobbyId: lobby.id,
-        playerId: actorPlayerId,
+        playerId: actorPlayerId ?? lobby.adminId,
         recipientPlayerId,
       }),
     ),
@@ -791,6 +797,20 @@ async function createNotificationBestEffort(options: {
 
 function generatePrivateAccessCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function hasMeaningfulLobbyEdit(lobby: Lobby, draft: LobbySettingsDraft, selectedPlayerCounts: number[]) {
+  const nextMinPlayers = Math.min(...selectedPlayerCounts);
+  const nextMaxPlayers = Math.max(...selectedPlayerCounts);
+
+  return (
+    lobby.startsAt !== draft.startsAt ||
+    lobby.location.name !== draft.locationName ||
+    lobby.location.city !== draft.locationCity ||
+    (lobby.locationDescription ?? '') !== draft.meetingPoint ||
+    lobby.minPlayers !== nextMinPlayers ||
+    lobby.maxPlayers !== nextMaxPlayers
+  );
 }
 
 async function markMembershipLeft(
@@ -894,6 +914,15 @@ async function syncLobbyLifecycleBestEffort(row: DbLobbyWithRelations, lobby: Lo
 
   if (error) {
     console.warn('Could not persist derived lobby lifecycle state.', error.message);
+    return;
+  }
+
+  if (row.status !== 'cancelled' && lobby.status === 'cancelled') {
+    await notifyCurrentLobbyMembers(lobby, null, {
+      body: `${lobby.title} was cancelled because fewer than 4 players joined before the room closed.`,
+      title: 'Lobby cancelled',
+      type: 'lobby_changed',
+    });
   }
 }
 

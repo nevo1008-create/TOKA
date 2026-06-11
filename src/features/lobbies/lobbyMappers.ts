@@ -1,4 +1,5 @@
 import type {
+  DbFriendRequest,
   DbLobbyMembership,
   DbLobbyWithRelations,
   DbLobbyMessage,
@@ -6,6 +7,7 @@ import type {
 } from '../../lib/database.types';
 import type {
   ChatMessage,
+  FriendRequest,
   JoinRequest,
   JoinRequestReason,
   Lobby,
@@ -112,9 +114,21 @@ export function mapDbNotificationToNotification(row: DbNotification): Notificati
     body: row.body,
     id: row.id,
     lobbyId: row.related_lobby_id ?? undefined,
+    playerId: row.related_player_id ?? undefined,
     read: Boolean(row.read_at),
     title: row.title,
     type: mapNotificationType(row.type),
+  };
+}
+
+export function mapDbFriendRequestToFriendRequest(row: DbFriendRequest): FriendRequest {
+  return {
+    createdAt: row.created_at,
+    id: row.id,
+    recipientPlayerId: row.recipient_player_id,
+    requesterPlayerId: row.requester_player_id,
+    respondedAt: row.responded_at,
+    status: row.status,
   };
 }
 
@@ -159,6 +173,9 @@ function mapNotificationType(type: string): Notification['type'] {
     type === 'room_invite' ||
     type === 'waitlist_update' ||
     type === 'rating_required' ||
+    type === 'rating_closing_soon' ||
+    type === 'friend_request' ||
+    type === 'friend_accepted' ||
     type === 'lobby_changed'
   ) {
     return type;

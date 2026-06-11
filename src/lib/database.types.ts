@@ -1,5 +1,6 @@
 import type {
   CapacityMode,
+  FriendRequestStatus,
   Gender,
   GenderRule,
   LobbyStatus,
@@ -133,6 +134,16 @@ export type DbNotification = {
   created_at: string;
 };
 
+export type DbFriendRequest = {
+  id: string;
+  requester_player_id: string;
+  recipient_player_id: string;
+  status: FriendRequestStatus;
+  created_at: string;
+  updated_at: string;
+  responded_at: string | null;
+};
+
 export type DbPlayerRating = {
   id: string;
   lobby_id: string;
@@ -181,6 +192,11 @@ export type Database = {
         Insert: Partial<DbNotification> & Pick<DbNotification, 'type' | 'title' | 'body'>;
         Update: Partial<DbNotification>;
       };
+      friend_requests: {
+        Row: DbFriendRequest;
+        Insert: Partial<DbFriendRequest> & Pick<DbFriendRequest, 'requester_player_id' | 'recipient_player_id'>;
+        Update: Partial<DbFriendRequest>;
+      };
       player_ratings: {
         Row: DbPlayerRating;
         Insert: Partial<DbPlayerRating> & Pick<DbPlayerRating, 'lobby_id' | 'rater_player_id' | 'rated_player_id' | 'rank_vote' | 'behavior_rating'>;
@@ -223,6 +239,42 @@ export type Database = {
           target_lobby_id: string;
         };
         Returns: string;
+      };
+      send_friend_request: {
+        Args: {
+          target_player_id: string;
+        };
+        Returns: DbFriendRequest;
+      };
+      accept_friend_request: {
+        Args: {
+          target_request_id: string;
+        };
+        Returns: DbFriendRequest;
+      };
+      decline_friend_request: {
+        Args: {
+          target_request_id: string;
+        };
+        Returns: DbFriendRequest;
+      };
+      cancel_friend_request: {
+        Args: {
+          target_request_id: string;
+        };
+        Returns: DbFriendRequest;
+      };
+      remove_friend: {
+        Args: {
+          target_player_id: string;
+        };
+        Returns: void;
+      };
+      sync_lobby_lifecycle: {
+        Args: {
+          target_lobby_id: string;
+        };
+        Returns: DbLobby;
       };
     };
     Enums: Record<string, never>;

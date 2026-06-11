@@ -11,30 +11,41 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { ProgressBar } from '../components/ProgressBar';
-import { players } from '../data/mock';
 import { colors, radius, shadows, spacing } from '../theme';
-import type { Player } from '../types';
+import type { FriendRequest, Player } from '../types';
 
 type ProfileScreenProps = {
+  currentPlayer: Player;
+  friendRequests: FriendRequest[];
   notificationCount: number;
   onBack?: () => void;
+  onCancelFriendRequest: (requestId: string) => void;
   onEditProfile?: () => void;
   onInvitePlayer: (playerId: string) => void;
   onOpenMenu?: () => void;
   onOpenNotifications: () => void;
+  onRemoveFriend: (playerId: string) => void;
+  onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile?: (player: Player) => void;
   player: Player;
+  players: Player[];
 };
 
 export function ProfileScreen({
+  currentPlayer,
+  friendRequests,
   notificationCount,
   onBack,
+  onCancelFriendRequest,
   onEditProfile,
   onInvitePlayer,
   onOpenMenu,
   onOpenNotifications,
+  onRemoveFriend,
+  onSendFriendRequest,
   onViewPlayerProfile,
   player,
+  players,
 }: ProfileScreenProps) {
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
@@ -42,13 +53,13 @@ export function ProfileScreen({
     context: 'friend' | 'recent';
     player: Player;
   } | null>(null);
-  const [requestedPlayerIds, setRequestedPlayerIds] = useState<string[]>([]);
   const friendPlayers = players.filter((candidate) => player.friendIds.includes(candidate.id));
   const recentPlayers = players.filter((candidate) => candidate.id !== player.id);
 
   function openActions(person: Player, context: 'friend' | 'recent') {
-    const isFriend = player.friendIds.includes(person.id);
-    const isRequested = requestedPlayerIds.includes(person.id);
+    const isFriend = currentPlayer.friendIds.includes(person.id);
+    const pendingRequest = getPendingSentRequest(friendRequests, currentPlayer.id, person.id);
+    const isRequested = Boolean(pendingRequest);
 
     setActionSheetPlayer({
       contextLabel: getProfilePlayerContext(person, context, isFriend),
@@ -63,7 +74,8 @@ export function ProfileScreen({
         () => openProfile(person, context),
         () => onInvitePlayer(person.id),
         () => requestFriend(person.id),
-        () => cancelFriendRequest(person.id),
+        pendingRequest ? () => onCancelFriendRequest(pendingRequest.id) : undefined,
+        () => onRemoveFriend(person.id),
       ),
     );
   }
@@ -73,11 +85,7 @@ export function ProfileScreen({
   }
 
   function requestFriend(playerId: string) {
-    setRequestedPlayerIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
-  }
-
-  function cancelFriendRequest(playerId: string) {
-    setRequestedPlayerIds((current) => current.filter((id) => id !== playerId));
+    onSendFriendRequest(playerId);
   }
 
   return (
@@ -250,7 +258,7 @@ export function ProfileScreen({
             ? getProfilePlayerContext(
                 profilePreviewPlayer.player,
                 profilePreviewPlayer.context,
-                player.friendIds.includes(profilePreviewPlayer.player.id),
+                currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
               )
             : undefined
         }
@@ -261,12 +269,17 @@ export function ProfileScreen({
           profilePreviewPlayer
             ? getProfilePlayerActions(
                 profilePreviewPlayer.context,
-                player.friendIds.includes(profilePreviewPlayer.player.id),
-                requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
+                Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                 () => undefined,
                 () => onInvitePlayer(profilePreviewPlayer.player.id),
                 () => requestFriend(profilePreviewPlayer.player.id),
-                () => cancelFriendRequest(profilePreviewPlayer.player.id),
+                getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)
+                  ? () => onCancelFriendRequest(
+                      getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)?.id ?? '',
+                    )
+                  : undefined,
+                () => onRemoveFriend(profilePreviewPlayer.player.id),
               )
             : undefined
         }
@@ -289,19 +302,19 @@ export function ProfileScreen({
                 disabled:
                   getProfilePreviewActionLabel(
                     profilePreviewPlayer.context,
-                    player.friendIds.includes(profilePreviewPlayer.player.id),
-                    requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                    currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
+                    Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                   ) === 'Requested',
                 label: getProfilePreviewActionLabel(
                   profilePreviewPlayer.context,
-                  player.friendIds.includes(profilePreviewPlayer.player.id),
-                  requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                  currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
+                  Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                 ),
                 onPress: () => {
                   const actionLabel = getProfilePreviewActionLabel(
                     profilePreviewPlayer.context,
-                    player.friendIds.includes(profilePreviewPlayer.player.id),
-                    requestedPlayerIds.includes(profilePreviewPlayer.player.id),
+                    currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
+                    Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                   );
 
                   if (actionLabel === 'Invite' || actionLabel === 'Invite to game') {
@@ -691,7 +704,8 @@ function getProfilePlayerActions(
   onViewProfile: () => void,
   onInviteToGame: () => void,
   onAddFriend: () => void,
-  onRemoveRequest: () => void,
+  onRemoveRequest?: () => void,
+  onRemoveFriend?: () => void,
 ): PlayerAction[] {
   const viewProfileAction = {
     icon: 'person-circle-outline' as const,
@@ -714,7 +728,7 @@ function getProfilePlayerActions(
     return [
       viewProfileAction,
       inviteAction,
-      { destructive: true, icon: 'person-remove-outline', label: 'Remove friend' },
+      { destructive: true, icon: 'person-remove-outline', label: 'Remove friend', onPress: onRemoveFriend },
       reportAction,
     ];
   }
@@ -725,6 +739,15 @@ function getProfilePlayerActions(
     inviteAction,
     reportAction,
   ];
+}
+
+function getPendingSentRequest(friendRequests: FriendRequest[], currentPlayerId: string, playerId: string) {
+  return friendRequests.find(
+    (request) =>
+      request.requesterPlayerId === currentPlayerId &&
+      request.recipientPlayerId === playerId &&
+      request.status === 'pending',
+  );
 }
 
 function getProfilePreviewActionLabel(context: 'friend' | 'recent', isFriend: boolean, isRequested: boolean) {

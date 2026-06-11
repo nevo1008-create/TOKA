@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
@@ -9,24 +9,13 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getFallbackPreviewPlayingDetails, getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
-import { currentPlayer, players } from '../data/mock';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { Player, PlayerLevel } from '../types';
-
-type ConnectPlayer = {
-  area: string;
-  badge: 'shield' | 'star';
-  id: string;
-  initials: string;
-  level: PlayerLevel;
-  name: string;
-  points: number;
-  rating: string;
-};
+import type { FriendRequest, Player, PlayerLevel } from '../types';
 
 type CommunityPlayerCard = {
   area?: string;
   badge: 'shield' | 'star';
+  friendRequestId?: string;
   id: string;
   initials: string;
   level: PlayerLevel;
@@ -36,21 +25,35 @@ type CommunityPlayerCard = {
   sourcePlayerId?: string;
 };
 
-const connectPlayers: ConnectPlayer[] = [
-  { id: 'c1', initials: 'AM', name: 'Amit', points: 290, rating: '3.5', level: 'B+', badge: 'star', area: 'Gordon Beach' },
-  { id: 'c2', initials: 'YN', name: 'Yoni', points: 242, rating: '3.2', level: 'B', badge: 'star', area: 'Hilton Beach' },
-  { id: 'c3', initials: 'TL', name: 'Tal', points: 471, rating: '4.0', level: 'A-', badge: 'shield', area: 'Polegy Beach' },
-  { id: 'c4', initials: 'NM', name: 'Noam', points: 318, rating: '3.6', level: 'B+', badge: 'star', area: 'Frishman Beach' },
-  { id: 'c5', initials: 'ID', name: 'Ido', points: 265, rating: '3.3', level: 'B', badge: 'shield', area: 'Aqueduct Beach' },
-];
+type LeaderboardEntry = {
+  games: number;
+  initials: string;
+  isCurrent: boolean;
+  level: PlayerLevel;
+  name: string;
+  points: number;
+  rank: number;
+  rating: string;
+};
 
-const leaderboard = [
+function getLeaderboardRows(currentPlayer: Player): LeaderboardEntry[] {
+  return [
   { rank: 1, name: 'Itay Levi', initials: 'IL', level: 'A', rating: '4.2', games: 24, points: 512, isCurrent: false },
   { rank: 2, name: 'Yonatan Sh.', initials: 'YS', level: 'A-', rating: '4.0', games: 22, points: 471, isCurrent: false },
   { rank: 3, name: 'Aviad M.', initials: 'AM', level: 'B+', rating: '3.8', games: 18, points: 389, isCurrent: false },
   { rank: 4, name: 'Maya Cohen', initials: 'MC', level: 'B+', rating: '3.6', games: 19, points: 328, isCurrent: false },
-  { rank: 5, name: 'Nevo Cohen', initials: currentPlayer.initials, level: currentPlayer.level, rating: '3.6', games: 12, points: 328, isCurrent: true },
-] as const;
+    {
+      rank: 5,
+      name: currentPlayer.name,
+      initials: currentPlayer.initials,
+      level: currentPlayer.level,
+      rating: '3.6',
+      games: currentPlayer.gamesPlayed,
+      points: currentPlayer.tocaPoints,
+      isCurrent: true,
+    },
+  ];
+}
 
 const communityPages = ['Community', 'Leaderboard'] as const;
 const friendViews = ['Friends', 'Friend requests'] as const;
@@ -64,35 +67,55 @@ type ProfilePreviewPlayer = CommunityPlayerCard & {
 };
 
 type CommunityScreenProps = {
+  currentPlayer: Player;
+  friendRequests: FriendRequest[];
+  initialFriendView?: FriendView;
   notificationCount: number;
   onAddFriend: () => void;
+  onAcceptFriendRequest: (requestId: string) => void;
+  onCancelFriendRequest: (requestId: string) => void;
+  onDeclineFriendRequest: (requestId: string) => void;
   onInvitePlayer: (playerId: string, source: 'community' | 'leaderboard') => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
+  onRemoveFriend: (playerId: string) => void;
+  onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
+  players: Player[];
 };
 
 export function CommunityScreen({
+  currentPlayer,
+  friendRequests,
+  initialFriendView = 'Friends',
   notificationCount,
   onAddFriend,
+  onAcceptFriendRequest,
+  onCancelFriendRequest,
+  onDeclineFriendRequest,
   onInvitePlayer,
   onOpenMenu,
   onOpenNotifications,
+  onRemoveFriend,
+  onSendFriendRequest,
   onViewPlayerProfile,
+  players,
 }: CommunityScreenProps) {
   const [activePage, setActivePage] = useState<CommunityPage>('Community');
-  const [activeFriendView, setActiveFriendView] = useState<FriendView>('Friends');
+  const [activeFriendView, setActiveFriendView] = useState<FriendView>(initialFriendView);
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [profilePreviewPlayer, setProfilePreviewPlayer] = useState<ProfilePreviewPlayer | null>(null);
   const [leaderboardScope, setLeaderboardScope] = useState<'All' | 'Friends' | 'Region'>('Friends');
-  const [cancelledRequestIds, setCancelledRequestIds] = useState<string[]>([]);
-  const [requestedPlayerIds, setRequestedPlayerIds] = useState<string[]>([]);
-  const friendPlayers = players.filter((player) => currentPlayer.friendIds.includes(player.id));
-  const visibleFriends = [
-    ...friendPlayers,
-    ...players.filter((player) => player.id !== currentPlayer.id && !currentPlayer.friendIds.includes(player.id)),
-  ].slice(0, 4);
+  const leaderboardRows = getLeaderboardRows(currentPlayer);
+  const pendingReceivedRequests = friendRequests.filter(
+    (request) => request.recipientPlayerId === currentPlayer.id && request.status === 'pending',
+  );
+  const pendingSentRequests = friendRequests.filter(
+    (request) => request.requesterPlayerId === currentPlayer.id && request.status === 'pending',
+  );
+  const friendPlayers = players.filter((player) => areFriends(currentPlayer, player));
+  const visibleFriends = friendPlayers.slice(0, 4);
   const friendCards: CommunityPlayerCard[] = visibleFriends.map((player, index) => ({
     area: player.area,
     badge: index % 3 === 2 ? 'shield' : 'star',
@@ -104,13 +127,56 @@ export function CommunityScreen({
     rating: player.id === currentPlayer.id ? '3.6' : index === 0 ? '3.2' : index === 1 ? '3.6' : index === 2 ? '4.0' : '3.3',
     sourcePlayerId: player.id,
   }));
-  const requestCards: CommunityPlayerCard[] = connectPlayers.slice(0, 4);
+  const requestCards: CommunityPlayerCard[] = pendingReceivedRequests
+    .map((request, index) => {
+      const player = players.find((candidate) => candidate.id === request.requesterPlayerId);
+
+      if (!player) {
+        return null;
+      }
+
+      return mapPlayerToCommunityCard(player, index, {
+        friendRequestId: request.id,
+        rating: getPlayerRating(player, currentPlayer.id),
+      });
+    })
+    .filter((player): player is CommunityPlayerCard => Boolean(player));
+  const sentRequestCards: CommunityPlayerCard[] = pendingSentRequests
+    .map((request, index) => {
+      const player = players.find((candidate) => candidate.id === request.recipientPlayerId);
+
+      if (!player) {
+        return null;
+      }
+
+      return mapPlayerToCommunityCard(player, index, {
+        friendRequestId: request.id,
+        rating: getPlayerRating(player, currentPlayer.id),
+      });
+    })
+    .filter((player): player is CommunityPlayerCard => Boolean(player));
+  const connectCards: CommunityPlayerCard[] = players
+    .filter((player) =>
+      player.id !== currentPlayer.id &&
+      !areFriends(currentPlayer, player) &&
+      !pendingSentRequests.some((request) => request.recipientPlayerId === player.id) &&
+      !pendingReceivedRequests.some((request) => request.requesterPlayerId === player.id),
+    )
+    .slice(0, 5)
+    .map((player, index) => mapPlayerToCommunityCard(player, index, { rating: getPlayerRating(player, currentPlayer.id) }));
   const activeSocialCards = activeFriendView === 'Friends' ? friendCards : requestCards;
+
+  useEffect(() => {
+    setActivePage('Community');
+    setActiveFriendView(initialFriendView);
+  }, [initialFriendView]);
 
   function openActions(player: CommunityPlayerCard, context: PlayerMenuVariant) {
     const playerId = player.sourcePlayerId ?? player.id;
-    const isFriend = Boolean(player.sourcePlayerId && currentPlayer.friendIds.includes(player.sourcePlayerId));
-    const isRequested = context === 'requested' || requestedPlayerIds.includes(playerId);
+    const sourcePlayer = players.find((candidate) => candidate.id === playerId);
+    const isFriend = sourcePlayer ? areFriends(currentPlayer, sourcePlayer) : false;
+    const pendingSentRequest = getPendingSentRequest(friendRequests, currentPlayer.id, playerId);
+    const isRequested = context === 'requested' || Boolean(pendingSentRequest);
 
     setActionSheetPlayer({
       contextLabel: getCommunityContext(player, context),
@@ -127,7 +193,10 @@ export function CommunityScreen({
           ? () => onInvitePlayer(player.sourcePlayerId as string, context === 'leaderboard' ? 'leaderboard' : 'community')
           : undefined,
         () => requestFriend(playerId),
-        () => cancelFriendRequest(playerId),
+        pendingSentRequest ? () => onCancelFriendRequest(pendingSentRequest.id) : undefined,
+        player.friendRequestId ? () => onAcceptFriendRequest(player.friendRequestId as string) : undefined,
+        player.friendRequestId ? () => onDeclineFriendRequest(player.friendRequestId as string) : undefined,
+        () => onRemoveFriend(playerId),
       ),
     );
   }
@@ -137,12 +206,7 @@ export function CommunityScreen({
   }
 
   function requestFriend(playerId: string) {
-    setRequestedPlayerIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
-  }
-
-  function cancelFriendRequest(playerId: string) {
-    setRequestedPlayerIds((current) => current.filter((id) => id !== playerId));
-    setCancelledRequestIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
+    onSendFriendRequest(playerId);
   }
 
   return (
@@ -245,31 +309,51 @@ export function CommunityScreen({
               )}
 
               <View style={styles.playerRowStack}>
-                {activeSocialCards.map((player) => {
-                  const context = activeFriendView === 'Friends' ? 'friend' : 'request';
+                {activeSocialCards.length > 0 ? (
+                  activeSocialCards.map((player) => {
+                    const context = activeFriendView === 'Friends' ? 'friend' : 'request';
 
-                  return (
-                    <PlayerRow
-                      context={getCommunityContext(player, context)}
-                      initials={player.initials}
-                      key={`${activeFriendView}-${player.id}`}
-                      level={player.level}
-                      location={player.area}
-                      name={player.name}
-                      onMore={() => openActions(player, context)}
-                      onPressProfile={() => openProfile(player, context)}
-                      primaryAction={
-                        context === 'request'
-                          ? { icon: 'checkmark', iconOnly: true, label: 'Accept' }
-                          : undefined
-                      }
-                      rating={player.rating}
-                      secondaryAction={context === 'request' ? { icon: 'close', iconOnly: true, label: 'Decline' } : undefined}
-                      statusIcon={player.badge === 'shield' ? 'shield-checkmark' : 'star'}
-                      style={context === 'request' ? styles.friendRequestPlayerRow : undefined}
-                    />
-                  );
-                })}
+                    return (
+                      <PlayerRow
+                        context={getCommunityContext(player, context)}
+                        initials={player.initials}
+                        key={`${activeFriendView}-${player.id}`}
+                        level={player.level}
+                        location={player.area}
+                        name={player.name}
+                        onMore={() => openActions(player, context)}
+                        onPressProfile={() => openProfile(player, context)}
+                        primaryAction={
+                          context === 'request'
+                            ? {
+                                icon: 'checkmark',
+                                iconOnly: true,
+                                label: 'Accept',
+                                onPress: player.friendRequestId ? () => onAcceptFriendRequest(player.friendRequestId as string) : undefined,
+                              }
+                            : undefined
+                        }
+                        rating={player.rating}
+                        secondaryAction={
+                          context === 'request'
+                            ? {
+                                icon: 'close',
+                                iconOnly: true,
+                                label: 'Decline',
+                                onPress: player.friendRequestId ? () => onDeclineFriendRequest(player.friendRequestId as string) : undefined,
+                              }
+                            : undefined
+                        }
+                        statusIcon={player.badge === 'shield' ? 'shield-checkmark' : 'star'}
+                        style={context === 'request' ? styles.friendRequestPlayerRow : undefined}
+                      />
+                    );
+                  })
+                ) : activeFriendView === 'Friend requests' ? (
+                  <FriendRequestEmptyState body="Incoming friend requests will appear here." title="No friend requests received" />
+                ) : (
+                  <FriendRequestEmptyState body="Add players to start building your TOCA crew." title="No friends yet" />
+                )}
               </View>
             </View>
 
@@ -277,10 +361,15 @@ export function CommunityScreen({
               <SectionHeader title={activeFriendView === 'Friend requests' ? 'Sent' : 'Connect nearby'} />
               <View style={styles.playerRowStack}>
                 {(activeFriendView === 'Friend requests'
-                  ? connectPlayers.filter((player) => !cancelledRequestIds.includes(player.id))
-                  : connectPlayers
+                  ? sentRequestCards
+                  : connectCards
+                ).length > 0 ? (activeFriendView === 'Friend requests'
+                  ? sentRequestCards
+                  : connectCards
                 ).map((player) => {
-                  const isRequested = activeFriendView === 'Friend requests' || requestedPlayerIds.includes(player.id);
+                  const playerId = player.sourcePlayerId ?? player.id;
+                  const pendingRequest = getPendingSentRequest(friendRequests, currentPlayer.id, playerId);
+                  const isRequested = activeFriendView === 'Friend requests' || Boolean(pendingRequest);
 
                   return (
                     <PlayerRow
@@ -294,18 +383,26 @@ export function CommunityScreen({
                       onPressProfile={() => openProfile(player, isRequested ? 'requested' : 'connect')}
                       primaryAction={
                         isRequested
-                          ? getRelationshipAction({
+                          ? {
+                              label: 'Requested',
+                              onPress: player.friendRequestId ? () => onCancelFriendRequest(player.friendRequestId as string) : undefined,
+                              variant: 'muted',
+                            }
+                          : getRelationshipAction({
                               isFriend: false,
                               isRequested,
-                              onAdd: () => requestFriend(player.id),
+                              onAdd: () => requestFriend(playerId),
                             })
-                          : undefined
                       }
                       rating={player.rating}
                       statusIcon={player.badge === 'shield' ? 'shield-checkmark' : 'star'}
                     />
                   );
-                })}
+                }) : activeFriendView === 'Friend requests' ? (
+                  <FriendRequestEmptyState body="Friend requests you send will appear here." title="No sent friend requests" />
+                ) : (
+                  <FriendRequestEmptyState body="Search or invite players to find more TOCA friends." title="No nearby suggestions" />
+                )}
               </View>
             </View>
 
@@ -322,7 +419,7 @@ export function CommunityScreen({
           </>
         ) : (
           <>
-            <MyStandingCard />
+            <MyStandingCard currentPlayer={currentPlayer} />
 
             <View style={styles.leaderboardPanel}>
               <View style={styles.panelHeader}>
@@ -361,14 +458,14 @@ export function CommunityScreen({
               </View>
 
               <View style={styles.leaderboardList}>
-                {leaderboard.map((row) => (
+                {leaderboardRows.map((row) => (
                   <LeaderboardRow
                     key={row.rank}
                     onMore={() => {
-                      const player = rowToCommunityPlayer(row);
+                      const player = rowToCommunityPlayer(row, players);
                       openActions(player, 'leaderboard');
                     }}
-                    onPressProfile={() => openProfile(rowToCommunityPlayer(row), 'leaderboard')}
+                    onPressProfile={() => openProfile(rowToCommunityPlayer(row, players), 'leaderboard')}
                     row={row}
                   />
                 ))}
@@ -408,9 +505,9 @@ export function CommunityScreen({
           profilePreviewPlayer
             ? getPlayerActions(
                 profilePreviewPlayer.menuVariant,
-                Boolean(profilePreviewPlayer.sourcePlayerId && currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId)),
+                isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                 profilePreviewPlayer.menuVariant === 'requested' ||
-                  requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                  Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                 () => undefined,
                 profilePreviewPlayer.sourcePlayerId
                   ? () =>
@@ -420,7 +517,18 @@ export function CommunityScreen({
                       )
                   : undefined,
                 () => requestFriend(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
-                () => cancelFriendRequest(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)
+                  ? () => onCancelFriendRequest(
+                      getPendingSentRequest(
+                        friendRequests,
+                        currentPlayer.id,
+                        profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id,
+                      )?.id ?? '',
+                    )
+                  : undefined,
+                profilePreviewPlayer.friendRequestId ? () => onAcceptFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
+                profilePreviewPlayer.friendRequestId ? () => onDeclineFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
+                profilePreviewPlayer.sourcePlayerId ? () => onRemoveFriend(profilePreviewPlayer.sourcePlayerId as string) : undefined,
               )
             : undefined
         }
@@ -430,7 +538,7 @@ export function CommunityScreen({
           profilePreviewPlayer
             ? {
                 label: 'View full profile',
-                onPress: () => onViewPlayerProfile(getProfilePlayerFromCommunity(profilePreviewPlayer)),
+                onPress: () => onViewPlayerProfile(getProfilePlayerFromCommunity(profilePreviewPlayer, players)),
               }
             : undefined
         }
@@ -449,22 +557,22 @@ export function CommunityScreen({
                 disabled:
                   getCommunityProfileActionState(
                     profilePreviewPlayer,
-                    currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId ?? ''),
+                    isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                     profilePreviewPlayer.menuVariant === 'requested' ||
-                      requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                      Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                   ).label === 'Requested',
                 label: getCommunityProfileActionState(
                   profilePreviewPlayer,
-                  currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId ?? ''),
+                  isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                   profilePreviewPlayer.menuVariant === 'requested' ||
-                    requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                    Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                 ).label,
                 onPress: () => {
                   const actionState = getCommunityProfileActionState(
                     profilePreviewPlayer,
-                    currentPlayer.friendIds.includes(profilePreviewPlayer.sourcePlayerId ?? ''),
+                    isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                     profilePreviewPlayer.menuVariant === 'requested' ||
-                      requestedPlayerIds.includes(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                      Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                   );
                   const playerId = profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id;
 
@@ -477,6 +585,10 @@ export function CommunityScreen({
 
                   if (actionState.kind === 'add') {
                     requestFriend(playerId);
+                  }
+
+                  if (actionState.kind === 'accept' && profilePreviewPlayer.friendRequestId) {
+                    onAcceptFriendRequest(profilePreviewPlayer.friendRequestId);
                   }
                 },
               }
@@ -499,7 +611,7 @@ export function CommunityScreen({
   );
 }
 
-function MyStandingCard() {
+function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
   const monthStartPoints = 922;
   const currentTotalPoints = 1250;
   const nextLevelPoints = 2000;
@@ -812,6 +924,9 @@ function getPlayerActions(
   onInviteToGame?: () => void,
   onAddFriend?: () => void,
   onRemoveRequest?: () => void,
+  onAcceptRequest?: () => void,
+  onDeclineRequest?: () => void,
+  onRemoveFriend?: () => void,
 ): PlayerAction[] {
   const profileLabel = isFriend ? 'Show full profile' : 'View full profile';
   const viewProfileAction = { icon: 'person-circle-outline' as const, label: profileLabel, onPress: onViewProfile };
@@ -831,7 +946,7 @@ function getPlayerActions(
     return [
       viewProfileAction,
       inviteAction,
-      { destructive: true, icon: 'person-remove-outline', label: 'Remove friend' },
+      { destructive: true, icon: 'person-remove-outline', label: 'Remove friend', onPress: onRemoveFriend },
       reportAction,
     ];
   }
@@ -839,8 +954,8 @@ function getPlayerActions(
   if (context === 'request') {
     return [
       viewProfileAction,
-      { icon: 'checkmark' as const, label: 'Accept' },
-      { icon: 'close' as const, label: 'Decline' },
+      { icon: 'checkmark' as const, label: 'Accept', onPress: onAcceptRequest },
+      { icon: 'close' as const, label: 'Decline', onPress: onDeclineRequest },
       reportAction,
     ];
   }
@@ -926,6 +1041,68 @@ function getRelationshipAction({
     label: 'Add friend',
     onPress: onAdd,
   };
+}
+
+function mapPlayerToCommunityCard(
+  player: Player,
+  index: number,
+  options: {
+    friendRequestId?: string;
+    rating?: string;
+  } = {},
+): CommunityPlayerCard {
+  return {
+    area: player.area,
+    badge: player.rankStatus === 'established' ? 'shield' : 'star',
+    friendRequestId: options.friendRequestId,
+    id: player.id,
+    initials: player.initials,
+    level: player.level,
+    name: player.name,
+    points: player.tocaPoints,
+    rating: options.rating ?? (index % 3 === 2 ? '4.0' : index % 2 === 0 ? '3.6' : '3.2'),
+    sourcePlayerId: player.id,
+  };
+}
+
+function getPendingSentRequest(friendRequests: FriendRequest[], currentPlayerId: string, playerId: string) {
+  return friendRequests.find(
+    (request) =>
+      request.requesterPlayerId === currentPlayerId &&
+      request.recipientPlayerId === playerId &&
+      request.status === 'pending',
+  );
+}
+
+function areFriends(currentPlayer: Player, player: Player) {
+  return currentPlayer.friendIds.includes(player.id) || player.friendIds.includes(currentPlayer.id);
+}
+
+function isCommunityPreviewFriend(
+  profilePreviewPlayer: ProfilePreviewPlayer,
+  currentPlayer: Player,
+  players: Player[],
+) {
+  const playerId = profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id;
+  const sourcePlayer = players.find((candidate) => candidate.id === playerId);
+
+  return sourcePlayer ? areFriends(currentPlayer, sourcePlayer) : false;
+}
+
+function getPlayerRating(player: Player, currentPlayerId: string) {
+  if (player.id === currentPlayerId) {
+    return '3.6';
+  }
+
+  if (player.rankStatus === 'established') {
+    return '4.0';
+  }
+
+  if (player.gamesPlayed > 20) {
+    return '3.6';
+  }
+
+  return '3.2';
 }
 
 function PlayerMenuRow({
@@ -1031,7 +1208,25 @@ function MiniChip({
   );
 }
 
-function rowToCommunityPlayer(row: (typeof leaderboard)[number]): CommunityPlayerCard {
+function FriendRequestEmptyState({ body, title }: { body: string; title: string }) {
+  return (
+    <View style={styles.friendRequestEmpty}>
+      <View style={styles.friendRequestEmptyIcon}>
+        <Ionicons color={colors.accentSea} name="people-outline" size={18} />
+      </View>
+      <View style={styles.friendRequestEmptyCopy}>
+        <AppText variant="bodySmall" weight="900">
+          {title}
+        </AppText>
+        <AppText tone="muted" variant="caption" weight="700">
+          {body}
+        </AppText>
+      </View>
+    </View>
+  );
+}
+
+function rowToCommunityPlayer(row: LeaderboardEntry, players: Player[]): CommunityPlayerCard {
   const matchedPlayer = players.find((player) => player.initials === row.initials || player.name === row.name);
 
   return {
@@ -1047,7 +1242,7 @@ function rowToCommunityPlayer(row: (typeof leaderboard)[number]): CommunityPlaye
   };
 }
 
-function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer): Player {
+function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer, players: Player[]): Player {
   const sourcePlayer = player.sourcePlayerId
     ? players.find((candidate) => candidate.id === player.sourcePlayerId)
     : undefined;
@@ -1081,7 +1276,7 @@ function LeaderboardRow({
 }: {
   onMore: () => void;
   onPressProfile: () => void;
-  row: (typeof leaderboard)[number];
+  row: LeaderboardEntry;
 }) {
   return (
     <View style={[styles.leaderboardRow, row.isCurrent && styles.currentUserRow]}>
@@ -1433,6 +1628,29 @@ const styles = StyleSheet.create({
   friendRequestPlayerRow: {
     minHeight: 78,
     paddingVertical: spacing.sm,
+  },
+  friendRequestEmpty: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 74,
+    padding: spacing.md,
+  },
+  friendRequestEmptyCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  friendRequestEmptyIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAqua,
+    borderRadius: radius.round,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
   moreCard: {
     alignItems: 'center',
