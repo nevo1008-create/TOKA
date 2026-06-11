@@ -109,7 +109,7 @@ function NotificationRow({
   onPress: () => void;
 }) {
   const iconName = getNotificationIcon(notification.type);
-  const actionLabel = lobby ? `Open ${getLobbyShortName(lobby)}` : 'Open';
+  const actionLabel = getNotificationActionLabel(notification, lobby);
 
   return (
     <Pressable
@@ -169,10 +169,34 @@ function getNotificationIcon(type: Notification['type']): keyof typeof Ionicons.
       return 'hourglass-outline';
     case 'rating_required':
       return 'star-outline';
+    case 'rating_closing_soon':
+      return 'timer-outline';
+    case 'friend_request':
+      return 'person-add-outline';
+    case 'friend_accepted':
+      return 'people-outline';
     case 'lobby_changed':
     default:
       return 'football-outline';
   }
+}
+
+function getNotificationActionLabel(notification: Notification, lobby?: Lobby) {
+  if (lobby) {
+    return notification.type === 'rating_required' || notification.type === 'rating_closing_soon'
+      ? 'Rate game'
+      : `Open ${getLobbyShortName(lobby)}`;
+  }
+
+  if (notification.type === 'friend_request') {
+    return 'Review';
+  }
+
+  if (notification.type === 'friend_accepted') {
+    return 'Preview';
+  }
+
+  return 'Open';
 }
 
 const styles = StyleSheet.create({

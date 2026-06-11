@@ -26,6 +26,8 @@ type InviteComposerScreenProps = {
   lobbies: Lobby[];
   onBack: () => void;
   onCreateGame: () => void;
+  onInvitesSent: (lobby: Lobby) => void;
+  onSendInvites: (lobby: Lobby, playerIds: string[]) => Promise<void>;
   params: InviteComposerParams;
   players: Player[];
 };
@@ -37,6 +39,8 @@ export function InviteComposerScreen({
   lobbies,
   onBack,
   onCreateGame,
+  onInvitesSent,
+  onSendInvites,
   params,
   players,
 }: InviteComposerScreenProps) {
@@ -48,6 +52,7 @@ export function InviteComposerScreen({
   const [selectedLobbyId, setSelectedLobbyId] = useState(targetLobby?.id);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(targetPlayer ? [targetPlayer.id] : []);
   const [invitedPlayerIdsByLobby, setInvitedPlayerIdsByLobby] = useState<Record<string, string[]>>({});
+  const [isSendingInvites, setIsSendingInvites] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const selectedLobby = lobbies.find((lobby) => lobby.id === selectedLobbyId);
@@ -56,6 +61,7 @@ export function InviteComposerScreen({
   const invitedIdsForSelectedLobby = selectedLobby ? invitedPlayerIdsByLobby[selectedLobby.id] ?? [] : [];
   const canSend =
     Boolean(selectedLobby) &&
+    !isSendingInvites &&
     selectedPlayerIds.length > 0 &&
     selectedPlayerIds.some((playerId) => !invitedIdsForSelectedLobby.includes(playerId));
   const title = getScreenTitle(mode, targetPlayer);
@@ -82,22 +88,35 @@ export function InviteComposerScreen({
     setSuccessMessage(null);
   }
 
-  function sendInvites() {
+  async function sendInvites() {
     if (!selectedLobby || selectedPlayerIds.length === 0) {
       return;
+    }
+
+    const invitedPlayerIds = selectedPlayerIds;
+
+    setIsSendingInvites(true);
+
+    try {
+      await onSendInvites(selectedLobby, invitedPlayerIds);
+    } catch {
+      return;
+    } finally {
+      setIsSendingInvites(false);
     }
 
     setInvitedPlayerIdsByLobby((current) => {
       const invitedForLobby = current[selectedLobby.id] ?? [];
       return {
         ...current,
-        [selectedLobby.id]: Array.from(new Set([...invitedForLobby, ...selectedPlayerIds])),
+        [selectedLobby.id]: Array.from(new Set([...invitedForLobby, ...invitedPlayerIds])),
       };
     });
     setSuccessMessage(getSuccessMessage(selectedLobby, selectedPlayers));
     if (!targetPlayer) {
       setSelectedPlayerIds([]);
     }
+    onInvitesSent(selectedLobby);
   }
 
   return (
@@ -241,7 +260,7 @@ export function InviteComposerScreen({
             ? `${targetPlayer.name} will get a room invite notification`
             : 'Players will get a room invite notification'
         }
-        label={ctaLabel}
+        label={isSendingInvites ? 'Sending...' : ctaLabel}
         onPress={sendInvites}
       />
     </View>

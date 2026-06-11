@@ -8,6 +8,7 @@ import {
 } from '../../data/mock';
 import { listLobbyMessages, sendLobbyMessage as persistLobbyMessage } from '../chat/chatRepository';
 import {
+  createUniqueNotification,
   listNotifications,
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
@@ -20,7 +21,7 @@ import {
 import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle } from './lobbyDateTime';
-import { shouldApplyLateLeavePenalty } from './lobbyLifecycle';
+import { ratingOpenAfterStartMinutes, ratingWindowMinutes, shouldApplyLateLeavePenalty } from './lobbyLifecycle';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
@@ -69,7 +70,16 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       setLobbies(nextLobbies);
 
       try {
-        setRatingTasks(await listSubmittedRatingTasks(currentPlayer.id, nextLobbies));
+        const nextRatingTasks = await listSubmittedRatingTasks(currentPlayer.id, nextLobbies);
+
+        setRatingTasks(nextRatingTasks);
+        void syncRatingNotifications(currentPlayer, nextLobbies, nextRatingTasks).then((createdNotifications) => {
+          if (createdNotifications.length > 0) {
+            setNotifications((current) => mergeNotifications(current, createdNotifications));
+          }
+        }).catch((notificationError) => {
+          console.warn('Could not create rating notifications.', notificationError);
+        });
       } catch (error) {
         console.warn('Could not load submitted player ratings.', error);
         setRatingTasks([]);
@@ -169,21 +179,10 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   }
 
   async function joinWaitlist(lobby: Lobby): Promise<LobbyStoreActionResult> {
-    const participant = lobby.participants.find((candidate) => candidate.playerId === currentPlayer.id);
-    const isActiveInRoom = participant && (participant.status === 'approved' || participant.status === 'attended');
     const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies, getVerifiedPrivateAccessCode(lobby));
 
     if (result.success) {
       await refreshLobbyData();
-
-      if (!isActiveInRoom) {
-        addLobbyNotification({
-          body: `You are now on the waitlist for ${lobby.title}.`,
-          lobbyId: lobby.id,
-          title: 'Joined waitlist',
-          type: 'waitlist_update',
-        });
-      }
     }
 
     return result;
@@ -194,14 +193,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
     if (result.success) {
       await refreshLobbyData();
-      const host = players.find((player) => player.id === lobby.adminId);
-
-      addLobbyNotification({
-        body: `You can keep viewing ${lobby.title} while ${host?.name ?? 'the host'} reviews your request.`,
-        lobbyId: lobby.id,
-        title: 'Request sent',
-        type: 'waitlist_update',
-      });
     }
 
     return result;
@@ -222,12 +213,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     if (result.success) {
       revokePrivateAccess(lobby.id);
       await refreshLobbyData();
-      addLobbyNotification({
-        body: `${player.name} was added to the waitlist for ${lobby.title}.`,
-        lobbyId: lobby.id,
-        title: 'Request approved',
-        type: 'request_approved',
-      });
     }
 
     return result;
@@ -247,12 +232,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
     if (result.success) {
       await refreshLobbyData();
-      addLobbyNotification({
-        body: `${player.name} will see this as rejected.`,
-        lobbyId: lobby.id,
-        title: 'Request rejected',
-        type: 'request_rejected',
-      });
     }
 
     return result;
@@ -263,12 +242,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
     if (result.success) {
       await refreshLobbyData();
-      addLobbyNotification({
-        body: `Your request for ${lobby.title} was cancelled.`,
-        lobbyId: lobby.id,
-        title: 'Request cancelled',
-        type: 'waitlist_update',
-      });
     }
 
     return result;
@@ -299,12 +272,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
           )
           .filter((candidate): candidate is Lobby => Boolean(candidate)),
       );
-      addLobbyNotification({
-        body: `You left ${lobby.title}.`,
-        lobbyId: lobby.id,
-        title: 'Left room',
-        type: 'waitlist_update',
-      });
       void refreshLobbyData().catch((error) => {
         console.warn('Could not refresh lobby data after leaving.', error);
       });
@@ -320,12 +287,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       setLobbies((current) =>
         current.map((candidate) => (candidate.id === lobby.id ? getOptimisticLobbyAfterSettingsUpdate(candidate, draft) : candidate)),
       );
-      addLobbyNotification({
-        body: `${draft.title} settings were saved.`,
-        lobbyId: lobby.id,
-        title: 'Lobby updated',
-        type: 'lobby_changed',
-      });
       void refreshLobbyData().catch((error) => {
         console.warn('Could not refresh lobby data after settings update.', error);
       });
@@ -350,12 +311,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       setLobbies((current) =>
         current.map((candidate) => (candidate.id === lobby.id ? moveParticipantToWaitlistLocal(candidate, playerId) : candidate)),
       );
-      addLobbyNotification({
-        body: `${player.name} moved to waitlist.`,
-        lobbyId: lobby.id,
-        title: 'Player moved',
-        type: 'waitlist_update',
-      });
       void refreshLobbyData().catch((error) => {
         console.warn('Could not refresh lobby data after moving player.', error);
       });
@@ -380,12 +335,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       setLobbies((current) =>
         current.map((candidate) => (candidate.id === lobby.id ? removeParticipantLocal(candidate, playerId) : candidate)),
       );
-      addLobbyNotification({
-        body: `${player.name} was removed from ${lobby.title}.`,
-        lobbyId: lobby.id,
-        title: 'Player removed',
-        type: 'waitlist_update',
-      });
       void refreshLobbyData().catch((error) => {
         console.warn('Could not refresh lobby data after removing player.', error);
       });
@@ -399,12 +348,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
     if (result.success) {
       setLobbies((current) => current.filter((candidate) => candidate.id !== lobby.id));
-      addLobbyNotification({
-        body: `${lobby.title} was closed.`,
-        lobbyId: lobby.id,
-        title: 'Lobby closed',
-        type: 'lobby_changed',
-      });
       void refreshLobbyData().catch((error) => {
         console.warn('Could not refresh lobby data after closing lobby.', error);
       });
@@ -466,12 +409,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
         ? current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby))
         : [nextLobby, ...current],
     );
-    addLobbyNotification({
-      body: `${draft.title} is live and visible in Games.`,
-      lobbyId: nextLobby.id,
-      title: 'Game created',
-      type: 'lobby_changed',
-    });
     setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, nextLobby.id] : current));
 
     return nextLobby;
@@ -559,15 +496,48 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     };
   }
 
-  function addLobbyNotification(notification: Omit<Notification, 'id' | 'read'>) {
-    setNotifications((current) => [
-      {
-        ...notification,
-        id: `local-${Date.now()}-${current.length}`,
-        read: false,
-      },
-      ...current,
-    ]);
+  async function syncRatingNotifications(player: Player, sourceLobbies: Lobby[], sourceRatingTasks: RatingTask[]) {
+    const createdNotifications: Notification[] = [];
+
+    for (const task of sourceRatingTasks) {
+      if (task.playerId !== player.id || task.status !== 'open' || task.remainingPlayerIds.length === 0) {
+        continue;
+      }
+
+      const lobby = sourceLobbies.find((candidate) => candidate.id === task.lobbyId);
+
+      if (!lobby) {
+        continue;
+      }
+
+      const ratingOpenNotification = await createUniqueNotification({
+        body: `Rating is open for ${lobby.title}. Rate the players from your match.`,
+        lobbyId: lobby.id,
+        recipientPlayerId: player.id,
+        title: 'Rating is open',
+        type: 'rating_required',
+      });
+
+      if (ratingOpenNotification) {
+        createdNotifications.push(ratingOpenNotification);
+      }
+
+      if (isRatingClosingSoon(lobby)) {
+        const closingNotification = await createUniqueNotification({
+          body: `Rating for ${lobby.title} closes in less than 2 hours.`,
+          lobbyId: lobby.id,
+          recipientPlayerId: player.id,
+          title: 'Rating closes soon',
+          type: 'rating_closing_soon',
+        });
+
+        if (closingNotification) {
+          createdNotifications.push(closingNotification);
+        }
+      }
+    }
+
+    return createdNotifications;
   }
 
   function getVerifiedPrivateAccessCode(lobby: Lobby) {
@@ -661,6 +631,28 @@ function removeParticipantLocal(lobby: Lobby, playerId: string): Lobby {
     joinRequests: lobby.joinRequests.filter((request) => request.playerId !== playerId),
     participants: lobby.participants.filter((participant) => participant.playerId !== playerId),
   };
+}
+
+function mergeNotifications(current: Notification[], incoming: Notification[]) {
+  const existingIds = new Set(current.map((notification) => notification.id));
+
+  return [
+    ...incoming.filter((notification) => !existingIds.has(notification.id)),
+    ...current,
+  ];
+}
+
+function isRatingClosingSoon(lobby: Lobby, now = new Date()) {
+  const startTime = new Date(lobby.startsAt).getTime();
+
+  if (Number.isNaN(startTime)) {
+    return false;
+  }
+
+  const ratingCloseTime = startTime + (ratingOpenAfterStartMinutes + ratingWindowMinutes) * 60000;
+  const timeUntilClose = ratingCloseTime - now.getTime();
+
+  return timeUntilClose > 0 && timeUntilClose <= 2 * 60 * 60000;
 }
 
 function getOptimisticLobbyAfterLeave(lobby: Lobby, leavingPlayerId: string): Lobby | null {

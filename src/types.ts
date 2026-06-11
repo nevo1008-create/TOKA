@@ -62,6 +62,7 @@ export type JoinRequestReason =
 
 export type ChatChannelType = 'all' | 'admin_joined';
 export type RatingTaskStatus = 'open' | 'completed' | 'overdue';
+export type FriendRequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 export type SkillVote = 'much_below' | 'below' | 'matches' | 'above' | 'much_above';
 export type PunctualityVote = 'on_time' | 'around_on_time' | 'late';
 export type PlayAgainVote = 'yes' | 'maybe' | 'no';
@@ -152,11 +153,24 @@ export type Notification = {
     | 'room_invite'
     | 'waitlist_update'
     | 'rating_required'
+    | 'rating_closing_soon'
+    | 'friend_request'
+    | 'friend_accepted'
     | 'lobby_changed';
   title: string;
   body: string;
   lobbyId?: string;
+  playerId?: string;
   read: boolean;
+};
+
+export type FriendRequest = {
+  id: string;
+  requesterPlayerId: string;
+  recipientPlayerId: string;
+  status: FriendRequestStatus;
+  createdAt: string;
+  respondedAt?: string | null;
 };
 
 export type Lobby = {

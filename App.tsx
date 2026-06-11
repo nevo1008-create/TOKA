@@ -8,13 +8,16 @@ import {
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { User } from '@supabase/supabase-js';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppText } from './src/components/AppText';
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
+import { PlayerProfilePreview } from './src/components/PlayerProfilePreview';
+import { getPlayerPreviewPlayingDetails } from './src/components/playerProfilePreviewDetails';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
 import { currentPlayer as mockCurrentPlayer, players as mockPlayers } from './src/data/mock';
 import {
@@ -30,9 +33,18 @@ import {
 } from './src/features/auth/authRepository';
 import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
+import {
+  acceptFriendRequest,
+  cancelFriendRequest,
+  declineFriendRequest,
+  listFriendRequests,
+  removeFriend,
+  sendFriendRequest,
+} from './src/features/friends/friendRepository';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
+import { createNotification, createUniqueNotification } from './src/features/notifications/notificationRepository';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -54,8 +66,8 @@ import { ReportProblemScreen } from './src/screens/ReportProblemScreen';
 import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
-import { colors, spacing } from './src/theme';
-import type { Lobby, Notification, Player } from './src/types';
+import { colors, radius, shadows, spacing } from './src/theme';
+import type { FriendRequest, Lobby, Notification, Player } from './src/types';
 
 export default function App() {
   const [homeFontsLoaded] = useFonts({
@@ -80,8 +92,15 @@ export default function App() {
   const [resetPasswordNotice, setResetPasswordNotice] = useState<string | null>(null);
   const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [confirmationModal, setConfirmationModal] = useState<{
+    body: string;
+    title: string;
+  } | null>(null);
   const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, { enabled: authFlow === 'app' });
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
+  const [previewProfilePlayer, setPreviewProfilePlayer] = useState<Player | null>(null);
+  const [communityInitialFriendView, setCommunityInitialFriendView] = useState<'Friends' | 'Friend requests'>('Friends');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isAddFriendsOpen, setIsAddFriendsOpen] = useState(false);
   const [isAboutUsOpen, setIsAboutUsOpen] = useState(false);
@@ -138,6 +157,7 @@ export default function App() {
 
     const intervalId = setInterval(() => {
       void lobbyStore.refreshLobbyData();
+      void refreshFriendRequests();
     }, 5000);
 
     return () => clearInterval(intervalId);
@@ -162,6 +182,7 @@ export default function App() {
     isSideMenuOpen,
     selectedLobbyId,
     viewedProfilePlayer?.id,
+    previewProfilePlayer?.id,
   ]);
 
   async function refreshPlayersDirectory(currentPlayerOverride?: Player) {
@@ -177,6 +198,24 @@ export default function App() {
     }
   }
 
+  async function refreshFriendRequests(currentPlayerOverride?: Player) {
+    const current = currentPlayerOverride ?? profilePlayer;
+
+    try {
+      setFriendRequests(await listFriendRequests(current.id));
+    } catch (error) {
+      console.warn('Could not load friend requests.', error);
+      setFriendRequests([]);
+    }
+  }
+
+  async function refreshSocialData(currentPlayerOverride?: Player) {
+    await Promise.all([
+      refreshPlayersDirectory(currentPlayerOverride),
+      refreshFriendRequests(currentPlayerOverride),
+    ]);
+  }
+
   async function continueWithAuthenticatedUser(user: User) {
     setAuthUser(user);
     setAuthEmail(user.email ?? '');
@@ -185,7 +224,7 @@ export default function App() {
 
     if (existingPlayer) {
       setProfilePlayer(existingPlayer);
-      await refreshPlayersDirectory(existingPlayer);
+      await refreshSocialData(existingPlayer);
       setAuthFlow('app');
       setActiveTab('home');
       return;
@@ -253,9 +292,12 @@ export default function App() {
   function openCommunityFriends() {
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
-    setInviteParams({
-      source: 'community',
-    });
+    setCommunityInitialFriendView('Friends');
+    setInviteParams(null);
+    setIsAddFriendsOpen(false);
+    setSelectedLobbyId(null);
+    setViewedProfilePlayer(null);
+    setActiveTab('community');
   }
 
   function openAddFriends() {
@@ -343,13 +385,114 @@ export default function App() {
       const savedPlayer = await upsertPlayerForUser(authUser, nextPlayer);
 
       setProfilePlayer(savedPlayer);
-      await refreshPlayersDirectory(savedPlayer);
+      await refreshSocialData(savedPlayer);
       setIsEditProfileOpen(false);
       setActiveTab('profile');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save profile changes.';
 
       Alert.alert('Profile update failed', message);
+    }
+  }
+
+  async function refreshCurrentPlayer() {
+    if (!authUser) {
+      return profilePlayer;
+    }
+
+    const nextPlayer = await getPlayerByAuthUserId(authUser.id);
+
+    if (!nextPlayer) {
+      return profilePlayer;
+    }
+
+    setProfilePlayer(nextPlayer);
+    await refreshSocialData(nextPlayer);
+    return nextPlayer;
+  }
+
+  async function handleSendFriendRequest(playerId: string) {
+    try {
+      const request = await sendFriendRequest(playerId);
+
+      setFriendRequests((current) => upsertFriendRequest(current, request));
+      await refreshFriendRequests();
+      setConfirmationModal({
+        body: 'Your friend request was sent.',
+        title: 'Friend request sent',
+      });
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleAcceptFriendRequest(requestId: string) {
+    try {
+      const request = await acceptFriendRequest(requestId);
+
+      setFriendRequests((current) => upsertFriendRequest(current, request));
+      await refreshCurrentPlayer();
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleDeclineFriendRequest(requestId: string) {
+    try {
+      const request = await declineFriendRequest(requestId);
+
+      setFriendRequests((current) => upsertFriendRequest(current, request));
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleCancelFriendRequest(requestId: string) {
+    try {
+      const request = await cancelFriendRequest(requestId);
+
+      setFriendRequests((current) => upsertFriendRequest(current, request));
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleRemoveFriend(playerId: string) {
+    try {
+      await removeFriend(playerId);
+      await refreshCurrentPlayer();
+      setConfirmationModal({
+        body: 'This player was removed from your friends list.',
+        title: 'Friend removed',
+      });
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
+    try {
+      const sentNotifications = await Promise.all(
+        playerIds.map((playerId) =>
+          createNotification({
+            body: `${profilePlayer.name} invited you to ${lobby.title}.`,
+            lobbyId: lobby.id,
+            playerId: profilePlayer.id,
+            recipientPlayerId: playerId,
+            title: 'New invite request',
+            type: 'room_invite',
+          }),
+        ),
+      );
+
+      if (sentNotifications.some((sentNotification) => !sentNotification)) {
+        throw new Error('Could not send one or more invites. Please refresh and try again.');
+      }
+
+      await lobbyStore.refreshLobbyData();
+    } catch (error) {
+      showActionError(error);
+      throw error;
     }
   }
 
@@ -869,6 +1012,26 @@ export default function App() {
     void lobbyStore.markNotificationRead(notification.id).catch(showActionError);
     setIsNotificationsOpen(false);
 
+    if (notification.type === 'friend_request') {
+      setCommunityInitialFriendView('Friend requests');
+      setViewedProfilePlayer(null);
+      setPreviewProfilePlayer(null);
+      setInviteParams(null);
+      setSelectedLobbyId(null);
+      setIsAddFriendsOpen(false);
+      setActiveTab('community');
+      return;
+    }
+
+    if (notification.type === 'friend_accepted' && notification.playerId) {
+      const player = playersForInvite.find((candidate) => candidate.id === notification.playerId);
+
+      if (player) {
+        setPreviewProfilePlayer(player);
+        return;
+      }
+    }
+
     if (notification.lobbyId) {
       const lobby = lobbyStore.getLobbyById(notification.lobbyId);
 
@@ -1071,7 +1234,7 @@ export default function App() {
       });
 
       setProfilePlayer(savedPlayer);
-      await refreshPlayersDirectory(savedPlayer);
+      await refreshSocialData(savedPlayer);
       setAuthFlow('app');
       setActiveTab('home');
     } catch (error) {
@@ -1176,12 +1339,18 @@ export default function App() {
                   showsVerticalScrollIndicator={false}
                 >
                   <ProfileScreen
+                    currentPlayer={profilePlayer}
+                    friendRequests={friendRequests}
                     notificationCount={unreadNotificationCount}
                     onBack={closeViewedProfile}
+                    onCancelFriendRequest={handleCancelFriendRequest}
                     onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
                     onOpenMenu={openSideMenu}
                     onOpenNotifications={openNotifications}
+                    onRemoveFriend={handleRemoveFriend}
+                    onSendFriendRequest={handleSendFriendRequest}
                     onViewPlayerProfile={openViewedProfile}
+                    players={playersForInvite}
                     player={viewedProfilePlayer}
                   />
                 </ScrollView>
@@ -1190,7 +1359,14 @@ export default function App() {
             ) : isEditProfileOpen ? (
               <EditProfileScreen onBack={closeEditProfile} onSave={saveProfile} player={profilePlayer} />
             ) : isAddFriendsOpen ? (
-              <AddFriendsScreen onBack={closeAddFriends} onViewPlayerProfile={openViewedProfile} players={playersForInvite} />
+              <AddFriendsScreen
+                currentPlayer={profilePlayer}
+                friendRequests={friendRequests}
+                onBack={closeAddFriends}
+                onSendFriendRequest={handleSendFriendRequest}
+                onViewPlayerProfile={openViewedProfile}
+                players={playersForInvite}
+              />
             ) : isAboutUsOpen ? (
               <AboutUsScreen onBack={closeAboutUs} />
             ) : isCommunityGuidelinesOpen ? (
@@ -1216,6 +1392,8 @@ export default function App() {
                 lobbies={lobbyStore.lobbies}
                 onBack={closeInviteComposer}
                 onCreateGame={openCreateGameFromInvite}
+                onInvitesSent={openLobbyDetails}
+                onSendInvites={handleSendLobbyInvites}
                 params={inviteParams}
                 players={playersForInvite}
               />
@@ -1328,22 +1506,37 @@ export default function App() {
                   )}
                   {activeTab === 'community' && (
                     <CommunityScreen
+                      currentPlayer={profilePlayer}
+                      friendRequests={friendRequests}
+                      initialFriendView={communityInitialFriendView}
                       notificationCount={unreadNotificationCount}
                       onAddFriend={openAddFriends}
+                      onAcceptFriendRequest={handleAcceptFriendRequest}
+                      onCancelFriendRequest={handleCancelFriendRequest}
+                      onDeclineFriendRequest={handleDeclineFriendRequest}
                       onInvitePlayer={(playerId, source) => openInviteComposer({ inviteTargetPlayerId: playerId, source })}
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
+                      onRemoveFriend={handleRemoveFriend}
+                      onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
+                      players={playersForInvite}
                     />
                   )}
                   {activeTab === 'profile' && (
                     <ProfileScreen
+                      currentPlayer={profilePlayer}
+                      friendRequests={friendRequests}
                       notificationCount={unreadNotificationCount}
                       onEditProfile={openEditProfile}
                       onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
+                      onCancelFriendRequest={handleCancelFriendRequest}
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
+                      onRemoveFriend={handleRemoveFriend}
+                      onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
+                      players={playersForInvite}
                       player={profilePlayer}
                     />
                   )}
@@ -1395,6 +1588,35 @@ export default function App() {
               onMarkAllRead={markAllNotificationsRead}
               onNotificationPress={handleNotificationPress}
               visible={isNotificationsOpen}
+            />
+            <PlayerProfilePreview
+              context={previewProfilePlayer ? `${previewProfilePlayer.area} regular` : undefined}
+              initials={previewProfilePlayer?.initials ?? ''}
+              level={previewProfilePlayer?.level}
+              meta={previewProfilePlayer ? `${previewProfilePlayer.tocaPoints} TOCA points` : undefined}
+              name={previewProfilePlayer?.name ?? ''}
+              onClose={() => setPreviewProfilePlayer(null)}
+              primaryAction={
+                previewProfilePlayer
+                  ? {
+                      label: 'View full profile',
+                      onPress: () => {
+                        const player = previewProfilePlayer;
+
+                        setPreviewProfilePlayer(null);
+                        openViewedProfile(player);
+                      },
+                    }
+                  : undefined
+              }
+              profileDetails={previewProfilePlayer ? getPlayerPreviewPlayingDetails(previewProfilePlayer) : undefined}
+              visible={Boolean(previewProfilePlayer)}
+            />
+            <SimpleConfirmationModal
+              body={confirmationModal?.body ?? ''}
+              onClose={() => setConfirmationModal(null)}
+              title={confirmationModal?.title ?? ''}
+              visible={Boolean(confirmationModal)}
             />
               </>
             ) : null}
@@ -1464,6 +1686,50 @@ function getOnboardingFallbackPlayer(user: User): Player {
   };
 }
 
+function SimpleConfirmationModal({
+  body,
+  onClose,
+  title,
+  visible,
+}: {
+  body: string;
+  onClose: () => void;
+  title: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.confirmationRoot}>
+        <Pressable accessibilityLabel="Close confirmation" accessibilityRole="button" onPress={onClose} style={styles.confirmationBackdrop} />
+        <View style={styles.confirmationCard}>
+          <View style={styles.confirmationIcon}>
+            <AppText align="center" tone="accent" variant="titleSmall" weight="900">
+              Sent
+            </AppText>
+          </View>
+          <AppText align="center" variant="cardTitle" weight="900">
+            {title}
+          </AppText>
+          <AppText align="center" tone="muted" variant="bodySmall" weight="700">
+            {body}
+          </AppText>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.confirmationButton}>
+            <AppText align="center" tone="inverse" variant="button" weight="900">
+              Close
+            </AppText>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function upsertFriendRequest(requests: FriendRequest[], request: FriendRequest) {
+  return requests.some((candidate) => candidate.id === request.id)
+    ? requests.map((candidate) => (candidate.id === request.id ? request : candidate))
+    : [request, ...requests];
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -1475,6 +1741,51 @@ const styles = StyleSheet.create({
   appShell: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  confirmationBackdrop: {
+    backgroundColor: 'rgba(18, 59, 42, 0.18)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  confirmationButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  confirmationCard: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: spacing.md,
+    maxWidth: 360,
+    padding: spacing.xl,
+    ...shadows.hero,
+  },
+  confirmationIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 54,
+    justifyContent: 'center',
+    minWidth: 54,
+    paddingHorizontal: spacing.md,
+  },
+  confirmationRoot: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl2,
   },
   content: {
     paddingBottom: 170,

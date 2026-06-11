@@ -8,12 +8,14 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
-import { currentPlayer } from '../data/mock';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { Player } from '../types';
+import type { FriendRequest, Player } from '../types';
 
 type AddFriendsScreenProps = {
+  currentPlayer: Player;
+  friendRequests: FriendRequest[];
   onBack: () => void;
+  onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
 };
@@ -24,15 +26,24 @@ const inviteLink = 'https://toca.app/invite/nevo';
 const inviteMessage =
   'Come join me on TOCA — find beach games, join rooms, and connect with local footvolley players.';
 
-export function AddFriendsScreen({ onBack, onViewPlayerProfile, players }: AddFriendsScreenProps) {
+export function AddFriendsScreen({
+  currentPlayer,
+  friendRequests,
+  onBack,
+  onSendFriendRequest,
+  onViewPlayerProfile,
+  players,
+}: AddFriendsScreenProps) {
   const [activeTab, setActiveTab] = useState<AddFriendsTab>('search');
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
   const [profilePreviewPlayer, setProfilePreviewPlayer] = useState<Player | null>(null);
   const [query, setQuery] = useState('');
-  const [requestedIds, setRequestedIds] = useState<string[]>([]);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
-  const searchablePlayers = players.filter((player) => player.id !== currentPlayer.id);
+  const searchablePlayers = useMemo(
+    () => players.filter((player) => isSuggestablePlayer(player, currentPlayer, friendRequests)),
+    [currentPlayer, friendRequests, players],
+  );
   const normalizedQuery = query.trim().toLowerCase();
   const visiblePlayers = useMemo(() => {
     if (!normalizedQuery) {
@@ -47,16 +58,18 @@ export function AddFriendsScreen({ onBack, onViewPlayerProfile, players }: AddFr
   }, [normalizedQuery, searchablePlayers]);
 
   function requestFriend(playerId: string) {
-    if (currentPlayer.friendIds.includes(playerId)) {
+    const player = players.find((candidate) => candidate.id === playerId);
+
+    if (!player || areFriends(currentPlayer, player) || getPendingFriendRequest(friendRequests, currentPlayer.id, player.id)) {
       return;
     }
 
-    setRequestedIds((current) => (current.includes(playerId) ? current : [...current, playerId]));
+    onSendFriendRequest(playerId);
   }
 
   function openActions(player: Player) {
     setActionSheetPlayer({
-      contextLabel: getPlayerContext(player),
+      contextLabel: getPlayerContext(player, currentPlayer),
       initials: player.initials,
       name: player.name,
     });
@@ -142,12 +155,12 @@ export function AddFriendsScreen({ onBack, onViewPlayerProfile, players }: AddFr
             {visiblePlayers.length > 0 ? (
               <View style={styles.playerStack}>
                 {visiblePlayers.map((player) => {
-                  const isFriend = currentPlayer.friendIds.includes(player.id);
-                  const isRequested = requestedIds.includes(player.id);
+                  const isFriend = areFriends(currentPlayer, player);
+                  const isRequested = Boolean(getPendingFriendRequest(friendRequests, currentPlayer.id, player.id));
 
                   return (
                     <PlayerRow
-                      context={getPlayerContext(player)}
+                      context={getPlayerContext(player, currentPlayer)}
                       initials={player.initials}
                       key={player.id}
                       level={player.level}
@@ -155,7 +168,7 @@ export function AddFriendsScreen({ onBack, onViewPlayerProfile, players }: AddFr
                       onMore={() => openActions(player)}
                       onPressProfile={() => setProfilePreviewPlayer(player)}
                       primaryAction={getPrimaryAction(player, isFriend, isRequested, () => requestFriend(player.id))}
-                      rating={getPlayerRating(player)}
+                      rating={getPlayerRating(player, currentPlayer.id)}
                       statusIcon={isFriend ? 'checkmark' : 'star'}
                     />
                   );
@@ -184,7 +197,7 @@ export function AddFriendsScreen({ onBack, onViewPlayerProfile, players }: AddFr
         visible={Boolean(actionSheetPlayer)}
       />
       <PlayerProfilePreview
-        context={profilePreviewPlayer ? getPlayerContext(profilePreviewPlayer) : undefined}
+        context={profilePreviewPlayer ? getPlayerContext(profilePreviewPlayer, currentPlayer) : undefined}
         initials={profilePreviewPlayer?.initials ?? ''}
         level={profilePreviewPlayer?.level}
         meta={profilePreviewPlayer ? `${profilePreviewPlayer.tocaPoints} TOCA points` : undefined}
@@ -204,11 +217,12 @@ export function AddFriendsScreen({ onBack, onViewPlayerProfile, players }: AddFr
             : undefined
         }
         profileDetails={profilePreviewPlayer ? getPlayerPreviewPlayingDetails(profilePreviewPlayer) : undefined}
-        rating={profilePreviewPlayer ? getPlayerRating(profilePreviewPlayer) : undefined}
+        rating={profilePreviewPlayer ? getPlayerRating(profilePreviewPlayer, currentPlayer.id) : undefined}
         secondaryAction={
-          profilePreviewPlayer && !currentPlayer.friendIds.includes(profilePreviewPlayer.id)
+          profilePreviewPlayer && !areFriends(currentPlayer, profilePreviewPlayer)
             ? {
-                label: requestedIds.includes(profilePreviewPlayer.id) ? 'Requested' : 'Add friend',
+                disabled: Boolean(getPendingFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.id)),
+                label: getPendingFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.id) ? 'Requested' : 'Add friend',
                 onPress: () => requestFriend(profilePreviewPlayer.id),
               }
             : undefined
@@ -355,7 +369,28 @@ function getPreviewActions(player: Player, onViewProfile: () => void): PlayerAct
   ];
 }
 
-function getPlayerRating(player: Player) {
+function isSuggestablePlayer(player: Player, currentPlayer: Player, friendRequests: FriendRequest[]) {
+  return (
+    player.id !== currentPlayer.id &&
+    !areFriends(currentPlayer, player) &&
+    !getPendingFriendRequest(friendRequests, currentPlayer.id, player.id)
+  );
+}
+
+function areFriends(currentPlayer: Player, player: Player) {
+  return currentPlayer.friendIds.includes(player.id) || player.friendIds.includes(currentPlayer.id);
+}
+
+function getPendingFriendRequest(friendRequests: FriendRequest[], currentPlayerId: string, playerId: string) {
+  return friendRequests.find(
+    (request) =>
+      ((request.requesterPlayerId === currentPlayerId && request.recipientPlayerId === playerId) ||
+        (request.requesterPlayerId === playerId && request.recipientPlayerId === currentPlayerId)) &&
+      request.status === 'pending',
+  );
+}
+
+function getPlayerRating(player: Player, currentPlayerId: string) {
   if (player.id === 'p3') {
     return '4.0';
   }
@@ -364,15 +399,15 @@ function getPlayerRating(player: Player) {
     return '3.6';
   }
 
-  if (player.id === currentPlayer.id) {
+  if (player.id === currentPlayerId) {
     return '3.6';
   }
 
   return '3.2';
 }
 
-function getPlayerContext(player: Player) {
-  if (currentPlayer.friendIds.includes(player.id)) {
+function getPlayerContext(player: Player, currentPlayer: Player) {
+  if (areFriends(currentPlayer, player)) {
     return `${player.area} regular`;
   }
 
