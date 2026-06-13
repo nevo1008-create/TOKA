@@ -10,13 +10,15 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
+import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
 import { ProgressBar } from '../components/ProgressBar';
 import { colors, radius, shadows, spacing } from '../theme';
-import type { FriendRequest, Player } from '../types';
+import type { FriendRequest, Lobby, Player } from '../types';
 
 type ProfileScreenProps = {
   currentPlayer: Player;
   friendRequests: FriendRequest[];
+  lobbies: Lobby[];
   notificationCount: number;
   onBack?: () => void;
   onCancelFriendRequest: (requestId: string) => void;
@@ -34,6 +36,7 @@ type ProfileScreenProps = {
 export function ProfileScreen({
   currentPlayer,
   friendRequests,
+  lobbies,
   notificationCount,
   onBack,
   onCancelFriendRequest,
@@ -53,12 +56,13 @@ export function ProfileScreen({
     context: 'friend' | 'recent';
     player: Player;
   } | null>(null);
-  const friendPlayers = players.filter((candidate) => player.friendIds.includes(candidate.id));
-  const recentPlayers = players.filter((candidate) => candidate.id !== player.id);
+  const profileStats = getProfileStats(player, lobbies);
+  const friendPlayers = players.filter((candidate) => areFriends(player, candidate));
+  const recentPlayers = getRecentPlayers(player, lobbies, players);
 
   function openActions(person: Player, context: 'friend' | 'recent') {
-    const isFriend = currentPlayer.friendIds.includes(person.id);
-    const pendingRequest = getPendingSentRequest(friendRequests, currentPlayer.id, person.id);
+    const isFriend = areFriends(currentPlayer, person);
+    const pendingRequest = getPendingSentFriendRequest(friendRequests, currentPlayer.id, person.id);
     const isRequested = Boolean(pendingRequest);
 
     setActionSheetPlayer({
@@ -155,7 +159,7 @@ export function ProfileScreen({
               Level
             </AppText>
             <AppText align="center" tone="primary" style={styles.levelNumber} weight="800">
-              8
+              {profileStats.tocaLevel}
             </AppText>
           </LinearGradient>
 
@@ -166,21 +170,21 @@ export function ProfileScreen({
                   TOCA Points
                 </AppText>
                 <AppText style={styles.pointsValue} variant="cardTitle" weight="900">
-                  1,250 pts
+                  {player.tocaPoints.toLocaleString()} pts
                 </AppText>
               </View>
               <View style={styles.nextLevelPill}>
                 <AppText align="center" tone="warning" variant="caption" weight="800">
-                  Level 9
+                  Level {profileStats.nextTocaLevel}
                 </AppText>
                 <AppText align="center" tone="muted" variant="caption" weight="700">
-                  2,000 pts
+                  {profileStats.nextLevelPoints.toLocaleString()} pts
                 </AppText>
               </View>
             </View>
-            <ProgressBar fillColor={colors.accentGold} progress={0.625} style={styles.progress} trackColor="#D9E8D8" />
+            <ProgressBar fillColor={colors.accentGold} progress={profileStats.levelProgress} style={styles.progress} trackColor="#D9E8D8" />
             <AppText tone="muted" variant="metadata" weight="600">
-              750 pts to next level
+              {profileStats.pointsToNextLevel.toLocaleString()} pts to next level
             </AppText>
           </View>
         </View>
@@ -190,9 +194,9 @@ export function ProfileScreen({
           <View style={styles.summaryDivider} />
           <SummaryItem icon="star-outline" label="Rating" tone="rating" value="3.6" />
           <View style={styles.summaryDivider} />
-          <SummaryItem icon="calendar-outline" label="Games" value={`${player.gamesPlayed}`} />
+          <SummaryItem icon="calendar-outline" label="Games" value={`${profileStats.completedGames}`} />
           <View style={styles.summaryDivider} />
-          <SummaryItem icon="medal-outline" label="Badges" tone="purple" value="7" />
+          <SummaryItem icon="people-outline" label="Friends" tone="purple" value={`${friendPlayers.length}`} />
         </View>
 
         <View style={styles.section}>
@@ -207,10 +211,10 @@ export function ProfileScreen({
         <View style={styles.section}>
           <SectionHeader title="Trust & routine" />
           <View style={styles.trustGrid}>
-            <TrustCue icon="checkmark-circle-outline" label="Show-up rate" value="96%" />
-            <TrustCue icon="flag-outline" label="Hosted games" value="8" />
-            <TrustCue icon="star-outline" label="Rated players" value="34" warning />
-            <TrustCue icon="location" label="Preferred beaches" value="Gordon, Hilton" sea />
+            <TrustCue icon="calendar-outline" label="Completed games" value={`${profileStats.completedGames}`} />
+            <TrustCue icon="flag-outline" label="Hosted games" value={`${profileStats.hostedGames}`} />
+            <TrustCue icon="people-outline" label="Friends" value={`${friendPlayers.length}`} warning />
+            <TrustCue icon="location" label="Preferred beaches" value={profileStats.preferredBeaches} sea />
           </View>
         </View>
 
@@ -221,6 +225,8 @@ export function ProfileScreen({
           onPressProfile={openProfile}
           ownerPlayer={player}
           players={friendPlayers}
+          emptyBody="Friends will appear here after this player connects with others."
+          emptyTitle="No friends yet"
           title="Friends"
         />
         <PeopleSection
@@ -229,6 +235,8 @@ export function ProfileScreen({
           onPressProfile={openProfile}
           ownerPlayer={player}
           players={recentPlayers}
+          emptyBody="Completed match history will appear here."
+          emptyTitle="No completed games yet"
           showRecency
           title="Recently played with"
         />
@@ -236,11 +244,9 @@ export function ProfileScreen({
         <View style={styles.section}>
           <SectionHeader title="Badges & titles" />
           <ScrollView horizontal contentContainerStyle={styles.badgeRow} showsHorizontalScrollIndicator={false}>
-            <BadgeCard icon="sunny-outline" title="Beach Player" description="10 beach games" />
-            <BadgeCard icon="flash-outline" title="Active Player" description="10 games in a month" warning />
-            <BadgeCard icon="heart-outline" title="Fair Player" description="Great attitude" />
-            <BadgeCard icon="people-outline" title="Team Player" description="Full lobby regular" />
-            <BadgeCard icon="lock-closed-outline" title="Locked" description="Coming soon" muted />
+            <BadgeCard icon="lock-closed-outline" title="Coming soon" description="Badges unlock after achievement rules are connected." muted />
+            <BadgeCard icon="sunny-outline" title="Beach Player" description="Planned achievement" muted />
+            <BadgeCard icon="heart-outline" title="Fair Player" description="Planned achievement" muted />
           </ScrollView>
         </View>
       </View>
@@ -258,7 +264,7 @@ export function ProfileScreen({
             ? getProfilePlayerContext(
                 profilePreviewPlayer.player,
                 profilePreviewPlayer.context,
-                currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
+                areFriends(currentPlayer, profilePreviewPlayer.player),
               )
             : undefined
         }
@@ -269,14 +275,14 @@ export function ProfileScreen({
           profilePreviewPlayer
             ? getProfilePlayerActions(
                 profilePreviewPlayer.context,
-                currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
-                Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
+                areFriends(currentPlayer, profilePreviewPlayer.player),
+                Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                 () => undefined,
                 () => onInvitePlayer(profilePreviewPlayer.player.id),
                 () => requestFriend(profilePreviewPlayer.player.id),
-                getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)
+                getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)
                   ? () => onCancelFriendRequest(
-                      getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)?.id ?? '',
+                      getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)?.id ?? '',
                     )
                   : undefined,
                 () => onRemoveFriend(profilePreviewPlayer.player.id),
@@ -302,19 +308,19 @@ export function ProfileScreen({
                 disabled:
                   getProfilePreviewActionLabel(
                     profilePreviewPlayer.context,
-                    currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
-                    Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
+                    areFriends(currentPlayer, profilePreviewPlayer.player),
+                    Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                   ) === 'Requested',
                 label: getProfilePreviewActionLabel(
                   profilePreviewPlayer.context,
-                  currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
-                  Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
+                  areFriends(currentPlayer, profilePreviewPlayer.player),
+                  Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                 ),
                 onPress: () => {
                   const actionLabel = getProfilePreviewActionLabel(
                     profilePreviewPlayer.context,
-                    currentPlayer.friendIds.includes(profilePreviewPlayer.player.id),
-                    Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
+                    areFriends(currentPlayer, profilePreviewPlayer.player),
+                    Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.player.id)),
                   );
 
                   if (actionLabel === 'Invite' || actionLabel === 'Invite to game') {
@@ -459,6 +465,8 @@ function TrustCue({
 function PeopleSection({
   action,
   context,
+  emptyBody,
+  emptyTitle,
   onMore,
   onPressProfile,
   ownerPlayer,
@@ -468,6 +476,8 @@ function PeopleSection({
 }: {
   action?: string;
   context: 'friend' | 'recent';
+  emptyBody: string;
+  emptyTitle: string;
   onMore: (player: Player, context: 'friend' | 'recent') => void;
   onPressProfile: (player: Player, context: 'friend' | 'recent') => void;
   ownerPlayer: Player;
@@ -479,8 +489,8 @@ function PeopleSection({
     <View style={styles.section}>
       <SectionHeader action={action} icon="chevron-down" title={title} />
       <View style={styles.playerRowStack}>
-        {people.map((person, index) => {
-          const isFriend = ownerPlayer.friendIds.includes(person.id);
+        {people.length > 0 ? people.map((person, index) => {
+          const isFriend = areFriends(ownerPlayer, person);
 
           return (
             <PlayerRow
@@ -496,7 +506,27 @@ function PeopleSection({
               statusIcon={person.id === 'p3' ? 'shield-checkmark' : 'star'}
             />
           );
-        })}
+        }) : (
+          <ProfileEmptyState body={emptyBody} title={emptyTitle} />
+        )}
+      </View>
+    </View>
+  );
+}
+
+function ProfileEmptyState({ body, title }: { body: string; title: string }) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Ionicons color={colors.accentSea} name="people-outline" size={18} />
+      </View>
+      <View style={styles.emptyCopy}>
+        <AppText variant="bodySmall" weight="900">
+          {title}
+        </AppText>
+        <AppText tone="muted" variant="caption" weight="700">
+          {body}
+        </AppText>
       </View>
     </View>
   );
@@ -647,6 +677,71 @@ function capitalize(value: string) {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
+function getProfileStats(player: Player, lobbies: Lobby[]) {
+  const completedLobbies = getCompletedPlayerLobbies(player, lobbies);
+  const hostedGames = lobbies.filter((lobby) => lobby.adminId === player.id).length;
+  const preferredBeaches = getPreferredBeaches(completedLobbies);
+  const tocaLevel = Math.max(1, Math.floor(player.tocaPoints / 250) + 1);
+  const nextLevelPoints = tocaLevel * 250;
+  const previousLevelPoints = Math.max(0, nextLevelPoints - 250);
+  const pointsInLevel = Math.max(0, player.tocaPoints - previousLevelPoints);
+  const pointsToNextLevel = Math.max(0, nextLevelPoints - player.tocaPoints);
+  const levelProgress = Math.min(1, Math.max(0.08, pointsInLevel / 250));
+
+  return {
+    completedGames: completedLobbies.length || player.gamesPlayed,
+    hostedGames,
+    levelProgress,
+    nextLevelPoints,
+    nextTocaLevel: tocaLevel + 1,
+    pointsToNextLevel,
+    preferredBeaches,
+    tocaLevel,
+  };
+}
+
+function getCompletedPlayerLobbies(player: Player, lobbies: Lobby[]) {
+  return lobbies.filter(
+    (lobby) =>
+      lobby.status === 'completed' &&
+      lobby.participants.some((participant) => participant.playerId === player.id && participant.status !== 'removed'),
+  );
+}
+
+function getPreferredBeaches(lobbies: Lobby[]) {
+  const beachCounts = new Map<string, number>();
+
+  lobbies.forEach((lobby) => {
+    beachCounts.set(lobby.location.name, (beachCounts.get(lobby.location.name) ?? 0) + 1);
+  });
+
+  const beaches = Array.from(beachCounts.entries())
+    .sort((first, second) => second[1] - first[1])
+    .slice(0, 2)
+    .map(([name]) => name);
+
+  return beaches.length > 0 ? beaches.join(', ') : 'No completed games yet';
+}
+
+function getRecentPlayers(player: Player, lobbies: Lobby[], players: Player[]) {
+  const recentPlayerIds = new Set<string>();
+
+  getCompletedPlayerLobbies(player, lobbies)
+    .sort((first, second) => new Date(second.startsAt).getTime() - new Date(first.startsAt).getTime())
+    .forEach((lobby) => {
+      lobby.participants.forEach((participant) => {
+        if (participant.playerId !== player.id && participant.status !== 'removed') {
+          recentPlayerIds.add(participant.playerId);
+        }
+      });
+    });
+
+  return Array.from(recentPlayerIds)
+    .map((playerId) => players.find((candidate) => candidate.id === playerId))
+    .filter((candidate): candidate is Player => Boolean(candidate))
+    .slice(0, 5);
+}
+
 function getRecentLabel(index: number) {
   return ['2d ago', '3d ago', '5d ago', '1w ago'][index] ?? '1w ago';
 }
@@ -741,15 +836,6 @@ function getProfilePlayerActions(
   ];
 }
 
-function getPendingSentRequest(friendRequests: FriendRequest[], currentPlayerId: string, playerId: string) {
-  return friendRequests.find(
-    (request) =>
-      request.requesterPlayerId === currentPlayerId &&
-      request.recipientPlayerId === playerId &&
-      request.status === 'pending',
-  );
-}
-
 function getProfilePreviewActionLabel(context: 'friend' | 'recent', isFriend: boolean, isRequested: boolean) {
   if (context === 'friend') {
     return 'Invite to game';
@@ -831,6 +917,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 36,
     ...shadows.soft,
+  },
+  emptyCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  emptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 74,
+    padding: spacing.md,
   },
   levelBadge: {
     alignItems: 'center',
