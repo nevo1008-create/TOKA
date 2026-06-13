@@ -8,6 +8,7 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
+import { areFriends, getPendingFriendRequest } from '../features/friends/friendRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { FriendRequest, Player } from '../types';
 
@@ -24,7 +25,7 @@ type AddFriendsTab = 'invite' | 'search';
 
 const inviteLink = 'https://toca.app/invite/nevo';
 const inviteMessage =
-  'Come join me on TOCA — find beach games, join rooms, and connect with local footvolley players.';
+  'Come join me on TOCA - find beach games, join rooms, and connect with local footvolley players.';
 
 export function AddFriendsScreen({
   currentPlayer,
@@ -374,19 +375,6 @@ function isSuggestablePlayer(player: Player, currentPlayer: Player, friendReques
     player.id !== currentPlayer.id &&
     !areFriends(currentPlayer, player) &&
     !getPendingFriendRequest(friendRequests, currentPlayer.id, player.id)
-  );
-}
-
-function areFriends(currentPlayer: Player, player: Player) {
-  return currentPlayer.friendIds.includes(player.id) || player.friendIds.includes(currentPlayer.id);
-}
-
-function getPendingFriendRequest(friendRequests: FriendRequest[], currentPlayerId: string, playerId: string) {
-  return friendRequests.find(
-    (request) =>
-      ((request.requesterPlayerId === currentPlayerId && request.recipientPlayerId === playerId) ||
-        (request.requesterPlayerId === playerId && request.recipientPlayerId === currentPlayerId)) &&
-      request.status === 'pending',
   );
 }
 

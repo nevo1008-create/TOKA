@@ -97,6 +97,7 @@ export default function App() {
     body: string;
     title: string;
   } | null>(null);
+  const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
   const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, { enabled: authFlow === 'app' });
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [previewProfilePlayer, setPreviewProfilePlayer] = useState<Player | null>(null);
@@ -458,11 +459,24 @@ export default function App() {
   }
 
   async function handleRemoveFriend(playerId: string) {
+    setPendingFriendRemovalId(playerId);
+  }
+
+  async function confirmRemoveFriend() {
+    if (!pendingFriendRemovalId) {
+      return;
+    }
+
+    const playerId = pendingFriendRemovalId;
+    const removedPlayer = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    setPendingFriendRemovalId(null);
+
     try {
       await removeFriend(playerId);
       await refreshCurrentPlayer();
       setConfirmationModal({
-        body: 'This player was removed from your friends list.',
+        body: `${removedPlayer?.name ?? 'This player'} was removed from your friends list.`,
         title: 'Friend removed',
       });
     } catch (error) {
@@ -1341,6 +1355,7 @@ export default function App() {
                   <ProfileScreen
                     currentPlayer={profilePlayer}
                     friendRequests={friendRequests}
+                    lobbies={lobbyStore.lobbies}
                     notificationCount={unreadNotificationCount}
                     onBack={closeViewedProfile}
                     onCancelFriendRequest={handleCancelFriendRequest}
@@ -1527,6 +1542,7 @@ export default function App() {
                     <ProfileScreen
                       currentPlayer={profilePlayer}
                       friendRequests={friendRequests}
+                      lobbies={lobbyStore.lobbies}
                       notificationCount={unreadNotificationCount}
                       onEditProfile={openEditProfile}
                       onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
@@ -1617,6 +1633,14 @@ export default function App() {
               onClose={() => setConfirmationModal(null)}
               title={confirmationModal?.title ?? ''}
               visible={Boolean(confirmationModal)}
+            />
+            <ActionConfirmationModal
+              body={`Remove ${playersForInvite.find((player) => player.id === pendingFriendRemovalId)?.name ?? 'this player'} from your friends list?`}
+              confirmLabel="Remove"
+              onCancel={() => setPendingFriendRemovalId(null)}
+              onConfirm={confirmRemoveFriend}
+              title="Remove friend?"
+              visible={Boolean(pendingFriendRemovalId)}
             />
               </>
             ) : null}
@@ -1724,6 +1748,55 @@ function SimpleConfirmationModal({
   );
 }
 
+function ActionConfirmationModal({
+  body,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+  title,
+  visible,
+}: {
+  body: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  title: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
+      <View style={styles.confirmationRoot}>
+        <Pressable accessibilityLabel="Cancel action" accessibilityRole="button" onPress={onCancel} style={styles.confirmationBackdrop} />
+        <View style={styles.confirmationCard}>
+          <View style={styles.confirmationIcon}>
+            <AppText align="center" tone="danger" variant="titleSmall" weight="900">
+              !
+            </AppText>
+          </View>
+          <AppText align="center" variant="cardTitle" weight="900">
+            {title}
+          </AppText>
+          <AppText align="center" tone="muted" variant="bodySmall" weight="700">
+            {body}
+          </AppText>
+          <View style={styles.confirmationActionRow}>
+            <Pressable accessibilityRole="button" onPress={onCancel} style={styles.confirmationSecondaryButton}>
+              <AppText align="center" tone="accent" variant="button" weight="900">
+                Cancel
+              </AppText>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={onConfirm} style={styles.confirmationDangerButton}>
+              <AppText align="center" tone="inverse" variant="button" weight="900">
+                {confirmLabel}
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function upsertFriendRequest(requests: FriendRequest[], request: FriendRequest) {
   return requests.some((candidate) => candidate.id === request.id)
     ? requests.map((candidate) => (candidate.id === request.id ? request : candidate))
@@ -1758,6 +1831,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 48,
   },
+  confirmationActionRow: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   confirmationCard: {
     alignItems: 'center',
     alignSelf: 'stretch',
@@ -1781,11 +1859,29 @@ const styles = StyleSheet.create({
     minWidth: 54,
     paddingHorizontal: spacing.md,
   },
+  confirmationDangerButton: {
+    alignItems: 'center',
+    backgroundColor: colors.danger,
+    borderRadius: 16,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+  },
   confirmationRoot: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.xl2,
+  },
+  confirmationSecondaryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
   },
   content: {
     paddingBottom: 170,

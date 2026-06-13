@@ -9,6 +9,7 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getFallbackPreviewPlayingDetails, getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
+import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { FriendRequest, Player, PlayerLevel } from '../types';
 
@@ -36,23 +37,20 @@ type LeaderboardEntry = {
   rating: string;
 };
 
-function getLeaderboardRows(currentPlayer: Player): LeaderboardEntry[] {
-  return [
-  { rank: 1, name: 'Itay Levi', initials: 'IL', level: 'A', rating: '4.2', games: 24, points: 512, isCurrent: false },
-  { rank: 2, name: 'Yonatan Sh.', initials: 'YS', level: 'A-', rating: '4.0', games: 22, points: 471, isCurrent: false },
-  { rank: 3, name: 'Aviad M.', initials: 'AM', level: 'B+', rating: '3.8', games: 18, points: 389, isCurrent: false },
-  { rank: 4, name: 'Maya Cohen', initials: 'MC', level: 'B+', rating: '3.6', games: 19, points: 328, isCurrent: false },
-    {
-      rank: 5,
-      name: currentPlayer.name,
-      initials: currentPlayer.initials,
-      level: currentPlayer.level,
-      rating: '3.6',
-      games: currentPlayer.gamesPlayed,
-      points: currentPlayer.tocaPoints,
-      isCurrent: true,
-    },
-  ];
+function getLeaderboardRows(currentPlayer: Player, players: Player[]): LeaderboardEntry[] {
+  return [...players]
+    .sort((first, second) => second.tocaPoints - first.tocaPoints || second.gamesPlayed - first.gamesPlayed)
+    .slice(0, 10)
+    .map((player, index) => ({
+      games: player.gamesPlayed,
+      initials: player.initials,
+      isCurrent: player.id === currentPlayer.id,
+      level: player.level,
+      name: player.name,
+      points: player.tocaPoints,
+      rank: index + 1,
+      rating: getPlayerRating(player, currentPlayer.id),
+    }));
 }
 
 const communityPages = ['Community', 'Leaderboard'] as const;
@@ -106,8 +104,8 @@ export function CommunityScreen({
   const [actionSheetPlayer, setActionSheetPlayer] = useState<PlayerActionSheetPlayer | null>(null);
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [profilePreviewPlayer, setProfilePreviewPlayer] = useState<ProfilePreviewPlayer | null>(null);
-  const [leaderboardScope, setLeaderboardScope] = useState<'All' | 'Friends' | 'Region'>('Friends');
-  const leaderboardRows = getLeaderboardRows(currentPlayer);
+  const leaderboardRows = getLeaderboardRows(currentPlayer, players);
+  const currentLeaderboardRank = leaderboardRows.find((row) => row.isCurrent)?.rank ?? '-';
   const pendingReceivedRequests = friendRequests.filter(
     (request) => request.recipientPlayerId === currentPlayer.id && request.status === 'pending',
   );
@@ -175,7 +173,7 @@ export function CommunityScreen({
     const playerId = player.sourcePlayerId ?? player.id;
     const sourcePlayer = players.find((candidate) => candidate.id === playerId);
     const isFriend = sourcePlayer ? areFriends(currentPlayer, sourcePlayer) : false;
-    const pendingSentRequest = getPendingSentRequest(friendRequests, currentPlayer.id, playerId);
+    const pendingSentRequest = getPendingSentFriendRequest(friendRequests, currentPlayer.id, playerId);
     const isRequested = context === 'requested' || Boolean(pendingSentRequest);
 
     setActionSheetPlayer({
@@ -368,7 +366,7 @@ export function CommunityScreen({
                   : connectCards
                 ).map((player) => {
                   const playerId = player.sourcePlayerId ?? player.id;
-                  const pendingRequest = getPendingSentRequest(friendRequests, currentPlayer.id, playerId);
+                  const pendingRequest = getPendingSentFriendRequest(friendRequests, currentPlayer.id, playerId);
                   const isRequested = activeFriendView === 'Friend requests' || Boolean(pendingRequest);
 
                   return (
@@ -411,9 +409,9 @@ export function CommunityScreen({
                 Community summary
               </AppText>
               <View style={styles.summaryStrip}>
-                <SummaryItem footer="total" icon="people-outline" label="Friends" value="24" />
-                <SummaryItem footer="players" icon="star-outline" label="Rated me" value="18" warning />
-                <SummaryItem footer="players" icon="trophy-outline" label="I rated" value="12" />
+                <SummaryItem footer="connected" icon="people-outline" label="Friends" value={`${friendPlayers.length}`} />
+                <SummaryItem footer="players" icon="people-circle-outline" label="Players" value={`${players.length}`} />
+                <SummaryItem footer="TOCA pts" icon="trophy-outline" label="My rank" value={`${currentLeaderboardRank}`} warning />
               </View>
             </View>
           </>
@@ -428,33 +426,12 @@ export function CommunityScreen({
                     Leaderboard
                   </AppText>
                   <AppText tone="muted" variant="metadata" weight="600">
-                    Friends this month
+                    Top players by TOCA points
                   </AppText>
                 </View>
                 <View style={styles.panelIcon}>
                   <Ionicons color={colors.accent} name="trophy-outline" size={18} />
                 </View>
-              </View>
-
-              <View style={styles.tabs}>
-                {(['Friends', 'All', 'Region'] as const).map((tab) => (
-                  <Pressable
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: leaderboardScope === tab }}
-                    key={tab}
-                    onPress={() => setLeaderboardScope(tab)}
-                    style={[styles.tab, leaderboardScope === tab && styles.tabActive]}
-                  >
-                    <AppText
-                      align="center"
-                      tone={leaderboardScope === tab ? 'accent' : 'muted'}
-                      variant="chip"
-                      weight="800"
-                    >
-                      {tab}
-                    </AppText>
-                  </Pressable>
-                ))}
               </View>
 
               <View style={styles.leaderboardList}>
@@ -507,7 +484,7 @@ export function CommunityScreen({
                 profilePreviewPlayer.menuVariant,
                 isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                 profilePreviewPlayer.menuVariant === 'requested' ||
-                  Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
+                  Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                 () => undefined,
                 profilePreviewPlayer.sourcePlayerId
                   ? () =>
@@ -517,9 +494,9 @@ export function CommunityScreen({
                       )
                   : undefined,
                 () => requestFriend(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
-                getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)
+                getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)
                   ? () => onCancelFriendRequest(
-                      getPendingSentRequest(
+                      getPendingSentFriendRequest(
                         friendRequests,
                         currentPlayer.id,
                         profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id,
@@ -559,20 +536,20 @@ export function CommunityScreen({
                     profilePreviewPlayer,
                     isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                     profilePreviewPlayer.menuVariant === 'requested' ||
-                      Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
+                      Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                   ).label === 'Requested',
                 label: getCommunityProfileActionState(
                   profilePreviewPlayer,
                   isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                   profilePreviewPlayer.menuVariant === 'requested' ||
-                    Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
+                    Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                 ).label,
                 onPress: () => {
                   const actionState = getCommunityProfileActionState(
                     profilePreviewPlayer,
                     isCommunityPreviewFriend(profilePreviewPlayer, currentPlayer, players),
                     profilePreviewPlayer.menuVariant === 'requested' ||
-                      Boolean(getPendingSentRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
+                      Boolean(getPendingSentFriendRequest(friendRequests, currentPlayer.id, profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id)),
                   );
                   const playerId = profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id;
 
@@ -612,11 +589,12 @@ export function CommunityScreen({
 }
 
 function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
-  const monthStartPoints = 922;
-  const currentTotalPoints = 1250;
-  const nextLevelPoints = 2000;
-  const monthlyPoints = currentTotalPoints - monthStartPoints;
-  const levelProgress = (currentTotalPoints - monthStartPoints) / (nextLevelPoints - monthStartPoints);
+  const currentTotalPoints = currentPlayer.tocaPoints;
+  const nextLevelPoints = Math.max(250, (Math.floor(currentTotalPoints / 250) + 1) * 250);
+  const previousLevelPoints = Math.max(0, nextLevelPoints - 250);
+  const pointsToNextLevel = Math.max(0, nextLevelPoints - currentTotalPoints);
+  const pointsInLevel = Math.max(0, currentTotalPoints - previousLevelPoints);
+  const levelProgress = Math.min(1, Math.max(0.08, pointsInLevel / 250));
 
   return (
     <LinearGradient
@@ -631,10 +609,10 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
         </View>
         <View style={styles.standingCopy}>
           <AppText tone="subtle" variant="caption" weight="700">
-            TOCA pts this month
+            TOCA points
           </AppText>
           <AppText style={styles.standingPoints} tone="warning" variant="heroTitle" weight="800">
-            +{monthlyPoints}
+            {currentTotalPoints.toLocaleString()}
           </AppText>
         </View>
 
@@ -651,7 +629,7 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
             Start
           </AppText>
           <AppText variant="caption" weight="800">
-            {monthStartPoints}
+            {previousLevelPoints.toLocaleString()}
           </AppText>
         </View>
         <View style={styles.standingCurrentValue}>
@@ -679,7 +657,7 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
       <View style={styles.standingFooter}>
         <StandingMetric icon="ribbon-outline" label="Rank" value={currentPlayer.level} />
         <StandingMetric icon="star" label="Rating" value="3.6" />
-        <StandingMetric icon="trending-up-outline" label="To next" value={`+${nextLevelPoints - currentTotalPoints}`} />
+        <StandingMetric icon="trending-up-outline" label="To next" value={`+${pointsToNextLevel}`} />
       </View>
     </LinearGradient>
   );
@@ -1063,19 +1041,6 @@ function mapPlayerToCommunityCard(
     rating: options.rating ?? (index % 3 === 2 ? '4.0' : index % 2 === 0 ? '3.6' : '3.2'),
     sourcePlayerId: player.id,
   };
-}
-
-function getPendingSentRequest(friendRequests: FriendRequest[], currentPlayerId: string, playerId: string) {
-  return friendRequests.find(
-    (request) =>
-      request.requesterPlayerId === currentPlayerId &&
-      request.recipientPlayerId === playerId &&
-      request.status === 'pending',
-  );
-}
-
-function areFriends(currentPlayer: Player, player: Player) {
-  return currentPlayer.friendIds.includes(player.id) || player.friendIds.includes(currentPlayer.id);
 }
 
 function isCommunityPreviewFriend(
