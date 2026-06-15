@@ -28,7 +28,7 @@ import {
 } from '../features/lobbies/lobbyRules';
 import { canPlayerRateLobby, canRatePlayer, getRemainingRatingTargetIds } from '../features/ratings/ratingRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player, RatingTask } from '../types';
+import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player, RatingTask, SkillRankVoteType } from '../types';
 
 type LobbyDetailsScreenProps = {
   allLobbies: Lobby[];
@@ -52,7 +52,7 @@ type LobbyDetailsScreenProps = {
   onOpenNotifications: () => void;
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
-  onSubmitPlayerRating: (rating: { behaviorRating: number; rank: Player['level']; targetPlayerId: string }) => boolean | Promise<boolean>;
+  onSubmitPlayerRating: (rating: { behaviorRating: number; rank: Player['level']; skillVoteType: SkillRankVoteType; targetPlayerId: string }) => boolean | Promise<boolean>;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
   ratingTasks: RatingTask[];
@@ -407,9 +407,10 @@ export function LobbyDetailsScreen({
           setLocalFriendIds((current) => (current.includes(player.id) ? current : [...current, player.id]));
         }}
         onClose={() => setRatingWizardPlayer(null)}
-        onSubmitRating={({ behaviorRating, rank, targetPlayer }) => onSubmitPlayerRating({
+        onSubmitRating={({ behaviorRating, rank, skillVoteType, targetPlayer }) => onSubmitPlayerRating({
           behaviorRating,
           rank,
+          skillVoteType,
           targetPlayerId: targetPlayer.id,
         })}
         onViewProfile={onViewPlayerProfile}

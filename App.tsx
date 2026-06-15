@@ -1480,8 +1480,8 @@ export default function App() {
                           onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
-                          onSubmitPlayerRating={async ({ behaviorRating, rank, targetPlayerId }) => {
-                            const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank });
+                          onSubmitPlayerRating={async ({ behaviorRating, rank, skillVoteType, targetPlayerId }) => {
+                            const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank, skillVoteType });
 
                             return result.success;
                           }}

@@ -13,7 +13,7 @@ import {
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
 } from '../notifications/notificationRepository';
-import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player, RatingTask } from '../../types';
+import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player, RatingTask, SkillRankVoteType } from '../../types';
 import {
   listSubmittedRatingTasks,
   submitPlayerRating as persistSubmitPlayerRating,
@@ -434,7 +434,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   async function submitPlayerRating(
     lobby: Lobby,
     targetPlayerId: string,
-    rating: { behaviorRating: number; rank: Player['level'] },
+    rating: { behaviorRating: number; rank: Player['level']; skillVoteType?: SkillRankVoteType },
   ): Promise<LobbyStoreActionResult> {
     const targetIds = getRatingTargetIds(lobby, currentPlayer.id);
     const remainingTargetIds = getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayer.id);
@@ -460,6 +460,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
         rank: rating.rank,
         ratedPlayerId: targetPlayerId,
         raterPlayerId: currentPlayer.id,
+        skillVoteType: rating.skillVoteType,
       });
 
       if (!result.success) {

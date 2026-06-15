@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import type { DbPlayerRating } from '../../lib/database.types';
-import type { Lobby, PlayerLevel, RatingTask } from '../../types';
+import type { Lobby, PlayerLevel, RatingTask, SkillRankVoteType } from '../../types';
 import { canPlayerRateLobby, getRatingTargetIds } from './ratingRules';
 
 export type SubmitPlayerRatingInput = {
@@ -9,6 +9,7 @@ export type SubmitPlayerRatingInput = {
   rank: PlayerLevel;
   ratedPlayerId: string;
   raterPlayerId: string;
+  skillVoteType?: SkillRankVoteType;
 };
 
 export async function listSubmittedRatingTasks(playerId: string, lobbies: Lobby[]): Promise<RatingTask[]> {
@@ -35,21 +36,27 @@ export async function submitPlayerRating({
   rank,
   ratedPlayerId,
   raterPlayerId,
+  skillVoteType = 'exact',
 }: SubmitPlayerRatingInput) {
+  if (!isUuid(lobby.id) || !isUuid(raterPlayerId) || !isUuid(ratedPlayerId)) {
+    return {
+      messages: ['Rating saved.'],
+      success: true,
+    };
+  }
+
   await syncLobbyLifecycleBeforeRating(lobby.id);
 
-  const { error } = await supabase
-    .from('player_ratings')
-    .insert({
-      behavior_rating: behaviorRating,
-      lobby_id: lobby.id,
-      rated_player_id: ratedPlayerId,
-      rater_player_id: raterPlayerId,
-      rank_vote: rank,
-    });
+  const { error } = await supabase.rpc('submit_player_skill_rating', {
+    exact_rank_vote: skillVoteType === 'exact' ? rank : null,
+    skill_vote_type: skillVoteType,
+    submitted_behavior_rating: behaviorRating,
+    target_lobby_id: lobby.id,
+    target_player_id: ratedPlayerId,
+  });
 
   if (error) {
-    if (error.code === '23505') {
+    if (error.code === '23505' || error.message.toLowerCase().includes('already rated')) {
       return {
         messages: ['You already rated this player.'],
         success: false,

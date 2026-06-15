@@ -10,6 +10,7 @@ import type {
   PreferredFoot,
   RankRuleType,
   RankStatus,
+  SkillRankVoteType,
 } from '../types';
 
 export type DbPlayer = {
@@ -151,6 +152,73 @@ export type DbPlayerRating = {
   rated_player_id: string;
   rank_vote: PlayerLevel;
   behavior_rating: number;
+  skill_vote_type: SkillRankVoteType;
+  skill_vote_rank: PlayerLevel | null;
+  implied_rank_index: number;
+  processed_rank_batch_id: string | null;
+  created_at: string;
+};
+
+export type DbPlayerRankState = {
+  player_id: string;
+  skill_score: number;
+  rank_confidence: number;
+  received_skill_rating_count: number;
+  processed_skill_rating_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DbPlayerRaterReliability = {
+  player_id: string;
+  reliability_score: number;
+  accuracy_sample_count: number;
+  bias_score: number;
+  behavior_trust_modifier: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DbPlayerRankBatch = {
+  id: string;
+  player_id: string;
+  rating_ids: string[];
+  previous_level: PlayerLevel;
+  next_level: PlayerLevel;
+  previous_skill_score: number;
+  next_skill_score: number;
+  weighted_median_score: number;
+  weighted_average_score: number;
+  consensus_score: number;
+  total_weight: number;
+  movement_factor: number;
+  confidence_before: number;
+  confidence_after: number;
+  created_at: string;
+};
+
+export type DbPlayerRankBatchRating = {
+  batch_id: string;
+  rating_id: string;
+  rater_player_id: string;
+  vote_score: number;
+  vote_weight: number;
+  vote_error: number;
+  rater_reliability_at_time: number;
+  behavior_trust_modifier_at_time: number;
+  rank_distance_weight_at_time: number;
+  outlier_modifier_at_time: number;
+};
+
+export type DbPlayerRankHistory = {
+  id: string;
+  batch_id: string | null;
+  player_id: string;
+  previous_level: PlayerLevel;
+  next_level: PlayerLevel;
+  previous_skill_score: number;
+  next_skill_score: number;
+  reason: string;
   created_at: string;
 };
 
@@ -201,6 +269,31 @@ export type Database = {
         Row: DbPlayerRating;
         Insert: Partial<DbPlayerRating> & Pick<DbPlayerRating, 'lobby_id' | 'rater_player_id' | 'rated_player_id' | 'rank_vote' | 'behavior_rating'>;
         Update: Partial<DbPlayerRating>;
+      };
+      player_rank_state: {
+        Row: DbPlayerRankState;
+        Insert: Partial<DbPlayerRankState> & Pick<DbPlayerRankState, 'player_id' | 'skill_score'>;
+        Update: Partial<DbPlayerRankState>;
+      };
+      player_rater_reliability: {
+        Row: DbPlayerRaterReliability;
+        Insert: Partial<DbPlayerRaterReliability> & Pick<DbPlayerRaterReliability, 'player_id'>;
+        Update: Partial<DbPlayerRaterReliability>;
+      };
+      player_rank_batches: {
+        Row: DbPlayerRankBatch;
+        Insert: Partial<DbPlayerRankBatch> & Pick<DbPlayerRankBatch, 'player_id' | 'rating_ids' | 'previous_level' | 'next_level' | 'previous_skill_score' | 'next_skill_score' | 'weighted_median_score' | 'weighted_average_score' | 'consensus_score' | 'total_weight' | 'movement_factor' | 'confidence_before' | 'confidence_after'>;
+        Update: Partial<DbPlayerRankBatch>;
+      };
+      player_rank_batch_ratings: {
+        Row: DbPlayerRankBatchRating;
+        Insert: DbPlayerRankBatchRating;
+        Update: Partial<DbPlayerRankBatchRating>;
+      };
+      player_rank_history: {
+        Row: DbPlayerRankHistory;
+        Insert: Partial<DbPlayerRankHistory> & Pick<DbPlayerRankHistory, 'player_id' | 'previous_level' | 'next_level' | 'previous_skill_score' | 'next_skill_score'>;
+        Update: Partial<DbPlayerRankHistory>;
       };
     };
     Views: Record<string, never>;
@@ -275,6 +368,16 @@ export type Database = {
           target_lobby_id: string;
         };
         Returns: DbLobby;
+      };
+      submit_player_skill_rating: {
+        Args: {
+          exact_rank_vote?: PlayerLevel | null;
+          skill_vote_type: SkillRankVoteType;
+          submitted_behavior_rating?: number | null;
+          target_lobby_id: string;
+          target_player_id: string;
+        };
+        Returns: DbPlayerRating;
       };
     };
     Enums: Record<string, never>;

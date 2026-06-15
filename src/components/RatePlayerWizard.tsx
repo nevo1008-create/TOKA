@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, PanResponder, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { colors, radius, shadows, spacing } from '../theme';
-import { playerLevels, type Player, type PlayerLevel } from '../types';
+import { playerLevels, type Player, type PlayerLevel, type SkillRankVoteType } from '../types';
 import { AppText } from './AppText';
+import { Avatar } from './Avatar';
 
 type RatePlayerWizardProps = {
   behaviorRating?: number;
@@ -13,7 +14,7 @@ type RatePlayerWizardProps = {
   isFriend: boolean;
   onAddFriend?: (player: Player) => void;
   onClose: () => void;
-  onSubmitRating?: (rating: { behaviorRating: number; rank: PlayerLevel; targetPlayer: Player }) => boolean | void | Promise<boolean | void>;
+  onSubmitRating?: (rating: { behaviorRating: number; rank: PlayerLevel; skillVoteType: SkillRankVoteType; targetPlayer: Player }) => boolean | void | Promise<boolean | void>;
   onViewProfile: (player: Player) => void;
   player: Player | null;
   visible: boolean;
@@ -34,11 +35,13 @@ export function RatePlayerWizard({
 }: RatePlayerWizardProps) {
   const [step, setStep] = useState<WizardStep>('rank');
   const [rankIndex, setRankIndex] = useState(getRankIndex(currentRank));
+  const [skillVoteType, setSkillVoteType] = useState<SkillRankVoteType>('exact');
   const [rating, setRating] = useState(behaviorRating);
   const [friendRequested, setFriendRequested] = useState(false);
   const [hasSubmittedRating, setHasSubmittedRating] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const selectedRank = playerLevels[rankIndex];
+  const submittedRank = getSubmittedRank(currentRank, selectedRank, skillVoteType);
 
   useEffect(() => {
     if (!visible) {
@@ -47,6 +50,7 @@ export function RatePlayerWizard({
 
     setStep('rank');
     setRankIndex(getRankIndex(currentRank));
+    setSkillVoteType('exact');
     setRating(behaviorRating);
     setFriendRequested(false);
     setHasSubmittedRating(false);
@@ -86,7 +90,8 @@ export function RatePlayerWizard({
     try {
       const result = await onSubmitRating?.({
         behaviorRating: rating,
-        rank: selectedRank,
+        rank: submittedRank,
+        skillVoteType,
         targetPlayer: player,
       });
 
@@ -125,15 +130,18 @@ export function RatePlayerWizard({
             </Pressable>
           </View>
 
-          <PlayerSummary player={player} />
+          {step !== 'rank' ? <PlayerSummary player={player} /> : null}
 
           {step === 'rank' ? (
             <RankStep
               currentRank={currentRank}
               onChange={setRankIndex}
               onContinue={() => setStep('behavior')}
+              onVoteTypeChange={setSkillVoteType}
               rankIndex={rankIndex}
               selectedRank={selectedRank}
+              skillVoteType={skillVoteType}
+              player={player}
             />
           ) : null}
 
@@ -193,49 +201,120 @@ function RankStep({
   currentRank,
   onChange,
   onContinue,
+  onVoteTypeChange,
+  player,
   rankIndex,
   selectedRank,
+  skillVoteType,
 }: {
   currentRank: PlayerLevel;
   onChange: (index: number) => void;
   onContinue: () => void;
+  onVoteTypeChange: (voteType: SkillRankVoteType) => void;
+  player: Player;
   rankIndex: number;
   selectedRank: PlayerLevel;
+  skillVoteType: SkillRankVoteType;
 }) {
+  const currentRankIndex = getRankIndex(currentRank);
+  const belowRank = playerLevels[clampRankIndex(currentRankIndex - 1)];
+  const aboveRank = playerLevels[clampRankIndex(currentRankIndex + 1)];
+  const isBelowDisabled = currentRankIndex === 0;
+  const isAboveDisabled = currentRankIndex === playerLevels.length - 1;
+
+  function selectVoteType(voteType: SkillRankVoteType) {
+    onVoteTypeChange(voteType);
+
+    if (voteType === 'below') {
+      onChange(getRankIndex(belowRank));
+      return;
+    }
+
+    if (voteType === 'above') {
+      onChange(getRankIndex(aboveRank));
+    }
+  }
+
   return (
     <View style={styles.step}>
+      <View style={styles.rankHero}>
+        <Avatar player={player} size={76} />
+        <View style={styles.rankHeroCopy}>
+          <AppText align="center" numberOfLines={1} variant="title" weight="900">
+            {player.name}
+          </AppText>
+          <View style={styles.centerRankPill}>
+            <AppText tone="muted" variant="metadata" weight="800">
+              Current rank
+            </AppText>
+            <AppText variant="cardTitle" weight="900">
+              {currentRank}
+            </AppText>
+          </View>
+        </View>
+      </View>
+
       <View style={styles.questionBlock}>
         <AppText align="center" variant="sectionHeading" weight="900">
-          How would you rank this player?
+          How did their level feel today?
         </AppText>
         <AppText align="center" tone="muted" variant="metadata" weight="600">
-          Move the marker to the rank that best matches their game today.
+          Choose a quick adjustment or pick the exact rank that matched their game.
         </AppText>
       </View>
 
-      <View style={styles.rankCard}>
+      <View style={styles.quickVoteRow}>
+        <VoteChoice
+          disabled={isBelowDisabled}
+          icon="arrow-down"
+          label="Below"
+          rank={belowRank}
+          selected={skillVoteType === 'below'}
+          onPress={() => selectVoteType('below')}
+        />
+        <VoteChoice
+          disabled={isAboveDisabled}
+          icon="arrow-up"
+          label="Above"
+          rank={aboveRank}
+          selected={skillVoteType === 'above'}
+          onPress={() => selectVoteType('above')}
+        />
+      </View>
+
+      <View style={[styles.rankCard, skillVoteType === 'exact' && styles.rankCardSelected]}>
         <View style={styles.rankHeader}>
-          <View>
-            <AppText tone="muted" variant="metadata" weight="700">
-              Current rank
-            </AppText>
-            <View style={styles.currentRankPill}>
+          <Pressable accessibilityRole="button" onPress={() => selectVoteType('exact')} style={styles.exactRankButton}>
+            <View style={[styles.exactRadio, skillVoteType === 'exact' && styles.exactRadioSelected]}>
+              {skillVoteType === 'exact' ? <Ionicons color={colors.textOnGreen} name="checkmark" size={13} /> : null}
+            </View>
+            <View style={styles.exactRankCopy}>
               <AppText variant="button" weight="900">
-                {currentRank}
+                Exact rank
+              </AppText>
+              <AppText tone="muted" variant="metadata" weight="700">
+                More precise, stronger signal
               </AppText>
             </View>
-          </View>
+          </Pressable>
+
           <View style={styles.selectedRank}>
             <AppText align="center" tone="muted" variant="metadata" weight="700">
               Your pick
             </AppText>
             <AppText align="center" variant="heroTitle" weight="900">
-              {selectedRank}
+              {getSubmittedRank(currentRank, selectedRank, skillVoteType)}
             </AppText>
           </View>
         </View>
 
-        <SingleRankBar onChange={onChange} rankIndex={rankIndex} />
+        <SingleRankBar
+          onChange={(index) => {
+            onVoteTypeChange('exact');
+            onChange(index);
+          }}
+          rankIndex={rankIndex}
+        />
 
         <View style={styles.rankEnds}>
           <AppText tone="muted" variant="caption" weight="800">
@@ -249,6 +328,44 @@ function RankStep({
 
       <WizardButton label="Continue" onPress={onContinue} />
     </View>
+  );
+}
+
+function VoteChoice({
+  disabled,
+  icon,
+  label,
+  onPress,
+  rank,
+  selected,
+}: {
+  disabled: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  rank: PlayerLevel;
+  selected: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.voteChoice, selected && styles.voteChoiceSelected, disabled && styles.disabledButton]}
+    >
+      <View style={[styles.voteChoiceIcon, selected && styles.voteChoiceIconSelected]}>
+        <Ionicons color={selected ? colors.textOnGreen : colors.primaryDark} name={icon} size={17} />
+      </View>
+      <View style={styles.voteChoiceCopy}>
+        <AppText align="center" tone={selected ? 'primary' : 'muted'} variant="button" weight="900">
+          {label}
+        </AppText>
+        <AppText align="center" variant="title" weight="900">
+          {rank}
+        </AppText>
+      </View>
+    </Pressable>
   );
 }
 
@@ -471,6 +588,20 @@ function clampRankIndex(index: number) {
   return Math.min(Math.max(index, 0), playerLevels.length - 1);
 }
 
+function getSubmittedRank(currentRank: PlayerLevel, exactRank: PlayerLevel, skillVoteType: SkillRankVoteType) {
+  const currentRankIndex = getRankIndex(currentRank);
+
+  if (skillVoteType === 'below') {
+    return playerLevels[clampRankIndex(currentRankIndex - 1)];
+  }
+
+  if (skillVoteType === 'above') {
+    return playerLevels[clampRankIndex(currentRankIndex + 1)];
+  }
+
+  return exactRank;
+}
+
 function getStarIcon(star: number, rating: number): keyof typeof Ionicons.glyphMap {
   if (rating >= star) {
     return 'star';
@@ -527,6 +658,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 48,
   },
+  centerRankPill: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: colors.surfaceYellow,
+    borderColor: 'rgba(246, 201, 69, 0.42)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.xxs,
+    minWidth: 108,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
   currentRankPill: {
     alignItems: 'center',
     alignSelf: 'flex-start',
@@ -542,6 +685,32 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.72,
+  },
+  exactRadio: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  exactRadioSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  exactRankButton: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 52,
+    minWidth: 0,
+  },
+  exactRankCopy: {
+    flex: 1,
+    minWidth: 0,
   },
   doneActions: {
     alignSelf: 'stretch',
@@ -603,6 +772,10 @@ const styles = StyleSheet.create({
   questionBlock: {
     gap: spacing.xs,
   },
+  quickVoteRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   rankBar: {
     height: 42,
     justifyContent: 'center',
@@ -614,8 +787,11 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSoft,
     borderRadius: 22,
     borderWidth: 1,
-    gap: spacing.md,
+    gap: spacing.sm,
     padding: spacing.md,
+  },
+  rankCardSelected: {
+    borderColor: colors.primary,
   },
   rankEnds: {
     flexDirection: 'row',
@@ -624,7 +800,17 @@ const styles = StyleSheet.create({
   rankHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: spacing.sm,
     justifyContent: 'space-between',
+  },
+  rankHero: {
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rankHeroCopy: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    minWidth: 0,
   },
   rankThumb: {
     alignItems: 'center',
@@ -753,5 +939,38 @@ const styles = StyleSheet.create({
     right: -40,
     top: 86,
     width: 120,
+  },
+  voteChoice: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 88,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  voteChoiceCopy: {
+    alignItems: 'center',
+    gap: spacing.xxs,
+    minWidth: 0,
+  },
+  voteChoiceIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.round,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  voteChoiceIconSelected: {
+    backgroundColor: colors.primary,
+  },
+  voteChoiceSelected: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.primary,
   },
 });

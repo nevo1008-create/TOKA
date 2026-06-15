@@ -63,6 +63,7 @@ export type JoinRequestReason =
 export type ChatChannelType = 'all' | 'admin_joined';
 export type RatingTaskStatus = 'open' | 'completed' | 'overdue';
 export type FriendRequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+export type SkillRankVoteType = 'below' | 'above' | 'exact';
 export type SkillVote = 'much_below' | 'below' | 'matches' | 'above' | 'much_above';
 export type PunctualityVote = 'on_time' | 'around_on_time' | 'late';
 export type PlayAgainVote = 'yes' | 'maybe' | 'no';
