@@ -25,13 +25,6 @@ export async function listLobbies(): Promise<Lobby[]> {
 
   const rows = (data ?? []) as unknown as DbLobbyWithRelations[];
   const activeRows = rows.filter(hasCurrentMembership);
-  const emptyRows = rows.filter((row) => !hasCurrentMembership(row));
-
-  if (emptyRows.length > 0) {
-    void Promise.all(emptyRows.map((row) => deleteLobbyCascade(row.id))).catch((cleanupError) => {
-      console.warn('Could not delete empty lobbies.', cleanupError);
-    });
-  }
 
   const hostRepairs = activeRows.filter(shouldSyncLobbyHost);
 
@@ -108,23 +101,32 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
     throw lobbyError;
   }
 
-  await supabase.from('lobby_memberships').insert({
-    brings_ball: currentPlayer.hasBall,
-    brings_court_marks: currentPlayer.hasCourtMarks,
-    joined_at: new Date().toISOString(),
-    lobby_id: lobby.id,
-    player_id: currentPlayer.id,
-    position: 1,
-    role: 'host',
-    status: 'joined',
-  });
+  const [membershipResult, messageResult] = await Promise.all([
+    supabase.from('lobby_memberships').insert({
+      brings_ball: currentPlayer.hasBall,
+      brings_court_marks: currentPlayer.hasCourtMarks,
+      joined_at: new Date().toISOString(),
+      lobby_id: lobby.id,
+      player_id: currentPlayer.id,
+      position: 1,
+      role: 'host',
+      status: 'joined',
+    }),
+    supabase.from('lobby_messages').insert({
+      body: 'Game created. Use this chat to coordinate with players.',
+      channel: 'all',
+      lobby_id: lobby.id,
+      sender_player_id: currentPlayer.id,
+    }),
+  ]);
 
-  await supabase.from('lobby_messages').insert({
-    body: 'Game created. Use this chat to coordinate with players.',
-    channel: 'all',
-    lobby_id: lobby.id,
-    sender_player_id: currentPlayer.id,
-  });
+  if (membershipResult.error) {
+    throw membershipResult.error;
+  }
+
+  if (messageResult.error) {
+    throw messageResult.error;
+  }
 
   const { data: createdLobbyRow, error: createdLobbyError } = await supabase
     .from('lobbies')

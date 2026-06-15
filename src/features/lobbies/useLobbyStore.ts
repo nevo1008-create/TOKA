@@ -403,13 +403,13 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   async function createLobby(draft: CreateLobbyDraft) {
     const nextLobby = await persistCreateLobby(draft, currentPlayer);
 
-    await refreshLobbyData();
     setLobbies((current) =>
       current.some((lobby) => lobby.id === nextLobby.id)
         ? current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby))
         : [nextLobby, ...current],
     );
     setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, nextLobby.id] : current));
+    void refreshLobbyData();
 
     return nextLobby;
   }

@@ -386,9 +386,9 @@ export default function App() {
       const savedPlayer = await upsertPlayerForUser(authUser, nextPlayer);
 
       setProfilePlayer(savedPlayer);
-      await refreshSocialData(savedPlayer);
       setIsEditProfileOpen(false);
       setActiveTab('profile');
+      void refreshSocialData(savedPlayer);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save profile changes.';
 
