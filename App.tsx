@@ -8,7 +8,7 @@ import {
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Animated, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { User } from '@supabase/supabase-js';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +45,7 @@ import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbie
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
 import { createNotification, createUniqueNotification } from './src/features/notifications/notificationRepository';
+import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -68,6 +69,47 @@ import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
 import { colors, radius, shadows, spacing } from './src/theme';
 import type { FriendRequest, Lobby, Notification, Player } from './src/types';
+
+type HomeTocaPointGain = {
+  amount: number;
+  from: number;
+  id: number;
+  to: number;
+};
+
+const LEVEL_UP_BURST_CONFETTI = [
+  { color: colors.accentGold, height: 16, rotate: '22deg', width: 7, x: -178, y: -318 },
+  { color: colors.primary, height: 10, rotate: '-34deg', width: 12, x: -112, y: -360 },
+  { color: colors.primaryDark, height: 14, rotate: '68deg', width: 6, x: -34, y: -322 },
+  { color: colors.accentGoldDark, height: 10, rotate: '-18deg', width: 16, x: 68, y: -372 },
+  { color: colors.danger, height: 14, rotate: '41deg', width: 7, x: 146, y: -302 },
+  { color: colors.primary, height: 9, rotate: '-62deg', width: 14, x: 190, y: -194 },
+  { color: colors.accentGold, height: 15, rotate: '-26deg', width: 7, x: 184, y: -42 },
+  { color: colors.primaryDark, height: 10, rotate: '32deg', width: 16, x: 148, y: 116 },
+  { color: colors.accentGoldDark, height: 13, rotate: '-48deg', width: 6, x: 86, y: 292 },
+  { color: colors.primary, height: 10, rotate: '58deg', width: 14, x: -28, y: 342 },
+  { color: colors.danger, height: 14, rotate: '-12deg', width: 7, x: -142, y: 258 },
+  { color: colors.primaryDark, height: 9, rotate: '74deg', width: 16, x: -196, y: 74 },
+  { color: colors.accentGold, height: 9, rotate: '12deg', width: 18, x: -172, y: -146 },
+  { color: colors.primary, height: 17, rotate: '-76deg', width: 6, x: -62, y: -214 },
+  { color: colors.danger, height: 9, rotate: '36deg', width: 14, x: 24, y: -244 },
+  { color: colors.accentGoldDark, height: 15, rotate: '-28deg', width: 7, x: 132, y: -128 },
+  { color: colors.primaryDark, height: 9, rotate: '82deg', width: 16, x: 164, y: 50 },
+  { color: colors.accentGold, height: 16, rotate: '-38deg', width: 7, x: 74, y: 210 },
+  { color: colors.primary, height: 9, rotate: '52deg', width: 14, x: -82, y: 218 },
+  { color: colors.accentGoldDark, height: 13, rotate: '-58deg', width: 6, x: -162, y: 18 },
+];
+
+const LEVEL_UP_FALL_CONFETTI = [
+  { color: colors.accentGold, drift: 28, height: 12, rotate: '18deg', width: 7, x: -182 },
+  { color: colors.primary, drift: -18, height: 8, rotate: '-42deg', width: 14, x: -132 },
+  { color: colors.danger, drift: 22, height: 14, rotate: '61deg', width: 6, x: -76 },
+  { color: colors.accentGoldDark, drift: -30, height: 9, rotate: '-16deg', width: 16, x: -18 },
+  { color: colors.primaryDark, drift: 16, height: 13, rotate: '34deg', width: 7, x: 42 },
+  { color: colors.primary, drift: -24, height: 8, rotate: '-70deg', width: 14, x: 102 },
+  { color: colors.accentGold, drift: 30, height: 14, rotate: '28deg', width: 7, x: 162 },
+  { color: colors.danger, drift: -14, height: 9, rotate: '-30deg', width: 16, x: 204 },
+];
 
 export default function App() {
   const [homeFontsLoaded] = useFonts({
@@ -97,6 +139,11 @@ export default function App() {
     body: string;
     title: string;
   } | null>(null);
+  const [homeTocaPointGain, setHomeTocaPointGain] = useState<HomeTocaPointGain | null>(null);
+  const [levelUpModal, setLevelUpModal] = useState<{
+    fromLevel: number;
+    toLevel: number;
+  } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
   const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, { enabled: authFlow === 'app' });
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
@@ -122,6 +169,8 @@ export default function App() {
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
   const [isHostManagementOpen, setIsHostManagementOpen] = useState(false);
   const [pendingLobbyActionKey, setPendingLobbyActionKey] = useState<string | null>(null);
+  const lastHomeTocaPlayerIdRef = useRef<string | null>(null);
+  const lastHomeTocaPointsRef = useRef<number | null>(null);
   const pendingLobbyActionRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = lobbyStore.unreadNotifications;
@@ -158,11 +207,76 @@ export default function App() {
 
     const intervalId = setInterval(() => {
       void lobbyStore.refreshLobbyData();
+      void refreshCurrentPlayerProfileOnly();
       void refreshFriendRequests();
     }, 5000);
 
     return () => clearInterval(intervalId);
-  }, [authFlow, lobbyStore.refreshLobbyData]);
+  }, [authFlow, authUser?.id, lobbyStore.refreshLobbyData]);
+
+  useEffect(() => {
+    if (authFlow !== 'app') {
+      lastHomeTocaPlayerIdRef.current = null;
+      lastHomeTocaPointsRef.current = null;
+      setHomeTocaPointGain(null);
+      return;
+    }
+
+    if (lastHomeTocaPlayerIdRef.current !== profilePlayer.id) {
+      lastHomeTocaPlayerIdRef.current = profilePlayer.id;
+      lastHomeTocaPointsRef.current = profilePlayer.tocaPoints;
+      setHomeTocaPointGain(null);
+      return;
+    }
+
+    if (activeTab !== 'home') {
+      return;
+    }
+
+    const previousTocaPoints = lastHomeTocaPointsRef.current;
+
+    if (previousTocaPoints === null) {
+      lastHomeTocaPointsRef.current = profilePlayer.tocaPoints;
+      return;
+    }
+
+    if (profilePlayer.tocaPoints > previousTocaPoints) {
+      const previousLevel = getTocaLevel(previousTocaPoints);
+      const nextLevel = getTocaLevel(profilePlayer.tocaPoints);
+
+      setHomeTocaPointGain({
+        amount: profilePlayer.tocaPoints - previousTocaPoints,
+        from: previousTocaPoints,
+        id: Date.now(),
+        to: profilePlayer.tocaPoints,
+      });
+
+      if (nextLevel > previousLevel) {
+        setLevelUpModal({
+          fromLevel: previousLevel,
+          toLevel: nextLevel,
+        });
+      }
+    } else if (profilePlayer.tocaPoints < previousTocaPoints) {
+      setHomeTocaPointGain(null);
+    }
+
+    lastHomeTocaPointsRef.current = profilePlayer.tocaPoints;
+  }, [activeTab, authFlow, profilePlayer.id, profilePlayer.tocaPoints]);
+
+  useEffect(() => {
+    if (!homeTocaPointGain) {
+      return undefined;
+    }
+
+    const clearTimer = setTimeout(() => {
+      setHomeTocaPointGain((currentGain) => (
+        currentGain?.id === homeTocaPointGain.id ? null : currentGain
+      ));
+    }, 2400);
+
+    return () => clearTimeout(clearTimer);
+  }, [homeTocaPointGain?.id]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
@@ -396,7 +510,7 @@ export default function App() {
     }
   }
 
-  async function refreshCurrentPlayer() {
+  async function refreshCurrentPlayerProfileOnly() {
     if (!authUser) {
       return profilePlayer;
     }
@@ -408,6 +522,12 @@ export default function App() {
     }
 
     setProfilePlayer(nextPlayer);
+    return nextPlayer;
+  }
+
+  async function refreshCurrentPlayer() {
+    const nextPlayer = await refreshCurrentPlayerProfileOnly();
+
     await refreshSocialData(nextPlayer);
     return nextPlayer;
   }
@@ -1431,6 +1551,7 @@ export default function App() {
                       onOpenLobby={openLobbyDetails}
                       onOpenNotifications={openNotifications}
                       ratingTasks={lobbyStore.ratingTasks}
+                      tocaPointGain={homeTocaPointGain}
                     />
                   )}
                   {activeTab === 'games' && (
@@ -1482,6 +1603,10 @@ export default function App() {
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
                           onSubmitPlayerRating={async ({ behaviorRating, rank, skillVoteType, targetPlayerId }) => {
                             const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank, skillVoteType });
+
+                            if (result.success) {
+                              await refreshCurrentPlayer();
+                            }
 
                             return result.success;
                           }}
@@ -1642,6 +1767,12 @@ export default function App() {
               title="Remove friend?"
               visible={Boolean(pendingFriendRemovalId)}
             />
+            <LevelUpModal
+              fromLevel={levelUpModal?.fromLevel ?? 1}
+              onClose={() => setLevelUpModal(null)}
+              toLevel={levelUpModal?.toLevel ?? 1}
+              visible={Boolean(levelUpModal)}
+            />
               </>
             ) : null}
           </View>
@@ -1742,6 +1873,220 @@ function SimpleConfirmationModal({
               Close
             </AppText>
           </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function LevelUpModal({
+  fromLevel,
+  onClose,
+  toLevel,
+  visible,
+}: {
+  fromLevel: number;
+  onClose: () => void;
+  toLevel: number;
+  visible: boolean;
+}) {
+  const bubbleAnimation = useRef(new Animated.Value(0)).current;
+  const confettiAnimation = useRef(new Animated.Value(0)).current;
+  const confettiFallAnimation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      bubbleAnimation.setValue(0);
+      confettiAnimation.setValue(0);
+      confettiFallAnimation.setValue(0);
+      return undefined;
+    }
+
+    bubbleAnimation.setValue(0);
+    confettiAnimation.setValue(0);
+    confettiFallAnimation.setValue(0);
+
+    Animated.spring(bubbleAnimation, {
+      friction: 7,
+      tension: 90,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+
+    const confettiLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(confettiAnimation, {
+          duration: 1450,
+          toValue: 1,
+          useNativeDriver: true,
+        }),
+        Animated.timing(confettiAnimation, {
+          duration: 0,
+          toValue: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    const fallLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(confettiFallAnimation, {
+          duration: 2100,
+          toValue: 1,
+          useNativeDriver: true,
+        }),
+        Animated.timing(confettiFallAnimation, {
+          duration: 0,
+          toValue: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    confettiLoop.start();
+    fallLoop.start();
+
+    return () => {
+      confettiLoop.stop();
+      fallLoop.stop();
+    };
+  }, [bubbleAnimation, confettiAnimation, confettiFallAnimation, visible]);
+
+  const bubbleScale = bubbleAnimation.interpolate({
+    inputRange: [0, 0.7, 1],
+    outputRange: [0.72, 1.06, 1],
+  });
+
+  const bubbleOpacity = bubbleAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+  const pulseScale = bubbleAnimation.interpolate({
+    inputRange: [0, 0.65, 1],
+    outputRange: [0.3, 1.28, 1.55],
+  });
+  const pulseOpacity = bubbleAnimation.interpolate({
+    inputRange: [0, 0.45, 1],
+    outputRange: [0, 0.38, 0],
+  });
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.confirmationRoot}>
+        <Pressable accessibilityLabel="Close level up" accessibilityRole="button" onPress={onClose} style={styles.confirmationBackdrop} />
+        <View pointerEvents="box-none" style={styles.levelUpStage}>
+          <View pointerEvents="none" style={styles.levelUpConfettiLayer}>
+            {LEVEL_UP_BURST_CONFETTI.map((piece, index) => {
+              const delay = Math.max((index / LEVEL_UP_BURST_CONFETTI.length) * 0.38, 0.01);
+              const progress = confettiAnimation.interpolate({
+                inputRange: [0, delay, Math.min(delay + 0.4, 0.95), 1],
+                outputRange: [0, 0, 1, 0],
+              });
+              const translateX = confettiAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [piece.x * 0.18, piece.x],
+              });
+              const translateY = confettiAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [piece.y * 0.18, piece.y],
+              });
+
+              return (
+                <Animated.View
+                  key={`burst-${piece.x}-${piece.y}`}
+                  style={[
+                    styles.levelUpConfettiPiece,
+                    {
+                      backgroundColor: piece.color,
+                      height: piece.height,
+                      opacity: progress,
+                      transform: [
+                        { translateX },
+                        { translateY },
+                        { rotate: piece.rotate },
+                      ],
+                      width: piece.width,
+                    },
+                  ]}
+                />
+              );
+            })}
+            {LEVEL_UP_FALL_CONFETTI.map((piece, index) => {
+              const delay = Math.max((index / LEVEL_UP_FALL_CONFETTI.length) * 0.32, 0.01);
+              const opacity = confettiFallAnimation.interpolate({
+                inputRange: [0, delay, Math.min(delay + 0.24, 0.72), 1],
+                outputRange: [0, 0, 1, 0],
+              });
+              const translateX = confettiFallAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [piece.x, piece.x + piece.drift],
+              });
+              const translateY = confettiFallAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-430, 430],
+              });
+
+              return (
+                <Animated.View
+                  key={`fall-${piece.x}`}
+                  style={[
+                    styles.levelUpConfettiPiece,
+                    {
+                      backgroundColor: piece.color,
+                      height: piece.height,
+                      opacity,
+                      transform: [
+                        { translateX },
+                        { translateY },
+                        { rotate: piece.rotate },
+                      ],
+                      width: piece.width,
+                    },
+                  ]}
+                />
+              );
+            })}
+          </View>
+          <Animated.View
+            style={[
+              styles.levelUpCard,
+              {
+                opacity: bubbleOpacity,
+                transform: [{ scale: bubbleScale }],
+              },
+            ]}
+          >
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.levelUpPulse,
+                {
+                  opacity: pulseOpacity,
+                  transform: [{ scale: pulseScale }],
+                },
+              ]}
+            />
+            <View style={styles.levelUpGlow}>
+              <View style={styles.levelUpIcon}>
+                <AppText align="center" tone="primary" variant="titleSmall" weight="900">
+                  UP
+                </AppText>
+              </View>
+            </View>
+            <AppText align="center" style={styles.levelUpTitle} variant="cardTitle" weight="900">
+              Congratulations!
+            </AppText>
+            <AppText align="center" tone="muted" variant="bodySmall" weight="700">
+              TOCA level up
+            </AppText>
+            <AppText align="center" tone="primary" variant="bodySmall" weight="900">
+              Level {fromLevel} -&gt; Level {toLevel}
+            </AppText>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.confirmationButton}>
+              <AppText align="center" tone="inverse" variant="button" weight="900">
+                Close
+              </AppText>
+            </Pressable>
+          </Animated.View>
         </View>
       </View>
     </Modal>
@@ -1858,6 +2203,79 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 54,
     paddingHorizontal: spacing.md,
+  },
+  levelUpIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.accentGold,
+    borderColor: 'rgba(239, 165, 26, 0.42)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 54,
+    justifyContent: 'center',
+    width: 54,
+  },
+  levelUpCard: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(246, 201, 69, 0.72)',
+    borderRadius: 34,
+    borderWidth: 1,
+    gap: spacing.md,
+    maxWidth: 350,
+    overflow: 'visible',
+    padding: spacing.xl,
+    position: 'relative',
+    shadowColor: colors.accentGoldDark,
+    shadowOffset: { height: 18, width: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 38,
+  },
+  levelUpConfettiLayer: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  levelUpConfettiPiece: {
+    borderRadius: 4,
+    position: 'absolute',
+  },
+  levelUpGlow: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(246, 201, 69, 0.2)',
+    borderColor: 'rgba(246, 201, 69, 0.32)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 86,
+    justifyContent: 'center',
+    width: 86,
+  },
+  levelUpPulse: {
+    backgroundColor: 'rgba(246, 201, 69, 0.28)',
+    borderColor: 'rgba(246, 201, 69, 0.38)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 150,
+    position: 'absolute',
+    top: 16,
+    width: 150,
+  },
+  levelUpStage: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    paddingHorizontal: spacing.xl2,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  levelUpTitle: {
+    letterSpacing: 0,
   },
   confirmationDangerButton: {
     alignItems: 'center',

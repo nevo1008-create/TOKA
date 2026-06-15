@@ -27,6 +27,12 @@ type HomeScreenProps = {
   onOpenLobby: (lobby: Lobby) => void;
   onOpenNotifications: () => void;
   ratingTasks: RatingTask[];
+  tocaPointGain?: {
+    amount: number;
+    from: number;
+    id: number;
+    to: number;
+  } | null;
 };
 
 export function HomeScreen({
@@ -40,6 +46,7 @@ export function HomeScreen({
   onOpenLobby,
   onOpenNotifications,
   ratingTasks,
+  tocaPointGain,
 }: HomeScreenProps) {
   useLifecycleClock();
   const upcomingLobbies = lobbies.filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
@@ -92,7 +99,7 @@ export function HomeScreen({
           </View>
         </View>
 
-        <PlayerStatusStrip />
+        <PlayerStatusStrip player={currentPlayer} tocaPointGain={tocaPointGain} />
 
         <View style={styles.nextGameHeader}>
           <AppText style={styles.nextGameTitle} variant="sectionHeading" weight="800">

@@ -10,6 +10,7 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import { getFallbackPreviewPlayingDetails, getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
+import { formatTocaPoints, getTocaPointProgress } from '../features/tocaPoints/tocaPointProgression';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { FriendRequest, Player, PlayerLevel } from '../types';
 
@@ -458,7 +459,7 @@ export function CommunityScreen({
               <View style={styles.leaderboardInsight}>
                 <Ionicons color={colors.accent} name="flash-outline" size={16} />
                 <AppText style={styles.leaderboardInsightText} variant="uiBody" weight="800">
-                  Rate your last game for +20 pts
+                  Rate games to keep your TOCA progress moving
                 </AppText>
               </View>
             </View>
@@ -589,12 +590,7 @@ export function CommunityScreen({
 }
 
 function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
-  const currentTotalPoints = currentPlayer.tocaPoints;
-  const nextLevelPoints = Math.max(250, (Math.floor(currentTotalPoints / 250) + 1) * 250);
-  const previousLevelPoints = Math.max(0, nextLevelPoints - 250);
-  const pointsToNextLevel = Math.max(0, nextLevelPoints - currentTotalPoints);
-  const pointsInLevel = Math.max(0, currentTotalPoints - previousLevelPoints);
-  const levelProgress = Math.min(1, Math.max(0.08, pointsInLevel / 250));
+  const tocaProgress = getTocaPointProgress(currentPlayer.tocaPoints);
 
   return (
     <LinearGradient
@@ -612,13 +608,13 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
             TOCA points
           </AppText>
           <AppText style={styles.standingPoints} tone="warning" variant="heroTitle" weight="800">
-            {currentTotalPoints.toLocaleString()}
+            {tocaProgress.totalTp.toLocaleString()}
           </AppText>
         </View>
 
         <View style={styles.standingRankPill}>
           <AppText tone="warning" variant="caption" weight="800">
-            Top 5
+            Level {tocaProgress.currentLevel}
           </AppText>
         </View>
       </View>
@@ -629,12 +625,12 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
             Start
           </AppText>
           <AppText variant="caption" weight="800">
-            {previousLevelPoints.toLocaleString()}
+            {tocaProgress.currentLevelRequiredTp.toLocaleString()}
           </AppText>
         </View>
         <View style={styles.standingCurrentValue}>
           <AppText align="center" tone="warning" variant="caption" weight="800">
-            {currentTotalPoints.toLocaleString()}
+            {tocaProgress.totalTp.toLocaleString()}
           </AppText>
           <AppText align="center" tone="subtle" variant="caption" weight="600">
             current
@@ -645,19 +641,19 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
             Next level
           </AppText>
           <AppText align="right" variant="caption" weight="800">
-            {nextLevelPoints.toLocaleString()}
+            {tocaProgress.nextLevelRequiredTp.toLocaleString()}
           </AppText>
         </View>
       </View>
 
       <View style={styles.standingMeterTrack}>
-        <View style={[styles.standingMeterFill, { width: `${levelProgress * 100}%` }]} />
+        <View style={[styles.standingMeterFill, { width: `${tocaProgress.progressToNextLevel * 100}%` }]} />
       </View>
 
       <View style={styles.standingFooter}>
         <StandingMetric icon="ribbon-outline" label="Rank" value={currentPlayer.level} />
         <StandingMetric icon="star" label="Rating" value="3.6" />
-        <StandingMetric icon="trending-up-outline" label="To next" value={`+${pointsToNextLevel}`} />
+        <StandingMetric icon="trending-up-outline" label="To next" value={`+${formatTocaPoints(tocaProgress.pointsToNextLevel)}`} />
       </View>
     </LinearGradient>
   );
@@ -856,14 +852,14 @@ function getCommunityContext(player: CommunityPlayerCard, menuVariant: PlayerMen
   }
 
   if (menuVariant === 'leaderboard') {
-    return `${player.points} pts this month`;
+    return `${formatTocaPoints(player.points)} total`;
   }
 
   if (menuVariant === 'request') {
     return 'Played at Gordon';
   }
 
-  return player.points > 400 ? 'B+ regular' : 'Played together 4x';
+  return player.area ? `${player.area} player` : 'TOCA player';
 }
 
 function getCommunityPreviewTrustCues(player: CommunityPlayerCard, sourcePlayer?: Player) {
@@ -885,7 +881,7 @@ function getCommunityPreviewTrustCues(player: CommunityPlayerCard, sourcePlayer?
       icon: 'calendar-outline' as const,
       label: 'Games played',
       tone: 'aqua' as const,
-      value: sourcePlayer ? `${sourcePlayer.gamesPlayed}` : player.points > 400 ? '20+' : '8+',
+      value: sourcePlayer ? `${sourcePlayer.gamesPlayed}` : 'Not synced',
     },
   ];
 }
@@ -1125,7 +1121,7 @@ function ReceivedRequestCard({ index, player }: { index: number; player: Communi
             <MiniChip icon="star" label={player.rating} warning />
           </View>
           <AppText tone="subtle" variant="caption" weight="600">
-            {requestNotes[index % requestNotes.length]} · {player.points} pts
+            {requestNotes[index % requestNotes.length]} - {formatTocaPoints(player.points)}
           </AppText>
         </View>
       </View>
@@ -1219,7 +1215,7 @@ function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer, players: Pl
   return {
     area: player.area ?? 'Nearby beaches',
     friendIds: [],
-    gamesPlayed: player.points > 400 ? 28 : 8,
+    gamesPlayed: 0,
     gender: 'male',
     hasBall: false,
     hasCourtMarks: false,
@@ -1228,7 +1224,7 @@ function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer, players: Pl
     level: player.level,
     name: player.name,
     preferredFoot: 'right',
-    rankStatus: player.badge === 'shield' ? 'established' : 'self_declared',
+    rankStatus: 'self_declared',
     side: 'both',
     tocaPoints: player.points,
   };
