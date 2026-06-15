@@ -11,7 +11,16 @@ import type {
   RankRuleType,
   RankStatus,
   SkillRankVoteType,
+  TocaPointEventType,
 } from '../types';
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 export type DbPlayer = {
   id: string;
@@ -145,6 +154,18 @@ export type DbFriendRequest = {
   responded_at: string | null;
 };
 
+export type DbTocaPointEvent = {
+  id: string;
+  player_id: string;
+  lobby_id: string | null;
+  related_player_id: string | null;
+  type: TocaPointEventType;
+  points: number;
+  dedupe_key: string;
+  metadata: Json;
+  created_at: string;
+};
+
 export type DbPlayerRating = {
   id: string;
   lobby_id: string;
@@ -265,6 +286,11 @@ export type Database = {
         Insert: Partial<DbFriendRequest> & Pick<DbFriendRequest, 'requester_player_id' | 'recipient_player_id'>;
         Update: Partial<DbFriendRequest>;
       };
+      toca_point_events: {
+        Row: DbTocaPointEvent;
+        Insert: Partial<DbTocaPointEvent> & Pick<DbTocaPointEvent, 'player_id' | 'type' | 'points' | 'dedupe_key'>;
+        Update: Partial<DbTocaPointEvent>;
+      };
       player_ratings: {
         Row: DbPlayerRating;
         Insert: Partial<DbPlayerRating> & Pick<DbPlayerRating, 'lobby_id' | 'rater_player_id' | 'rated_player_id' | 'rank_vote' | 'behavior_rating'>;
@@ -378,6 +404,18 @@ export type Database = {
           target_player_id: string;
         };
         Returns: DbPlayerRating;
+      };
+      award_toca_points: {
+        Args: {
+          event_dedupe_key: string;
+          event_metadata?: Json;
+          event_type: TocaPointEventType;
+          points_delta: number;
+          target_lobby_id?: string | null;
+          target_player_id: string;
+          target_related_player_id?: string | null;
+        };
+        Returns: DbTocaPointEvent;
       };
     };
     Enums: Record<string, never>;

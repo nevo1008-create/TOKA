@@ -12,6 +12,7 @@ import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePrevi
 import { PlayerRow } from '../components/PlayerRow';
 import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
 import { ProgressBar } from '../components/ProgressBar';
+import { getTocaPointProgress } from '../features/tocaPoints/tocaPointProgression';
 import { colors, radius, shadows, spacing } from '../theme';
 import type { FriendRequest, Lobby, Player } from '../types';
 
@@ -681,22 +682,17 @@ function getProfileStats(player: Player, lobbies: Lobby[]) {
   const completedLobbies = getCompletedPlayerLobbies(player, lobbies);
   const hostedGames = lobbies.filter((lobby) => lobby.adminId === player.id).length;
   const preferredBeaches = getPreferredBeaches(completedLobbies);
-  const tocaLevel = Math.max(1, Math.floor(player.tocaPoints / 250) + 1);
-  const nextLevelPoints = tocaLevel * 250;
-  const previousLevelPoints = Math.max(0, nextLevelPoints - 250);
-  const pointsInLevel = Math.max(0, player.tocaPoints - previousLevelPoints);
-  const pointsToNextLevel = Math.max(0, nextLevelPoints - player.tocaPoints);
-  const levelProgress = Math.min(1, Math.max(0.08, pointsInLevel / 250));
+  const tocaProgress = getTocaPointProgress(player.tocaPoints);
 
   return {
     completedGames: completedLobbies.length || player.gamesPlayed,
     hostedGames,
-    levelProgress,
-    nextLevelPoints,
-    nextTocaLevel: tocaLevel + 1,
-    pointsToNextLevel,
+    levelProgress: tocaProgress.progressToNextLevel,
+    nextLevelPoints: tocaProgress.nextLevelRequiredTp,
+    nextTocaLevel: tocaProgress.nextLevel,
+    pointsToNextLevel: tocaProgress.pointsToNextLevel,
     preferredBeaches,
-    tocaLevel,
+    tocaLevel: tocaProgress.currentLevel,
   };
 }
 

@@ -67,6 +67,12 @@ export type SkillRankVoteType = 'below' | 'above' | 'exact';
 export type SkillVote = 'much_below' | 'below' | 'matches' | 'above' | 'much_above';
 export type PunctualityVote = 'on_time' | 'around_on_time' | 'late';
 export type PlayAgainVote = 'yes' | 'maybe' | 'no';
+export type TocaPointEventType =
+  | 'completed_match'
+  | 'rated_player'
+  | 'quick_rating_completion'
+  | 'weekly_five_match_bonus'
+  | 'new_player_played_with';
 
 export type Player = {
   id: string;
@@ -172,6 +178,18 @@ export type FriendRequest = {
   status: FriendRequestStatus;
   createdAt: string;
   respondedAt?: string | null;
+};
+
+export type TocaPointEvent = {
+  id: string;
+  playerId: string;
+  lobbyId?: string | null;
+  relatedPlayerId?: string | null;
+  type: TocaPointEventType;
+  points: number;
+  dedupeKey: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
 };
 
 export type Lobby = {
