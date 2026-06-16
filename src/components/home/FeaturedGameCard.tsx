@@ -4,19 +4,22 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { formatLobbyStart, getMinutesUntilLobbyStart } from '../../features/lobbies/lobbyDateTime';
 import { getAutoCancelCountdownLabel } from '../../features/lobbies/lobbyLifecycle';
+import { getLobbyMembershipBadgeLabel } from '../../features/lobbies/lobbyLabels';
 import { isJoinedParticipant } from '../../features/lobbies/lobbyRules';
 import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
-import type { Lobby } from '../../types';
+import type { Lobby, Player } from '../../types';
 import { AppText } from '../AppText';
 import { AvatarStack } from './AvatarStack';
 import { BeachGameVisual } from './BeachGameVisual';
 
 type FeaturedGameCardProps = {
+  currentPlayerId: string;
   lobby?: Lobby;
   onOpenRoom: () => void;
+  players: Player[];
 };
 
-export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
+export function FeaturedGameCard({ currentPlayerId, lobby, onOpenRoom, players }: FeaturedGameCardProps) {
   if (!lobby) {
     return (
       <View style={styles.emptyCard}>
@@ -36,6 +39,11 @@ export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
   }
 
   const activeParticipants = lobby?.participants.filter(isJoinedParticipant) ?? [];
+  const activePlayers = activeParticipants
+    .map((participant) => players.find((player) => player.id === participant.playerId))
+    .filter((player): player is Player => Boolean(player));
+  const currentParticipant = activeParticipants.find((participant) => participant.playerId === currentPlayerId);
+  const membershipLabel = getLobbyMembershipBadgeLabel(lobby, currentPlayerId, currentParticipant) ?? 'Joined';
   const startLabel = lobby ? formatLobbyStart(lobby.startsAt) : 'Choose a game';
   const [dateLabel, timeLabel] = splitStartLabel(startLabel);
 
@@ -53,7 +61,7 @@ export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
         <View style={styles.topPillsRow}>
           <View style={styles.adminPill}>
             <AppText style={styles.chipText} tone="accent" variant="chip" weight="700">
-              {lobby ? 'Joined' : 'Ready'}
+              {membershipLabel}
             </AppText>
           </View>
           <View style={styles.countdownPill}>
@@ -89,14 +97,17 @@ export function FeaturedGameCard({ lobby, onOpenRoom }: FeaturedGameCardProps) {
           </AppText>
         </View>
 
-        <AvatarStack initials={activeParticipants.map((participant) => participant.playerId.slice(0, 2).toUpperCase())} />
+        <AvatarStack
+          initials={activeParticipants.map((participant) => participant.playerId.slice(0, 2).toUpperCase())}
+          players={activePlayers}
+        />
 
         <View style={styles.actions}>
-          <Pressable onPress={onOpenRoom} style={styles.openButton}>
+          <View style={styles.openButton}>
             <AppText align="center" style={styles.buttonText} tone="inverse" variant="button" weight="800">
               View match
             </AppText>
-          </Pressable>
+          </View>
         </View>
       </View>
     </Pressable>

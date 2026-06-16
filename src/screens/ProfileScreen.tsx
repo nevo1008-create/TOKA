@@ -8,7 +8,14 @@ import { Avatar } from '../components/Avatar';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
-import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
+import {
+  getPlayerCompletedGamesCount,
+  getPlayerCompletedLobbies,
+  getPlayerDisplayRating,
+  getPlayerHostedGamesCount,
+  getPlayerPreviewPlayingDetails,
+  getPlayerPreviewTrustCues,
+} from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
 import { ProgressBar } from '../components/ProgressBar';
@@ -193,7 +200,7 @@ export function ProfileScreen({
         <View style={styles.summaryStrip}>
           <SummaryItem icon="ribbon-outline" label="Rank" value={player.level} />
           <View style={styles.summaryDivider} />
-          <SummaryItem icon="star-outline" label="Rating" tone="rating" value="3.6" />
+          <SummaryItem icon="star-outline" label="Rating" tone="rating" value={getPlayerDisplayRating(player, currentPlayer.id)} />
           <View style={styles.summaryDivider} />
           <SummaryItem icon="calendar-outline" label="Games" value={`${profileStats.completedGames}`} />
           <View style={styles.summaryDivider} />
@@ -292,6 +299,7 @@ export function ProfileScreen({
         }
         name={profilePreviewPlayer?.player.name ?? ''}
         onClose={() => setProfilePreviewPlayer(null)}
+        player={profilePreviewPlayer?.player}
         primaryAction={
           profilePreviewPlayer
             ? {
@@ -335,8 +343,8 @@ export function ProfileScreen({
               }
             : undefined
         }
-        rating={profilePreviewPlayer ? getProfilePlayerRating(profilePreviewPlayer.player) : undefined}
-        trustCues={profilePreviewPlayer ? getPreviewTrustCues(profilePreviewPlayer.player) : undefined}
+        rating={profilePreviewPlayer ? getPlayerDisplayRating(profilePreviewPlayer.player, currentPlayer.id) : undefined}
+        trustCues={profilePreviewPlayer ? getPlayerPreviewTrustCues(profilePreviewPlayer.player, lobbies) : undefined}
         visible={Boolean(profilePreviewPlayer)}
       />
     </View>
@@ -503,7 +511,8 @@ function PeopleSection({
               name={person.name}
               onMore={() => onMore(person, context)}
               onPressProfile={() => onPressProfile(person, context)}
-              rating={getProfilePlayerRating(person)}
+              player={person}
+              rating={getPlayerDisplayRating(person, ownerPlayer.id)}
               statusIcon={person.id === 'p3' ? 'shield-checkmark' : 'star'}
             />
           );
@@ -560,7 +569,7 @@ function PlayerMiniCard({
       </AppText>
       <View style={styles.playerMetaRow}>
         <MiniChip label={player.level} />
-        <MiniChip icon="star" label={player.id === 'p4' ? '3.6' : player.id === 'p3' ? '4.0' : '3.2'} warning />
+        <MiniChip icon="star" label={getPlayerDisplayRating(player)} warning />
       </View>
       <AppText align="center" tone="muted" variant="metadata" weight="600">
         {recency ?? `${player.tocaPoints} points`}
@@ -679,14 +688,13 @@ function capitalize(value: string) {
 }
 
 function getProfileStats(player: Player, lobbies: Lobby[]) {
-  const completedLobbies = getCompletedPlayerLobbies(player, lobbies);
-  const hostedGames = lobbies.filter((lobby) => lobby.adminId === player.id).length;
+  const completedLobbies = getPlayerCompletedLobbies(player, lobbies);
   const preferredBeaches = getPreferredBeaches(completedLobbies);
   const tocaProgress = getTocaPointProgress(player.tocaPoints);
 
   return {
-    completedGames: completedLobbies.length || player.gamesPlayed,
-    hostedGames,
+    completedGames: getPlayerCompletedGamesCount(player, lobbies),
+    hostedGames: getPlayerHostedGamesCount(player, lobbies),
     levelProgress: tocaProgress.progressToNextLevel,
     nextLevelPoints: tocaProgress.nextLevelRequiredTp,
     nextTocaLevel: tocaProgress.nextLevel,
@@ -694,14 +702,6 @@ function getProfileStats(player: Player, lobbies: Lobby[]) {
     preferredBeaches,
     tocaLevel: tocaProgress.currentLevel,
   };
-}
-
-function getCompletedPlayerLobbies(player: Player, lobbies: Lobby[]) {
-  return lobbies.filter(
-    (lobby) =>
-      lobby.status === 'completed' &&
-      lobby.participants.some((participant) => participant.playerId === player.id && participant.status !== 'removed'),
-  );
 }
 
 function getPreferredBeaches(lobbies: Lobby[]) {
@@ -722,7 +722,7 @@ function getPreferredBeaches(lobbies: Lobby[]) {
 function getRecentPlayers(player: Player, lobbies: Lobby[], players: Player[]) {
   const recentPlayerIds = new Set<string>();
 
-  getCompletedPlayerLobbies(player, lobbies)
+  getPlayerCompletedLobbies(player, lobbies)
     .sort((first, second) => new Date(second.startsAt).getTime() - new Date(first.startsAt).getTime())
     .forEach((lobby) => {
       lobby.participants.forEach((participant) => {
@@ -740,34 +740,6 @@ function getRecentPlayers(player: Player, lobbies: Lobby[], players: Player[]) {
 
 function getRecentLabel(index: number) {
   return ['2d ago', '3d ago', '5d ago', '1w ago'][index] ?? '1w ago';
-}
-
-function getProfilePlayerRating(player: Player) {
-  if (player.id === 'p4') {
-    return '3.6';
-  }
-
-  if (player.id === 'p3') {
-    return '4.0';
-  }
-
-  return '3.2';
-}
-
-function getPreviewTrustCues(player: Player) {
-  return [
-    {
-      icon: 'checkmark-circle-outline' as const,
-      label: 'Show-up rate',
-      value: player.rankStatus === 'established' ? '98%' : player.rankStatus === 'stabilizing' ? '94%' : 'New',
-    },
-    {
-      icon: 'calendar-outline' as const,
-      label: 'Games played',
-      tone: 'green' as const,
-      value: `${player.gamesPlayed}`,
-    },
-  ];
 }
 
 function getPreviewPlayingDetails(player: Player) {

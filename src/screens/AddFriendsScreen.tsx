@@ -6,15 +6,16 @@ import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react
 import { AppText } from '../components/AppText';
 import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
-import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
+import { getPlayerDisplayRating, getPlayerPreviewPlayingDetails, getPlayerPreviewTrustCues } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { areFriends, getPendingFriendRequest } from '../features/friends/friendRules';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { FriendRequest, Player } from '../types';
+import type { FriendRequest, Lobby, Player } from '../types';
 
 type AddFriendsScreenProps = {
   currentPlayer: Player;
   friendRequests: FriendRequest[];
+  lobbies: Lobby[];
   onBack: () => void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
@@ -30,6 +31,7 @@ const inviteMessage =
 export function AddFriendsScreen({
   currentPlayer,
   friendRequests,
+  lobbies,
   onBack,
   onSendFriendRequest,
   onViewPlayerProfile,
@@ -168,8 +170,9 @@ export function AddFriendsScreen({
                       name={player.name}
                       onMore={() => openActions(player)}
                       onPressProfile={() => setProfilePreviewPlayer(player)}
+                      player={player}
                       primaryAction={getPrimaryAction(player, isFriend, isRequested, () => requestFriend(player.id))}
-                      rating={getPlayerRating(player, currentPlayer.id)}
+                      rating={getPlayerDisplayRating(player, currentPlayer.id)}
                       statusIcon={isFriend ? 'checkmark' : 'star'}
                     />
                   );
@@ -209,6 +212,7 @@ export function AddFriendsScreen({
         }
         name={profilePreviewPlayer?.name ?? ''}
         onClose={() => setProfilePreviewPlayer(null)}
+        player={profilePreviewPlayer ?? undefined}
         primaryAction={
           profilePreviewPlayer
             ? {
@@ -218,7 +222,8 @@ export function AddFriendsScreen({
             : undefined
         }
         profileDetails={profilePreviewPlayer ? getPlayerPreviewPlayingDetails(profilePreviewPlayer) : undefined}
-        rating={profilePreviewPlayer ? getPlayerRating(profilePreviewPlayer, currentPlayer.id) : undefined}
+        rating={profilePreviewPlayer ? getPlayerDisplayRating(profilePreviewPlayer, currentPlayer.id) : undefined}
+        trustCues={profilePreviewPlayer ? getPlayerPreviewTrustCues(profilePreviewPlayer, lobbies) : undefined}
         secondaryAction={
           profilePreviewPlayer && !areFriends(currentPlayer, profilePreviewPlayer)
             ? {
@@ -376,22 +381,6 @@ function isSuggestablePlayer(player: Player, currentPlayer: Player, friendReques
     !areFriends(currentPlayer, player) &&
     !getPendingFriendRequest(friendRequests, currentPlayer.id, player.id)
   );
-}
-
-function getPlayerRating(player: Player, currentPlayerId: string) {
-  if (player.id === 'p3') {
-    return '4.0';
-  }
-
-  if (player.id === 'p4') {
-    return '3.6';
-  }
-
-  if (player.id === currentPlayerId) {
-    return '3.6';
-  }
-
-  return '3.2';
 }
 
 function getPlayerContext(player: Player, currentPlayer: Player) {

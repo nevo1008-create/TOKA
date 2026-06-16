@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, fontFamilies, homeTypography, radius, shadows, spacing } from '../../theme';
 import type { Player } from '../../types';
 import { AppText } from '../AppText';
+import { Avatar } from '../Avatar';
 
 type HomeHeaderProps = {
   compact?: boolean;
@@ -98,11 +99,7 @@ export function HomeHeader({
           </Pressable>
         ) : (
           <View style={[styles.avatarRing, compact && styles.avatarRingCompact]}>
-            <View style={[styles.avatar, compact && styles.avatarCompact]}>
-              <AppText align="center" tone="inverse" variant="heading" weight="800">
-                {player.initials}
-              </AppText>
-            </View>
+            <Avatar player={player} size={compact ? 42 : 50} />
           </View>
         )}
       </View>
@@ -115,18 +112,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 10,
-  },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: '#EEEED6',
-    borderRadius: radius.round,
-    height: 50,
-    justifyContent: 'center',
-    width: 50,
-  },
-  avatarCompact: {
-    height: 42,
-    width: 42,
   },
   avatarRing: {
     alignItems: 'center',

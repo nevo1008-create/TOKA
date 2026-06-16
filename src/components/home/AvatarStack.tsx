@@ -1,18 +1,24 @@
 import { StyleSheet, View } from 'react-native';
 
 import { colors, homeTypography, radius, spacing } from '../../theme';
+import type { Player } from '../../types';
 import { AppText } from '../AppText';
+import { Avatar } from '../Avatar';
 
 type AvatarStackProps = {
   initials: string[];
+  players?: Player[];
   size?: number;
 };
 
-export function AvatarStack({ initials, size = 44 }: AvatarStackProps) {
+export function AvatarStack({ initials, players, size = 44 }: AvatarStackProps) {
+  const entries = players?.length ? players : initials;
+
   return (
     <View style={styles.row}>
-      {initials.map((initial, index) => {
-        const isExtra = initial.startsWith('+');
+      {entries.map((entry, index) => {
+        const initial = typeof entry === 'string' ? entry : entry.initials;
+        const isExtra = typeof entry === 'string' && initial.startsWith('+');
 
         return (
           <View
@@ -28,9 +34,13 @@ export function AvatarStack({ initials, size = 44 }: AvatarStackProps) {
               },
             ]}
           >
-            <AppText align="center" style={styles.avatarText} tone="primary" variant="body" weight="800">
-              {initial}
-            </AppText>
+            {typeof entry === 'string' ? (
+              <AppText align="center" style={styles.avatarText} tone="primary" variant="body" weight="800">
+                {initial}
+              </AppText>
+            ) : (
+              <Avatar player={entry} size={size - 4} />
+            )}
           </View>
         );
       })}

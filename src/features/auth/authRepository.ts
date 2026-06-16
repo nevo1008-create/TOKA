@@ -7,8 +7,14 @@ export type AuthResult = {
   session: Session | null;
 };
 
+const sessionRestoreTimeoutMs = 8000;
+
 export async function getCurrentSession() {
-  const { data, error } = await supabase.auth.getSession();
+  const { data, error } = await withTimeout(
+    supabase.auth.getSession(),
+    sessionRestoreTimeoutMs,
+    'Session restore timed out. Please log in again.',
+  );
 
   if (error) {
     throw error;
@@ -263,4 +269,18 @@ function clearPasswordResetUrl() {
   }
 
   window.history.replaceState({}, document.title, `${window.location.origin}/reset-password`);
+}
+
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<T>((_resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([Promise.resolve(promise), timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
 }

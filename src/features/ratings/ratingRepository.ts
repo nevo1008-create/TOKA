@@ -3,6 +3,9 @@ import type { DbPlayerRating } from '../../lib/database.types';
 import type { Lobby, PlayerLevel, RatingTask, SkillRankVoteType } from '../../types';
 import { canPlayerRateLobby, getRatingTargetIds } from './ratingRules';
 
+const ratingRequestTimeoutMs = 15000;
+const lifecycleRequestTimeoutMs = 8000;
+
 export type SubmitPlayerRatingInput = {
   behaviorRating: number;
   lobby: Lobby;
@@ -45,15 +48,23 @@ export async function submitPlayerRating({
     };
   }
 
-  await syncLobbyLifecycleBeforeRating(lobby.id);
+  await withTimeout(
+    syncLobbyLifecycleBeforeRating(lobby.id),
+    lifecycleRequestTimeoutMs,
+    'Preparing ratings took too long. Please try again.',
+  );
 
-  const { error } = await supabase.rpc('submit_player_skill_rating', {
-    exact_rank_vote: skillVoteType === 'exact' ? rank : null,
-    skill_vote_type: skillVoteType,
-    submitted_behavior_rating: behaviorRating,
-    target_lobby_id: lobby.id,
-    target_player_id: ratedPlayerId,
-  });
+  const { error } = await withTimeout(
+    supabase.rpc('submit_player_skill_rating', {
+      exact_rank_vote: skillVoteType === 'exact' ? rank : null,
+      skill_vote_type: skillVoteType,
+      submitted_behavior_rating: behaviorRating,
+      target_lobby_id: lobby.id,
+      target_player_id: ratedPlayerId,
+    }),
+    ratingRequestTimeoutMs,
+    'Saving this rating took too long. Please try again.',
+  );
 
   if (error) {
     if (error.code === '23505' || error.message.toLowerCase().includes('already rated')) {
@@ -116,4 +127,18 @@ async function syncLobbyLifecycleBeforeRating(lobbyId: string) {
   if (error) {
     console.warn('Could not sync lobby lifecycle before rating.', error.message);
   }
+}
+
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<T>((_resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([Promise.resolve(promise), timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
 }

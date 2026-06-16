@@ -7,12 +7,18 @@ import { AppText } from '../components/AppText';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
-import { getFallbackPreviewPlayingDetails, getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
+import {
+  getFallbackPreviewPlayingDetails,
+  getPlayerDisplayRating,
+  getPlayerPreviewPlayingDetails,
+  getPlayerPreviewTrustCues,
+} from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
+import { getRatingTargetIds } from '../features/ratings/ratingRules';
 import { formatTocaPoints, getTocaPointProgress } from '../features/tocaPoints/tocaPointProgression';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
-import type { FriendRequest, Player, PlayerLevel } from '../types';
+import type { FriendRequest, Lobby, Player, PlayerLevel, RatingTask } from '../types';
 
 type CommunityPlayerCard = {
   area?: string;
@@ -50,7 +56,7 @@ function getLeaderboardRows(currentPlayer: Player, players: Player[]): Leaderboa
       name: player.name,
       points: player.tocaPoints,
       rank: index + 1,
-      rating: getPlayerRating(player, currentPlayer.id),
+      rating: getPlayerDisplayRating(player, currentPlayer.id),
     }));
 }
 
@@ -69,6 +75,7 @@ type CommunityScreenProps = {
   currentPlayer: Player;
   friendRequests: FriendRequest[];
   initialFriendView?: FriendView;
+  lobbies: Lobby[];
   notificationCount: number;
   onAddFriend: () => void;
   onAcceptFriendRequest: (requestId: string) => void;
@@ -81,12 +88,14 @@ type CommunityScreenProps = {
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
+  ratingTasks: RatingTask[];
 };
 
 export function CommunityScreen({
   currentPlayer,
   friendRequests,
   initialFriendView = 'Friends',
+  lobbies,
   notificationCount,
   onAddFriend,
   onAcceptFriendRequest,
@@ -99,6 +108,7 @@ export function CommunityScreen({
   onSendFriendRequest,
   onViewPlayerProfile,
   players,
+  ratingTasks,
 }: CommunityScreenProps) {
   const [activePage, setActivePage] = useState<CommunityPage>('Community');
   const [activeFriendView, setActiveFriendView] = useState<FriendView>(initialFriendView);
@@ -106,7 +116,6 @@ export function CommunityScreen({
   const [actionSheetActions, setActionSheetActions] = useState<PlayerAction[]>([]);
   const [profilePreviewPlayer, setProfilePreviewPlayer] = useState<ProfilePreviewPlayer | null>(null);
   const leaderboardRows = getLeaderboardRows(currentPlayer, players);
-  const currentLeaderboardRank = leaderboardRows.find((row) => row.isCurrent)?.rank ?? '-';
   const pendingReceivedRequests = friendRequests.filter(
     (request) => request.recipientPlayerId === currentPlayer.id && request.status === 'pending',
   );
@@ -114,6 +123,7 @@ export function CommunityScreen({
     (request) => request.requesterPlayerId === currentPlayer.id && request.status === 'pending',
   );
   const friendPlayers = players.filter((player) => areFriends(currentPlayer, player));
+  const ratedByMeCount = getRatedByCurrentPlayerCount(ratingTasks, lobbies, currentPlayer.id);
   const visibleFriends = friendPlayers.slice(0, 4);
   const friendCards: CommunityPlayerCard[] = visibleFriends.map((player, index) => ({
     area: player.area,
@@ -123,7 +133,7 @@ export function CommunityScreen({
     level: player.level,
     name: player.name,
     points: player.tocaPoints,
-    rating: player.id === currentPlayer.id ? '3.6' : index === 0 ? '3.2' : index === 1 ? '3.6' : index === 2 ? '4.0' : '3.3',
+    rating: getPlayerDisplayRating(player, currentPlayer.id),
     sourcePlayerId: player.id,
   }));
   const requestCards: CommunityPlayerCard[] = pendingReceivedRequests
@@ -136,7 +146,7 @@ export function CommunityScreen({
 
       return mapPlayerToCommunityCard(player, index, {
         friendRequestId: request.id,
-        rating: getPlayerRating(player, currentPlayer.id),
+        rating: getPlayerDisplayRating(player, currentPlayer.id),
       });
     })
     .filter((player): player is CommunityPlayerCard => Boolean(player));
@@ -150,7 +160,7 @@ export function CommunityScreen({
 
       return mapPlayerToCommunityCard(player, index, {
         friendRequestId: request.id,
-        rating: getPlayerRating(player, currentPlayer.id),
+        rating: getPlayerDisplayRating(player, currentPlayer.id),
       });
     })
     .filter((player): player is CommunityPlayerCard => Boolean(player));
@@ -162,7 +172,7 @@ export function CommunityScreen({
       !pendingReceivedRequests.some((request) => request.requesterPlayerId === player.id),
     )
     .slice(0, 5)
-    .map((player, index) => mapPlayerToCommunityCard(player, index, { rating: getPlayerRating(player, currentPlayer.id) }));
+    .map((player, index) => mapPlayerToCommunityCard(player, index, { rating: getPlayerDisplayRating(player, currentPlayer.id) }));
   const activeSocialCards = activeFriendView === 'Friends' ? friendCards : requestCards;
 
   useEffect(() => {
@@ -311,6 +321,7 @@ export function CommunityScreen({
                 {activeSocialCards.length > 0 ? (
                   activeSocialCards.map((player) => {
                     const context = activeFriendView === 'Friends' ? 'friend' : 'request';
+                    const sourcePlayer = getCommunitySourcePlayer(player, players);
 
                     return (
                       <PlayerRow
@@ -322,6 +333,7 @@ export function CommunityScreen({
                         name={player.name}
                         onMore={() => openActions(player, context)}
                         onPressProfile={() => openProfile(player, context)}
+                        player={sourcePlayer}
                         primaryAction={
                           context === 'request'
                             ? {
@@ -369,6 +381,7 @@ export function CommunityScreen({
                   const playerId = player.sourcePlayerId ?? player.id;
                   const pendingRequest = getPendingSentFriendRequest(friendRequests, currentPlayer.id, playerId);
                   const isRequested = activeFriendView === 'Friend requests' || Boolean(pendingRequest);
+                  const sourcePlayer = getCommunitySourcePlayer(player, players);
 
                   return (
                     <PlayerRow
@@ -380,6 +393,7 @@ export function CommunityScreen({
                       name={player.name}
                       onMore={() => openActions(player, isRequested ? 'requested' : 'connect')}
                       onPressProfile={() => openProfile(player, isRequested ? 'requested' : 'connect')}
+                      player={sourcePlayer}
                       primaryAction={
                         isRequested
                           ? {
@@ -411,8 +425,8 @@ export function CommunityScreen({
               </AppText>
               <View style={styles.summaryStrip}>
                 <SummaryItem footer="connected" icon="people-outline" label="Friends" value={`${friendPlayers.length}`} />
-                <SummaryItem footer="players" icon="people-circle-outline" label="Players" value={`${players.length}`} />
-                <SummaryItem footer="TOCA pts" icon="trophy-outline" label="My rank" value={`${currentLeaderboardRank}`} warning />
+                <SummaryItem footer="received" icon="star-outline" label="Rated me" value="0" />
+                <SummaryItem footer="submitted" icon="checkmark-done-outline" label="I rated" value={`${ratedByMeCount}`} warning />
               </View>
             </View>
           </>
@@ -512,6 +526,7 @@ export function CommunityScreen({
         }
         name={profilePreviewPlayer?.name ?? ''}
         onClose={() => setProfilePreviewPlayer(null)}
+        player={profilePreviewPlayer ? getProfilePlayerFromCommunity(profilePreviewPlayer, players) : undefined}
         primaryAction={
           profilePreviewPlayer
             ? {
@@ -575,12 +590,7 @@ export function CommunityScreen({
         rating={profilePreviewPlayer?.rating}
         trustCues={
           profilePreviewPlayer
-            ? getCommunityPreviewTrustCues(
-                profilePreviewPlayer,
-                profilePreviewPlayer.sourcePlayerId
-                  ? players.find((candidate) => candidate.id === profilePreviewPlayer.sourcePlayerId)
-                  : undefined,
-              )
+            ? getCommunityPreviewTrustCues(profilePreviewPlayer, players, lobbies)
             : undefined
         }
         visible={Boolean(profilePreviewPlayer)}
@@ -652,7 +662,7 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
 
       <View style={styles.standingFooter}>
         <StandingMetric icon="ribbon-outline" label="Rank" value={currentPlayer.level} />
-        <StandingMetric icon="star" label="Rating" value="3.6" />
+        <StandingMetric icon="star" label="Rating" value={getPlayerDisplayRating(currentPlayer, currentPlayer.id)} />
         <StandingMetric icon="trending-up-outline" label="To next" value={`+${formatTocaPoints(tocaProgress.pointsToNextLevel)}`} />
       </View>
     </LinearGradient>
@@ -862,28 +872,36 @@ function getCommunityContext(player: CommunityPlayerCard, menuVariant: PlayerMen
   return player.area ? `${player.area} player` : 'TOCA player';
 }
 
-function getCommunityPreviewTrustCues(player: CommunityPlayerCard, sourcePlayer?: Player) {
-  return [
-    {
-      icon: 'checkmark-circle-outline' as const,
-      label: 'Show-up rate',
-      value: sourcePlayer
-        ? sourcePlayer.rankStatus === 'established'
-          ? '98%'
-          : sourcePlayer.rankStatus === 'stabilizing'
-            ? '94%'
-            : 'New'
-        : player.badge === 'shield'
-          ? 'Verified'
-          : 'Active',
-    },
-    {
-      icon: 'calendar-outline' as const,
-      label: 'Games played',
-      tone: 'aqua' as const,
-      value: sourcePlayer ? `${sourcePlayer.gamesPlayed}` : 'Not synced',
-    },
-  ];
+function getCommunityPreviewTrustCues(player: CommunityPlayerCard, players: Player[], lobbies: Lobby[] = []) {
+  const sourcePlayer = getCommunitySourcePlayer(player, players);
+
+  return sourcePlayer
+    ? getPlayerPreviewTrustCues(sourcePlayer, lobbies)
+    : [
+        {
+          icon: 'calendar-outline' as const,
+          label: 'Completed games',
+          tone: 'aqua' as const,
+          value: 'Not synced',
+        },
+        {
+          icon: 'flag-outline' as const,
+          label: 'Hosted games',
+          value: 'Not synced',
+        },
+      ];
+}
+
+function getRatedByCurrentPlayerCount(ratingTasks: RatingTask[], lobbies: Lobby[], currentPlayerId: string) {
+  return ratingTasks
+    .filter((task) => task.playerId === currentPlayerId)
+    .reduce((total, task) => {
+      const lobby = lobbies.find((candidate) => candidate.id === task.lobbyId);
+      const targetCount = lobby ? getRatingTargetIds(lobby, currentPlayerId).length : 0;
+      const submittedCount = Math.max(0, targetCount - task.remainingPlayerIds.length - task.skippedPlayerIds.length);
+
+      return total + submittedCount;
+    }, 0);
 }
 
 function getCommunityPreviewDetails(sourcePlayer?: Player) {
@@ -1034,7 +1052,7 @@ function mapPlayerToCommunityCard(
     level: player.level,
     name: player.name,
     points: player.tocaPoints,
-    rating: options.rating ?? (index % 3 === 2 ? '4.0' : index % 2 === 0 ? '3.6' : '3.2'),
+    rating: options.rating ?? getPlayerDisplayRating(player),
     sourcePlayerId: player.id,
   };
 }
@@ -1048,22 +1066,6 @@ function isCommunityPreviewFriend(
   const sourcePlayer = players.find((candidate) => candidate.id === playerId);
 
   return sourcePlayer ? areFriends(currentPlayer, sourcePlayer) : false;
-}
-
-function getPlayerRating(player: Player, currentPlayerId: string) {
-  if (player.id === currentPlayerId) {
-    return '3.6';
-  }
-
-  if (player.rankStatus === 'established') {
-    return '4.0';
-  }
-
-  if (player.gamesPlayed > 20) {
-    return '3.6';
-  }
-
-  return '3.2';
 }
 
 function PlayerMenuRow({
@@ -1203,6 +1205,12 @@ function rowToCommunityPlayer(row: LeaderboardEntry, players: Player[]): Communi
   };
 }
 
+function getCommunitySourcePlayer(player: CommunityPlayerCard, players: Player[]) {
+  const playerId = player.sourcePlayerId ?? player.id;
+
+  return players.find((candidate) => candidate.id === playerId);
+}
+
 function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer, players: Player[]): Player {
   const sourcePlayer = player.sourcePlayerId
     ? players.find((candidate) => candidate.id === player.sourcePlayerId)
@@ -1322,7 +1330,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   friendMenuHeader: {
-    alignItems: 'center',
+    alignItems: 'stretch',
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'space-between',
@@ -1341,9 +1349,10 @@ const styles = StyleSheet.create({
   friendSegmentItem: {
     alignItems: 'center',
     borderRadius: radius.round,
+    flex: 1,
     justifyContent: 'center',
     minHeight: 30,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
   friendSegmentItemActive: {
     backgroundColor: colors.surfaceMuted,
@@ -1587,7 +1596,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   friendRequestPlayerRow: {
+    alignItems: 'center',
     minHeight: 78,
+    paddingRight: spacing.sm,
     paddingVertical: spacing.sm,
   },
   friendRequestEmpty: {
@@ -1743,6 +1754,8 @@ const styles = StyleSheet.create({
   },
   sectionAction: {
     alignItems: 'center',
+    alignSelf: 'center',
+    flexShrink: 0,
     flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 40,

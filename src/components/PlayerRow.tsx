@@ -2,7 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radius, shadows, spacing } from '../theme';
+import type { Player } from '../types';
 import { AppText } from './AppText';
+import { Avatar } from './Avatar';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -24,6 +26,7 @@ type PlayerRowProps = {
   name: string;
   onMore?: () => void;
   onPressProfile?: () => void;
+  player?: Player;
   primaryAction?: PlayerRowAction;
   rating?: string;
   secondaryAction?: PlayerRowAction;
@@ -39,6 +42,7 @@ export function PlayerRow({
   name,
   onMore,
   onPressProfile,
+  player,
   primaryAction,
   rating,
   secondaryAction,
@@ -48,10 +52,16 @@ export function PlayerRow({
   return (
     <View style={[styles.row, style]}>
       <Pressable accessibilityRole="button" onPress={onPressProfile} style={styles.infoArea}>
-        <View style={styles.avatar}>
-          <AppText align="center" variant="cardTitle" weight="700">
-            {initials}
-          </AppText>
+        <View style={styles.avatarWrap}>
+          {player ? (
+            <Avatar player={player} size={44} />
+          ) : (
+            <View style={styles.avatar}>
+              <AppText align="center" variant="cardTitle" weight="700">
+                {initials}
+              </AppText>
+            </View>
+          )}
           <View style={styles.statusBadge}>
             <Ionicons color={colors.ink} name={statusIcon} size={10} />
           </View>
@@ -191,6 +201,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
     width: 44,
+  },
+  avatarWrap: {
+    height: 48,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 48,
   },
   chipRow: {
     alignItems: 'center',

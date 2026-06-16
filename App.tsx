@@ -17,7 +17,11 @@ import { AppText } from './src/components/AppText';
 import { BottomNav, type Tab } from './src/components/BottomNav';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { PlayerProfilePreview } from './src/components/PlayerProfilePreview';
-import { getPlayerPreviewPlayingDetails } from './src/components/playerProfilePreviewDetails';
+import {
+  getPlayerDisplayRating,
+  getPlayerPreviewPlayingDetails,
+  getPlayerPreviewTrustCues,
+} from './src/components/playerProfilePreviewDetails';
 import { SideMenuDrawer } from './src/components/SideMenuDrawer';
 import { currentPlayer as mockCurrentPlayer, players as mockPlayers } from './src/data/mock';
 import {
@@ -44,7 +48,7 @@ import {
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
-import { createNotification, createUniqueNotification } from './src/features/notifications/notificationRepository';
+import { createUniqueNotification } from './src/features/notifications/notificationRepository';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -199,20 +203,6 @@ export default function App() {
 
     void bootstrapSession();
   }, []);
-
-  useEffect(() => {
-    if (authFlow !== 'app') {
-      return undefined;
-    }
-
-    const intervalId = setInterval(() => {
-      void lobbyStore.refreshLobbyData();
-      void refreshCurrentPlayerProfileOnly();
-      void refreshFriendRequests();
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [authFlow, authUser?.id, lobbyStore.refreshLobbyData]);
 
   useEffect(() => {
     if (authFlow !== 'app') {
@@ -606,9 +596,9 @@ export default function App() {
 
   async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
     try {
-      const sentNotifications = await Promise.all(
+      await Promise.all(
         playerIds.map((playerId) =>
-          createNotification({
+          createUniqueNotification({
             body: `${profilePlayer.name} invited you to ${lobby.title}.`,
             lobbyId: lobby.id,
             playerId: profilePlayer.id,
@@ -618,10 +608,6 @@ export default function App() {
           }),
         ),
       );
-
-      if (sentNotifications.some((sentNotification) => !sentNotification)) {
-        throw new Error('Could not send one or more invites. Please refresh and try again.');
-      }
 
       await lobbyStore.refreshLobbyData();
     } catch (error) {
@@ -649,7 +635,9 @@ export default function App() {
   function openLobbyDetails(lobby: Lobby) {
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
-    setGamesInitialSection('Find Games');
+    if (activeTab !== 'games') {
+      setGamesInitialSection('Find Games');
+    }
     setIsAddFriendsOpen(false);
     setIsAboutUsOpen(false);
     setIsCommunityGuidelinesOpen(false);
@@ -865,6 +853,9 @@ export default function App() {
     setIsSideMenuOpen(false);
     setIsLobbyChatOpen(false);
     setIsNotificationsOpen(true);
+    if (unreadNotificationCount > 0) {
+      markAllNotificationsRead();
+    }
   }
 
   function showLobbyActionMessages(messages: string[]) {
@@ -1050,6 +1041,7 @@ export default function App() {
 
       setSelectedLobbyId(nextLobby.id);
       setIsLobbyChatOpen(false);
+      setGamesInitialSection('My Games');
       setActiveTab('games');
     } catch (error) {
       showActionError(error);
@@ -1101,6 +1093,20 @@ export default function App() {
   async function handleKickLobbyParticipant(lobby: Lobby, playerId: string) {
     try {
       const result = await runLobbyAction(`kick-player:${lobby.id}:${playerId}`, () => lobbyStore.kickLobbyParticipant(lobby, playerId));
+
+      if (!result) {
+        return;
+      }
+
+      showLobbyActionMessages(result.messages);
+    } catch (error) {
+      showActionError(error);
+    }
+  }
+
+  async function handleTransferLobbyHost(lobby: Lobby, playerId: string) {
+    try {
+      const result = await runLobbyAction(`transfer-host:${lobby.id}:${playerId}`, () => lobbyStore.transferLobbyHost(lobby, playerId));
 
       if (!result) {
         return;
@@ -1431,7 +1437,19 @@ export default function App() {
   }
 
   if (authFlow === 'loading') {
-    return null;
+    return (
+      <GestureHandlerRootView style={styles.root}>
+        <SafeAreaProvider>
+          <SafeAreaView
+            edges={['top', 'left', 'right']}
+            style={styles.safeArea}
+          >
+            <StatusBar style="dark" />
+            <LoadingScreen />
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
   }
 
   return (
@@ -1492,11 +1510,17 @@ export default function App() {
                 <BottomNav activeTab={activeTab} onChange={handleTabChange} />
               </>
             ) : isEditProfileOpen ? (
-              <EditProfileScreen onBack={closeEditProfile} onSave={saveProfile} player={profilePlayer} />
+              <EditProfileScreen
+                onBack={closeEditProfile}
+                onSave={saveProfile}
+                onUploadProfilePhoto={uploadOnboardingProfilePhoto}
+                player={profilePlayer}
+              />
             ) : isAddFriendsOpen ? (
               <AddFriendsScreen
                 currentPlayer={profilePlayer}
                 friendRequests={friendRequests}
+                lobbies={lobbyStore.lobbies}
                 onBack={closeAddFriends}
                 onSendFriendRequest={handleSendFriendRequest}
                 onViewPlayerProfile={openViewedProfile}
@@ -1550,6 +1574,7 @@ export default function App() {
                       onOpenGames={openGamesSearch}
                       onOpenLobby={openLobbyDetails}
                       onOpenNotifications={openNotifications}
+                      players={playersForInvite}
                       ratingTasks={lobbyStore.ratingTasks}
                       tocaPointGain={homeTocaPointGain}
                     />
@@ -1598,18 +1623,25 @@ export default function App() {
                           onOpenHostManagement={openHostManagement}
                           onOpenMenu={openSideMenu}
                           onOpenNotifications={openNotifications}
+                          onRemoveFriend={handleRemoveFriend}
                           onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
+                          onSendFriendRequest={handleSendFriendRequest}
                           onSubmitPlayerRating={async ({ behaviorRating, rank, skillVoteType, targetPlayerId }) => {
                             const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank, skillVoteType });
 
                             if (result.success) {
-                              await refreshCurrentPlayer();
+                              void refreshCurrentPlayer().catch((error) => {
+                                console.warn('Could not refresh player after rating.', error);
+                              });
+                            } else if (result.messages.length > 0) {
+                              Alert.alert('Rating not saved', result.messages.join('\n'));
                             }
 
                             return result.success;
                           }}
+                          onTransferHost={(playerId) => handleTransferLobbyHost(selectedLobby, playerId)}
                           onViewPlayerProfile={openViewedProfile}
                           players={playersForInvite}
                           ratingTasks={lobbyStore.ratingTasks}
@@ -1626,6 +1658,7 @@ export default function App() {
                         onOpenMenu={openSideMenu}
                         onOpenNotifications={openNotifications}
                         onOpenLobby={openLobbyDetails}
+                        onSectionChange={setGamesInitialSection}
                         players={playersForInvite}
                         ratingTasks={lobbyStore.ratingTasks}
                         selectedFilter={selectedFilter}
@@ -1649,6 +1682,7 @@ export default function App() {
                       currentPlayer={profilePlayer}
                       friendRequests={friendRequests}
                       initialFriendView={communityInitialFriendView}
+                      lobbies={lobbyStore.lobbies}
                       notificationCount={unreadNotificationCount}
                       onAddFriend={openAddFriends}
                       onAcceptFriendRequest={handleAcceptFriendRequest}
@@ -1661,6 +1695,7 @@ export default function App() {
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
                       players={playersForInvite}
+                      ratingTasks={lobbyStore.ratingTasks}
                     />
                   )}
                   {activeTab === 'profile' && (
@@ -1726,7 +1761,6 @@ export default function App() {
               lobbies={lobbyStore.lobbies}
               notifications={lobbyStore.notifications}
               onClose={closeNotifications}
-              onMarkAllRead={markAllNotificationsRead}
               onNotificationPress={handleNotificationPress}
               visible={isNotificationsOpen}
             />
@@ -1737,6 +1771,7 @@ export default function App() {
               meta={previewProfilePlayer ? `${previewProfilePlayer.tocaPoints} TOCA points` : undefined}
               name={previewProfilePlayer?.name ?? ''}
               onClose={() => setPreviewProfilePlayer(null)}
+              player={previewProfilePlayer ?? undefined}
               primaryAction={
                 previewProfilePlayer
                   ? {
@@ -1751,6 +1786,8 @@ export default function App() {
                   : undefined
               }
               profileDetails={previewProfilePlayer ? getPlayerPreviewPlayingDetails(previewProfilePlayer) : undefined}
+              rating={previewProfilePlayer ? getPlayerDisplayRating(previewProfilePlayer, profilePlayer.id) : undefined}
+              trustCues={previewProfilePlayer ? getPlayerPreviewTrustCues(previewProfilePlayer, lobbyStore.lobbies) : undefined}
               visible={Boolean(previewProfilePlayer)}
             />
             <SimpleConfirmationModal
@@ -1876,6 +1913,26 @@ function SimpleConfirmationModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <View style={styles.loadingRoot}>
+      <View style={styles.loadingMark}>
+        <AppText align="center" tone="accent" variant="titleSmall" weight="900">
+          TOCA
+        </AppText>
+      </View>
+      <View style={styles.loadingCopy}>
+        <AppText align="center" variant="cardTitle" weight="900">
+          Loading TOCA
+        </AppText>
+        <AppText align="center" tone="muted" variant="bodySmall" weight="700">
+          Getting your games ready...
+        </AppText>
+      </View>
+    </View>
   );
 }
 
@@ -2307,5 +2364,26 @@ const styles = StyleSheet.create({
   },
   contentFlush: {
     paddingHorizontal: 0,
+  },
+  loadingCopy: {
+    gap: spacing.xs,
+  },
+  loadingMark: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 74,
+    justifyContent: 'center',
+    width: 74,
+    ...shadows.soft,
+  },
+  loadingRoot: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.lg,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl2,
   },
 });

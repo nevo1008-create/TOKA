@@ -32,6 +32,7 @@ type GamesScreenProps = {
   players: Player[];
   ratingTasks: RatingTask[];
   selectedFilter: string;
+  onSectionChange: (section: GameSection) => void;
   setSelectedFilter: (filter: string) => void;
 };
 
@@ -102,6 +103,7 @@ export function GamesScreen({
   players,
   ratingTasks,
   selectedFilter,
+  onSectionChange,
   setSelectedFilter,
 }: GamesScreenProps) {
   useLifecycleClock();
@@ -110,6 +112,11 @@ export function GamesScreen({
   useEffect(() => {
     setActiveSection(initialSection);
   }, [initialSection]);
+
+  function selectSection(section: GameSection) {
+    setActiveSection(section);
+    onSectionChange(section);
+  }
 
   return (
     <View style={styles.screen}>
@@ -137,7 +144,7 @@ export function GamesScreen({
               <Pressable
                 accessibilityRole="button"
                 key={section}
-                onPress={() => setActiveSection(section)}
+                onPress={() => selectSection(section)}
                 style={[styles.sectionTab, isActive && styles.sectionTabActive]}
               >
                 <AppText
@@ -728,7 +735,9 @@ function MyGamesView({
     .map((lobby, index) => {
       const participant = getCurrentPlayerAnyParticipant(lobby, currentPlayer.id);
       const pendingRequest = getCurrentPlayerPendingRequest(lobby, currentPlayer.id);
-      const imageBadgeLabel = getLobbyMembershipBadgeLabel(lobby, currentPlayer.id, participant);
+      const imageBadgeLabel = pendingRequest && !participant
+        ? lobbyLabels.accessRequested
+        : getLobbyMembershipBadgeLabel(lobby, currentPlayer.id, participant);
       const secondarySpotsLeft = isPrivateLobby(lobby) && (participant || pendingRequest)
         ? 'Private'
         : undefined;
@@ -737,7 +746,7 @@ function MyGamesView({
         ...getGameCardFromLobby(lobby, index, currentPlayer.id, players),
         actionLabel: getActiveGameActionLabel(lobby),
         imageBadgeLabel,
-        requestStatusLabel: pendingRequest && !participant ? lobbyLabels.accessRequested : undefined,
+        requestStatusLabel: undefined,
         secondarySpotsLeft,
         statusLabel: getActiveGameStatusLabel(lobby, currentPlayer.id, participant),
         statusTone: getActiveGameStatusTone(lobby, participant),
@@ -858,7 +867,9 @@ function GameCard({
   const shouldShowPrivateBadge = Boolean(
     lobby && isPrivateLobby(lobby) && hasPrivateAccess,
   );
-  const imageBadgeLabel = lobby
+  const imageBadgeLabel = pendingRequest && !currentParticipant
+    ? lobbyLabels.accessRequested
+    : lobby
     ? getLobbyMembershipBadgeLabel(lobby, currentPlayerId, currentParticipant) ?? (isLockedPrivateLobby ? 'Private' : game.spotsLeft)
     : game.spotsLeft;
   const hasJoinedStatus = Boolean(currentParticipant);
@@ -875,7 +886,7 @@ function GameCard({
       onActionPress={onPress}
       onPress={isLockedPrivateLobby ? undefined : onPress}
       players={formatPlayersCount(game.players)}
-      requestStatusLabel={pendingRequest && !currentParticipant ? lobbyLabels.accessRequested : undefined}
+      requestStatusLabel={undefined}
       secondarySpotsLeft={shouldShowPrivateBadge ? 'Private' : undefined}
       secondarySpotsTone="red"
       spotsLeft={imageBadgeLabel}
@@ -1590,7 +1601,7 @@ function MyGameCard({
       secondarySpotsLeft={game.secondarySpotsLeft}
       secondarySpotsTone="red"
       spotsLeft={game.imageBadgeLabel ?? (game.requestStatusLabel ? game.spotsLeft : game.statusLabel)}
-      spotsTone={game.statusTone === 'lime' ? 'green' : 'yellow'}
+      spotsTone={game.statusTone === 'lime' ? 'green' : game.statusTone === 'muted' ? 'muted' : 'yellow'}
       status={game.statusTone === 'muted' ? 'Closed' : 'Approval'}
       time={formatLobbyStart(game.startsAt)}
       title={game.title}
@@ -1658,10 +1669,6 @@ function isActiveLobbyVisibleToCurrentPlayer(lobby: Lobby, currentPlayerId: stri
     return isCurrentPlayerFinalParticipant(lobby, currentPlayerId);
   }
 
-  if (status === 'cancelled') {
-    return isCurrentPlayerActiveOrPendingInLobby(lobby, currentPlayerId);
-  }
-
   return false;
 }
 
@@ -1692,7 +1699,7 @@ function getFinishedGameRatingState(lobby: Lobby, currentPlayerId: string, ratin
     actionDisabled: hasRatedEveryone,
     actionLabel: hasRatedEveryone ? 'Finished' : 'Rate players',
     statusLabel: hasRatedEveryone ? 'Finished' : 'Rating is open',
-    statusTone: hasRatedEveryone ? 'lime' as const : 'gold' as const,
+    statusTone: hasRatedEveryone ? 'muted' as const : 'gold' as const,
   };
 }
 

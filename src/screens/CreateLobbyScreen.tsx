@@ -15,7 +15,7 @@ type CreateLobbyScreenProps = {
   isCreating?: boolean;
   notificationCount: number;
   onCancel: () => void;
-  onCreateLobby: (draft: CreateLobbyDraft) => void;
+  onCreateLobby: (draft: CreateLobbyDraft) => Promise<void> | void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   player: Player;
@@ -74,14 +74,14 @@ export function CreateLobbyScreen({
     }
   }, [selectedTimeValue, timeOptions]);
 
-  function createLobby() {
+  async function createLobby() {
     if (!canCreate || isCreating || !selectedDateValue || !selectedTimeValue) {
       return;
     }
 
     const accessCode = visibility === 'password' ? generatePrivateAccessCode() : undefined;
 
-    onCreateLobby({
+    await onCreateLobby({
       accessCode,
       genderRule,
       locationCity: selectedLocation.city,

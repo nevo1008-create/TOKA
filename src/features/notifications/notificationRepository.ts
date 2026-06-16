@@ -3,6 +3,9 @@ import type { DbNotification } from '../../lib/database.types';
 import type { Notification } from '../../types';
 import { mapDbNotificationToNotification } from '../lobbies/lobbyMappers';
 
+const notificationSelect = 'id,recipient_player_id,type,title,body,related_lobby_id,related_player_id,read_at,created_at';
+const notificationPageSize = 50;
+
 type CreateNotificationInput = {
   body: string;
   lobbyId?: string;
@@ -19,9 +22,10 @@ export async function listNotifications(playerId: string): Promise<Notification[
 
   const { data, error } = await supabase
     .from('notifications')
-    .select('*')
+    .select(notificationSelect)
     .or(`recipient_player_id.eq.${playerId},recipient_player_id.is.null`)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(notificationPageSize);
 
   if (error) {
     throw error;
@@ -34,7 +38,8 @@ export async function markNotificationRead(notificationId: string) {
   const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
-    .eq('id', notificationId);
+    .eq('id', notificationId)
+    .is('read_at', null);
 
   if (error) {
     throw error;
@@ -53,7 +58,8 @@ export async function markNotificationsRead(notificationIds: string[]) {
   const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
-    .in('id', notificationIds);
+    .in('id', notificationIds)
+    .is('read_at', null);
 
   if (error) {
     throw error;
@@ -77,6 +83,10 @@ export async function createNotification({
     .insert(getNotificationInsert({ body, lobbyId, playerId, recipientPlayerId, title, type }));
 
   if (error) {
+    if (isDuplicateNotificationError(error)) {
+      return true;
+    }
+
     throw error;
   }
 
@@ -92,7 +102,9 @@ export async function createUniqueNotification(input: CreateNotificationInput): 
     .from('notifications')
     .select('id')
     .eq('recipient_player_id', input.recipientPlayerId)
-    .eq('type', input.type);
+    .eq('type', input.type)
+    .eq('title', input.title)
+    .is('read_at', null);
 
   query = input.lobbyId
     ? query.eq('related_lobby_id', input.lobbyId)
@@ -130,10 +142,14 @@ async function createNotificationAndSelect({
   const { data, error } = await supabase
     .from('notifications')
     .insert(getNotificationInsert({ body, lobbyId, playerId, recipientPlayerId, title, type }))
-    .select()
+    .select(notificationSelect)
     .single();
 
   if (error) {
+    if (isDuplicateNotificationError(error)) {
+      return null;
+    }
+
     throw error;
   }
 
@@ -156,4 +172,8 @@ function getNotificationInsert({
     title,
     type,
   };
+}
+
+function isDuplicateNotificationError(error: { code?: string; message?: string }) {
+  return error.code === '23505' || Boolean(error.message?.toLowerCase().includes('duplicate key'));
 }

@@ -6,6 +6,7 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
+import { getPlayerDisplayRating } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { formatLobbyStart, getEffectiveLobbyStatus } from '../features/lobbies/lobbyDateTime';
 import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
@@ -162,7 +163,7 @@ export function InviteComposerScreen({
             context={getPlayerContext(targetPlayer, currentPlayer)}
             locked
             player={targetPlayer}
-            rating={getPlayerRating(targetPlayer)}
+            rating={getPlayerDisplayRating(targetPlayer, currentPlayer.id)}
           />
         ) : null}
 
@@ -236,7 +237,7 @@ export function InviteComposerScreen({
                     key={player.id}
                     onPress={() => togglePlayer(player.id)}
                     player={player}
-                    rating={getPlayerRating(player)}
+                    rating={getPlayerDisplayRating(player, currentPlayer.id)}
                     selected={selectedPlayerIds.includes(player.id)}
                   />
                 );
@@ -286,6 +287,7 @@ function InvitePlayerContextCard({
       location={player.area}
       meta={locked ? 'Locked' : undefined}
       name={player.name}
+      player={player}
       rating={rating}
       statusIcon="shield-checkmark"
     />
@@ -385,6 +387,7 @@ function InvitePlayerOption({
       location={player.area}
       name={player.name}
       onPressProfile={disabled ? undefined : onPress}
+      player={player}
       primaryAction={action}
       rating={rating}
       statusIcon={selected || inviteState === 'invited' ? 'checkmark' : 'star'}
@@ -682,22 +685,6 @@ function getGenderLabel(lobby: Lobby) {
   }
 
   return lobby.genderRule === 'female' ? 'Women' : 'Men';
-}
-
-function getPlayerRating(player: Player) {
-  if (player.id === 'p3') {
-    return '4.0';
-  }
-
-  if (player.id === 'p4') {
-    return '3.6';
-  }
-
-  if (player.id === 'p1') {
-    return '3.6';
-  }
-
-  return '3.2';
 }
 
 function getPlayerContext(player: Player, currentPlayer: Player) {

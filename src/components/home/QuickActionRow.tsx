@@ -7,14 +7,15 @@ import { AppText } from '../AppText';
 type ActionId = 'create' | 'find' | 'invite';
 
 const actions: Array<{
+  backgroundColor: string;
   id: ActionId;
   icon: keyof typeof Ionicons.glyphMap;
   iconColor: string;
   title: string;
 }> = [
-  { id: 'find', icon: 'location', iconColor: colors.accentSea, title: 'Find game' },
-  { id: 'create', icon: 'add', iconColor: colors.accentLime, title: 'Create game' },
-  { id: 'invite', icon: 'person-add-outline', iconColor: colors.accentGold, title: 'Invite friends' },
+  { backgroundColor: colors.surfaceAqua, id: 'find', icon: 'location', iconColor: colors.accentSea, title: 'Find game' },
+  { backgroundColor: colors.surfaceMuted, id: 'create', icon: 'add', iconColor: colors.primaryDark, title: 'Create game' },
+  { backgroundColor: colors.surfaceYellow, id: 'invite', icon: 'person-add-outline', iconColor: colors.accentGoldDark, title: 'Invite friends' },
 ];
 
 type QuickActionRowProps = {
@@ -35,8 +36,14 @@ export function QuickActionRow({ onCreateGame, onFindGame, onInviteFriends }: Qu
       {actions.map((action, index) => (
         <View key={action.title} style={styles.actionWrap}>
           <Pressable accessibilityRole="button" onPress={handlers[action.id]} style={[styles.action, action.id === 'create' && styles.createAction]}>
-            <View style={[styles.iconRing, action.id === 'create' && styles.createIconRing, { borderColor: action.iconColor }]}>
-              <Ionicons color={action.iconColor} name={action.icon} size={index === 1 ? 22 : 19} />
+            <View
+              style={[
+                styles.iconRing,
+                { backgroundColor: action.backgroundColor, borderColor: action.iconColor },
+                action.id === 'create' && styles.createIconRing,
+              ]}
+            >
+              <Ionicons color={action.iconColor} name={action.icon} size={index === 1 ? 23 : 20} />
             </View>
             <View style={styles.copy}>
               <AppText align="center" numberOfLines={2} style={styles.actionTitle} variant="button" weight="700">
@@ -55,11 +62,11 @@ const styles = StyleSheet.create({
   action: {
     alignItems: 'center',
     flex: 1,
-    gap: 5,
+    gap: 7,
     justifyContent: 'center',
-    minHeight: 74,
+    minHeight: 82,
     minWidth: 0,
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
   },
   actionWrap: {
     alignItems: 'center',
@@ -76,13 +83,13 @@ const styles = StyleSheet.create({
   },
   card: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     borderColor: 'rgba(255, 255, 255, 0.72)',
-    borderRadius: 26,
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: 'row',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 7,
     ...shadows.card,
   },
   copy: {
@@ -92,24 +99,23 @@ const styles = StyleSheet.create({
   },
   iconRing: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceAqua,
     borderRadius: radius.round,
-    borderWidth: 1,
-    height: 40,
+    borderWidth: 1.5,
+    height: 42,
     justifyContent: 'center',
-    width: 40,
+    overflow: 'hidden',
+    width: 42,
   },
   createAction: {
-    gap: 7,
+    gap: 8,
   },
   createIconRing: {
-    backgroundColor: colors.surfaceMuted,
-    height: 44,
-    width: 44,
+    height: 46,
+    width: 46,
   },
   separator: {
-    backgroundColor: 'rgba(216, 232, 212, 0.60)',
-    height: 46,
+    backgroundColor: 'rgba(216, 232, 212, 0.72)',
+    height: 50,
     marginHorizontal: spacing.xxs,
     width: 1,
   },

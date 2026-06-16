@@ -609,6 +609,94 @@ export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPla
   };
 }
 
+export async function transferLobbyHost(lobby: Lobby, player: Player, hostPlayerId: string) {
+  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
+
+  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
+
+  if (!hostCheck.success) {
+    return hostCheck;
+  }
+
+  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
+
+  if (!timingCheck.success) {
+    return timingCheck;
+  }
+
+  if (player.id === hostPlayerId) {
+    return {
+      messages: ['You are already the host.'],
+      success: false,
+    };
+  }
+
+  const targetParticipant = syncedLobby.participants.find(
+    (participant) =>
+      participant.playerId === player.id &&
+      participant.role !== 'waitlist' &&
+      (participant.status === 'approved' || participant.status === 'attended'),
+  );
+
+  if (!targetParticipant) {
+    return {
+      messages: ['Host can only be transferred to an active player.'],
+      success: false,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const { error: lobbyError } = await supabase
+    .from('lobbies')
+    .update({ host_player_id: player.id })
+    .eq('id', syncedLobby.id);
+
+  if (lobbyError) {
+    throw lobbyError;
+  }
+
+  const { error: previousHostError } = await supabase
+    .from('lobby_memberships')
+    .update({ role: 'member' })
+    .eq('lobby_id', syncedLobby.id)
+    .eq('player_id', hostPlayerId);
+
+  if (previousHostError) {
+    throw previousHostError;
+  }
+
+  const { error: nextHostError } = await supabase
+    .from('lobby_memberships')
+    .update({
+      approved_at: now,
+      approved_by_player_id: hostPlayerId,
+      left_at: null,
+      role: 'host',
+      status: 'joined',
+    })
+    .eq('lobby_id', syncedLobby.id)
+    .eq('player_id', player.id)
+    .in('status', ['joined', 'attended']);
+
+  if (nextHostError) {
+    throw nextHostError;
+  }
+
+  await createNotificationBestEffort({
+    body: `You are now the host for ${syncedLobby.title}.`,
+    lobbyId: syncedLobby.id,
+    playerId: hostPlayerId,
+    recipientPlayerId: player.id,
+    title: 'Host transferred',
+    type: 'lobby_changed',
+  });
+
+  return {
+    messages: [`${player.name} is now the host.`],
+    success: true,
+  };
+}
+
 export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
   const syncedLobby = await syncLobbyLifecycleForAction(lobby);
 
@@ -758,6 +846,7 @@ async function notifyCurrentLobbyMembers(
   actorPlayerId: string | null,
   notification: {
     body: string;
+    dedupe?: boolean;
     title: string;
     type: string;
   },
@@ -784,6 +873,7 @@ async function notifyCurrentLobbyMembers(
 
 async function createNotificationBestEffort(options: {
   body: string;
+  dedupe?: boolean;
   lobbyId: string;
   playerId: string;
   recipientPlayerId: string;
@@ -791,10 +881,38 @@ async function createNotificationBestEffort(options: {
   type: string;
 }) {
   try {
+    if (options.dedupe && await hasMatchingNotification(options)) {
+      return;
+    }
+
     await createNotification(options);
   } catch (error) {
     console.warn('Could not create lobby notification.', error);
   }
+}
+
+async function hasMatchingNotification(options: {
+  lobbyId: string;
+  playerId: string;
+  recipientPlayerId: string;
+  title: string;
+  type: string;
+}) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('recipient_player_id', options.recipientPlayerId)
+    .eq('related_lobby_id', options.lobbyId)
+    .eq('related_player_id', options.playerId)
+    .eq('type', options.type)
+    .eq('title', options.title)
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).length > 0;
 }
 
 function generatePrivateAccessCode() {
@@ -922,6 +1040,7 @@ async function syncLobbyLifecycleBestEffort(row: DbLobbyWithRelations, lobby: Lo
   if (row.status !== 'cancelled' && lobby.status === 'cancelled') {
     await notifyCurrentLobbyMembers(lobby, null, {
       body: `${lobby.title} was cancelled because fewer than 4 players joined before the room closed.`,
+      dedupe: true,
       title: 'Lobby cancelled',
       type: 'lobby_changed',
     });
@@ -1089,6 +1208,14 @@ async function createNotification({
   });
 
   if (error) {
+    if (isDuplicateNotificationError(error)) {
+      return;
+    }
+
     throw error;
   }
+}
+
+function isDuplicateNotificationError(error: { code?: string; message?: string }) {
+  return error.code === '23505' || Boolean(error.message?.toLowerCase().includes('duplicate key'));
 }

@@ -26,6 +26,7 @@ type HomeScreenProps = {
   onOpenGames: () => void;
   onOpenLobby: (lobby: Lobby) => void;
   onOpenNotifications: () => void;
+  players: Player[];
   ratingTasks: RatingTask[];
   tocaPointGain?: {
     amount: number;
@@ -45,6 +46,7 @@ export function HomeScreen({
   onOpenGames,
   onOpenLobby,
   onOpenNotifications,
+  players,
   ratingTasks,
   tocaPointGain,
 }: HomeScreenProps) {
@@ -52,9 +54,12 @@ export function HomeScreen({
   const upcomingLobbies = lobbies.filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
   const joinedUpcomingLobbies = upcomingLobbies.filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id));
   const featuredLobby = joinedUpcomingLobbies[0];
-  const nearbyLobbies = upcomingLobbies.filter((lobby) => lobby.id !== featuredLobby?.id).slice(0, 2);
+  const nearbyLobbies = upcomingLobbies
+    .filter((lobby) => lobby.id !== featuredLobby?.id && !isPrivateLobby(lobby))
+    .slice(0, 2);
   const ratingLobbies = lobbies
     .filter((lobby) => shouldShowRatingLobby(lobby, currentPlayer.id))
+    .filter((lobby) => getRemainingRatingTargetIds(ratingTasks, lobby, currentPlayer.id).length > 0)
     .sort((left, right) => getLobbyStartTime(right) - getLobbyStartTime(left))
     .slice(0, 2);
   const firstName = currentPlayer.name.split(' ')[0];
@@ -108,8 +113,10 @@ export function HomeScreen({
         </View>
 
         <FeaturedGameCard
+          currentPlayerId={currentPlayer.id}
           lobby={featuredLobby}
           onOpenRoom={() => (featuredLobby ? onOpenLobby(featuredLobby) : onOpenGames())}
+          players={players}
         />
 
         <QuickActionRow
@@ -131,8 +138,9 @@ export function HomeScreen({
             </Pressable>
           </View>
 
-          <View style={styles.nearbyStack}>
-            {nearbyLobbies.map((lobby) => (
+          {nearbyLobbies.length > 0 ? (
+            <View style={styles.nearbyStack}>
+              {nearbyLobbies.map((lobby) => (
               <NearbyGameCard
                 audience={getGenderAudience(lobby)}
                 distance={getDistanceLabel(lobby)}
@@ -148,8 +156,11 @@ export function HomeScreen({
                 variant={isEveningLobbyStart(lobby.startsAt) ? 'sunset' : 'morning'}
                 useHomeTypography
               />
-            ))}
-          </View>
+              ))}
+            </View>
+          ) : (
+            <NearbyEmptyState onSeeAll={onOpenGames} />
+          )}
         </View>
 
         {ratingLobbies.length > 0 ? (
@@ -200,6 +211,10 @@ function isLobbyDiscoverable(lobby: Lobby) {
   const status = getEffectiveLobbyStatus(lobby);
 
   return lobby.participants.length > 0 && (status === 'open' || status === 'full' || status === 'closing_soon');
+}
+
+function isPrivateLobby(lobby: Lobby) {
+  return lobby.visibility === 'password' || lobby.visibility === 'invite_link';
 }
 
 function isCurrentPlayerJoined(lobby: Lobby, currentPlayerId: string) {
@@ -262,6 +277,29 @@ function getLobbyStartTime(lobby: Lobby) {
   const startsAtTime = new Date(lobby.startsAt).getTime();
 
   return Number.isNaN(startsAtTime) ? Number.MAX_SAFE_INTEGER : startsAtTime;
+}
+
+function NearbyEmptyState({ onSeeAll }: { onSeeAll: () => void }) {
+  return (
+    <View style={styles.nearbyEmptyState}>
+      <View style={styles.nearbyEmptyIcon}>
+        <Ionicons color={colors.accentSea} name="location-outline" size={21} />
+      </View>
+      <View style={styles.nearbyEmptyCopy}>
+        <AppText align="center" style={styles.nearbyEmptyTitle} variant="titleSmall" weight="900">
+          No games found in your area
+        </AppText>
+        <AppText align="center" tone="muted" variant="metadata" weight="600">
+          Check the full games list for other beaches and upcoming matches.
+        </AppText>
+      </View>
+      <Pressable accessibilityRole="button" onPress={onSeeAll} style={styles.nearbyEmptyButton}>
+        <AppText align="center" tone="accent" variant="button" weight="800">
+          See all games
+        </AppText>
+      </Pressable>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -340,6 +378,44 @@ const styles = StyleSheet.create({
   },
   nearbySection: {
     marginTop: -10,
+  },
+  nearbyEmptyButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: spacing.xl,
+  },
+  nearbyEmptyCopy: {
+    alignItems: 'center',
+    gap: spacing.xxs,
+  },
+  nearbyEmptyIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  nearbyEmptyState: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: 'rgba(255, 255, 255, 0.74)',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    minHeight: 156,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  nearbyEmptyTitle: {
+    color: colors.ink,
   },
   nextGameHeader: {
     marginBottom: -8,

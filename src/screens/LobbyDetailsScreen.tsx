@@ -10,7 +10,7 @@ import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
-import { getPlayerPreviewPlayingDetails } from '../components/playerProfilePreviewDetails';
+import { getPlayerDisplayRating, getPlayerPreviewPlayingDetails, getPlayerPreviewTrustCues } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
 import { formatLobbyStart, getEffectiveLobbyStatus, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
@@ -50,9 +50,12 @@ type LobbyDetailsScreenProps = {
   onOpenHostManagement: () => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
+  onRemoveFriend: (playerId: string) => void;
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
+  onSendFriendRequest: (playerId: string) => void;
   onSubmitPlayerRating: (rating: { behaviorRating: number; rank: Player['level']; skillVoteType: SkillRankVoteType; targetPlayerId: string }) => boolean | Promise<boolean>;
+  onTransferHost: (playerId: string) => Promise<void> | void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
   ratingTasks: RatingTask[];
@@ -100,9 +103,12 @@ export function LobbyDetailsScreen({
   onOpenHostManagement,
   onOpenMenu,
   onOpenNotifications,
+  onRemoveFriend,
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
+  onSendFriendRequest,
   onSubmitPlayerRating,
+  onTransferHost,
   onViewPlayerProfile,
   players,
   ratingTasks,
@@ -148,7 +154,6 @@ export function LobbyDetailsScreen({
     lobby,
     onJoinGame,
     onJoinWaitlist,
-    onCancelJoinRequest,
     onOpenPinEntry: () => {
       setPinError(null);
       setIsPinEntryOpen(true);
@@ -196,6 +201,9 @@ export function LobbyDetailsScreen({
         isFriend,
         onInvite,
         onKickPlayer,
+        onRemoveFriend: (targetPlayer) => onRemoveFriend(targetPlayer.id),
+        onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
+        onTransferHost: (targetPlayer) => onTransferHost(targetPlayer.id),
         onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
         onViewProfile: () => openProfile(player, participant),
         participant,
@@ -274,7 +282,7 @@ export function LobbyDetailsScreen({
         ) : null}
 
         {currentPendingRequest && !currentParticipant ? (
-          <PendingApprovalPanel />
+          <PendingApprovalPanel disabled={isActionPending} onCancel={onCancelJoinRequest} />
         ) : null}
 
         {currentParticipant && isPrivateLobby(lobby) && lobby.accessCode ? (
@@ -352,24 +360,9 @@ export function LobbyDetailsScreen({
         initials={profilePreviewPlayer?.initials ?? ''}
         level={profilePreviewPlayer?.level}
         meta={profilePreviewPlayer ? `${profilePreviewPlayer.tocaPoints} TOCA points` : undefined}
-        moreActions={
-          profilePreviewPlayer
-            ? getLobbyPlayerActions({
-                canInvite: arePreStartActionsOpen,
-                canManageLobby: false,
-                currentPlayer,
-                isCurrentUserAdmin: false,
-                isFriend: currentPlayer.friendIds.includes(profilePreviewPlayer.id),
-                onInvite,
-                onKickPlayer,
-                onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
-                onViewProfile: () => onViewPlayerProfile(profilePreviewPlayer),
-                player: profilePreviewPlayer,
-              })
-            : undefined
-        }
         name={profilePreviewPlayer?.name ?? ''}
         onClose={() => setProfilePreviewSelection(null)}
+        player={profilePreviewPlayer}
         profileDetails={profilePreviewPlayer ? getLobbyPreviewDetails(profilePreviewPlayer) : undefined}
         primaryAction={
           profilePreviewSelection
@@ -380,24 +373,23 @@ export function LobbyDetailsScreen({
               )
             : undefined
         }
-        rating={profilePreviewPlayer ? getPlayerRating(profilePreviewPlayer, currentPlayer.id) : undefined}
+        rating={profilePreviewPlayer ? getPlayerDisplayRating(profilePreviewPlayer, currentPlayer.id) : undefined}
         secondaryAction={
           profilePreviewSelection
             ? getLobbyProfilePreviewSecondaryAction(
                 profilePreviewSelection,
                 currentPlayer,
                 currentPlayer.friendIds.includes(profilePreviewSelection.player.id),
-                onInvite,
-                onViewPlayerProfile,
-                !isRatingOpen,
+                onRemoveFriend,
+                onSendFriendRequest,
               )
             : undefined
         }
-        trustCues={profilePreviewPlayer ? getLobbyPreviewTrustCues(profilePreviewPlayer) : undefined}
+        trustCues={profilePreviewPlayer ? getPlayerPreviewTrustCues(profilePreviewPlayer, allLobbies) : undefined}
         visible={Boolean(profilePreviewSelection)}
       />
       <RatePlayerWizard
-        behaviorRating={ratingWizardPlayer ? Number(getPlayerRating(ratingWizardPlayer, currentPlayer.id)) : undefined}
+        behaviorRating={ratingWizardPlayer ? Number(getPlayerDisplayRating(ratingWizardPlayer, currentPlayer.id)) : undefined}
         currentRank={ratingWizardPlayer?.level ?? currentPlayer.level}
         isFriend={Boolean(
           ratingWizardPlayer &&
@@ -460,7 +452,7 @@ function RoomHeroCard({
 
       <View style={styles.heroContent}>
         <View style={styles.heroPills}>
-          <StatusPill label={getStatusLabel(lobby)} tone={isPrivateLobby(lobby) ? 'red' : 'lime'} />
+          <StatusPill label={getStatusLabel(lobby, isHost)} tone={isPrivateLobby(lobby) ? 'red' : 'lime'} />
           <StatusPill icon="time-outline" label={formatLobbyStart(lobby.startsAt)} tone="gold" />
         </View>
 
@@ -609,7 +601,13 @@ function AutoCancelPanel({ message }: { message: string }) {
   );
 }
 
-function PendingApprovalPanel() {
+function PendingApprovalPanel({
+  disabled,
+  onCancel,
+}: {
+  disabled: boolean;
+  onCancel: () => void;
+}) {
   return (
     <View style={styles.pendingApprovalPanel}>
       <View style={styles.pendingApprovalIcon}>
@@ -623,6 +621,16 @@ function PendingApprovalPanel() {
           Your access request was sent. You can keep viewing this match or cancel the request.
         </AppText>
       </View>
+      <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onCancel}
+        style={[styles.cancelRequestButton, disabled && styles.actionButtonDisabled]}
+      >
+        <AppText align="center" tone="danger" variant="button" weight="800">
+          Cancel
+        </AppText>
+      </Pressable>
     </View>
   );
 }
@@ -775,7 +783,7 @@ function ParticipantsSection({
                 participant={participant}
                 player={player}
                 ratingTasks={ratingTasks}
-                rating={getPlayerRating(player, currentPlayerId)}
+                rating={getPlayerDisplayRating(player, currentPlayerId)}
                 showRatingAction={showRatingAction}
               />
             ) : null;
@@ -826,8 +834,9 @@ function ParticipantRow({
       level={player.level}
       meta={`${player.tocaPoints} pts`}
       name={player.name}
-      onMore={showRatingAction ? undefined : onMore}
+      onMore={showRatingAction || player.id === currentPlayerId ? undefined : onMore}
       onPressProfile={onPressProfile}
+      player={player}
       primaryAction={
         isRatingTarget
           ? {
@@ -954,7 +963,7 @@ function HostRequestRow({
             <View style={styles.hostRequestChip}>
               <Ionicons color={colors.accentGoldDark} name="star" size={9} />
               <AppText tone="primary" variant="caption" weight="800">
-                {getPlayerRating(player, currentPlayerId)}
+                {getPlayerDisplayRating(player, currentPlayerId)}
               </AppText>
             </View>
             <View style={[styles.hostRequestChip, styles.hostRequestPointsChip]}>
@@ -1289,7 +1298,7 @@ function formatCompactPlayerCount(playerCount: string) {
   return playerCount.replace(/\s+/g, '');
 }
 
-function getStatusLabel(lobby: Lobby) {
+function getStatusLabel(lobby: Lobby, isHost = false) {
   if (isLobbyReadyForRatings(lobby)) {
     return 'Rating open';
   }
@@ -1326,7 +1335,7 @@ function getStatusLabel(lobby: Lobby) {
   }
 
   if (lobby.visibility === 'password' || lobby.visibility === 'invite_link') {
-    return 'Private';
+    return isHost ? 'Private Host' : 'Private';
   }
 
   return 'Open';
@@ -1386,7 +1395,6 @@ function getLobbyPrimaryAction({
   lobby,
   onJoinGame,
   onJoinWaitlist,
-  onCancelJoinRequest,
   onOpenPinEntry,
   onRequestWaitlistApproval,
 }: {
@@ -1399,7 +1407,6 @@ function getLobbyPrimaryAction({
   lobby: Lobby;
   onJoinGame: () => void;
   onJoinWaitlist: () => void;
-  onCancelJoinRequest: () => void;
   onOpenPinEntry: () => void;
   onRequestWaitlistApproval: () => void;
 }): LobbyPrimaryAction {
@@ -1492,12 +1499,11 @@ function getLobbyPrimaryAction({
 
   if (relationship === 'pending_approval' && !hasPrivateAccess) {
     return {
-      disabled: false,
-      icon: 'close-circle-outline',
-      iconColor: colors.danger,
-      label: lobbyLabels.cancelRequest,
-      onPress: onCancelJoinRequest,
-      textTone: 'danger',
+      disabled: true,
+      icon: 'time-outline',
+      iconColor: colors.muted,
+      label: lobbyLabels.accessRequested,
+      textTone: 'muted',
       tone: 'muted',
     };
   }
@@ -1700,18 +1706,6 @@ function formatRequestReasons(reasons: Lobby['joinRequests'][number]['reasons'])
     .join(' / ');
 }
 
-function getPlayerRating(player: Player, currentPlayerId: string) {
-  if (player.id === 'p3') {
-    return '4.0';
-  }
-
-  if (player.id === 'p4' || player.id === currentPlayerId) {
-    return '3.6';
-  }
-
-  return '3.2';
-}
-
 function getLobbyPlayerActions({
   canInvite = true,
   canManageLobby = true,
@@ -1720,7 +1714,10 @@ function getLobbyPlayerActions({
   isFriend,
   onInvite,
   onKickPlayer,
+  onRemoveFriend,
+  onSendFriendRequest,
   onMovePlayerToWaitlist,
+  onTransferHost,
   onViewProfile,
   participant,
   player,
@@ -1732,15 +1729,33 @@ function getLobbyPlayerActions({
   isFriend: boolean;
   onInvite: () => void;
   onKickPlayer: (playerId: string) => Promise<void> | void;
+  onRemoveFriend?: (player: Player) => void;
+  onSendFriendRequest?: (player: Player) => void;
   onMovePlayerToWaitlist: (player: Player) => Promise<void> | void;
+  onTransferHost?: (player: Player) => Promise<void> | void;
   onViewProfile: () => void;
   participant?: LobbyParticipant;
   player: Player;
 }): PlayerAction[] {
   const isSelf = player.id === currentPlayer.id;
+  const canTransferHost = participant && participant.role !== 'waitlist';
   const hostActions: PlayerAction[] =
     canManageLobby && isCurrentUserAdmin && participant && !isSelf
       ? [
+          ...(canTransferHost
+            ? [
+                {
+                  confirmation: {
+                    body: `${player.name} will become the host and will manage this lobby.`,
+                    confirmLabel: 'Transfer',
+                    title: 'Transfer host?',
+                  },
+                  icon: 'shield-checkmark-outline' as const,
+                  label: 'Transfer host',
+                  onPress: () => onTransferHost?.(player),
+                },
+              ]
+            : []),
           ...(participant.role !== 'waitlist'
             ? [
                 {
@@ -1774,9 +1789,9 @@ function getLobbyPlayerActions({
       ? [{ icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInvite }]
       : isFriend
         ? []
-        : [{ icon: 'person-add-outline' as const, label: 'Add friend' }]),
+        : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
     ...(isFriend
-      ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend' }]
+      ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
       : []),
     ...hostActions,
     { destructive: true, icon: 'ban-outline', label: 'Report & block' },
@@ -1798,41 +1813,24 @@ function getLobbyProfilePreviewSecondaryAction(
   selection: LobbyProfilePreviewSelection,
   currentPlayer: Player,
   isFriend: boolean,
-  onInvite: () => void,
-  onViewPlayerProfile: (player: Player) => void,
-  canInvite = true,
+  onRemoveFriend: (playerId: string) => void,
+  onSendFriendRequest: (playerId: string) => void,
 ) {
   if (selection.player.id === currentPlayer.id) {
     return undefined;
   }
 
-  if (!canInvite && isFriend) {
-    return {
-      label: 'View full profile',
-      onPress: () => onViewPlayerProfile(selection.player),
-    };
-  }
-
   return {
-    label: isFriend ? 'Invite to game' : 'Add friend',
-    onPress: isFriend ? onInvite : undefined,
-  };
-}
+    label: isFriend ? 'Remove friend' : 'Add friend',
+    onPress: () => {
+      if (isFriend) {
+        onRemoveFriend(selection.player.id);
+        return;
+      }
 
-function getLobbyPreviewTrustCues(player: Player) {
-  return [
-    {
-      icon: 'checkmark-circle-outline' as const,
-      label: 'Show-up rate',
-      value: player.rankStatus === 'established' ? '98%' : player.rankStatus === 'stabilizing' ? '94%' : 'New',
+      onSendFriendRequest(selection.player.id);
     },
-    {
-      icon: 'calendar-outline' as const,
-      label: 'Games played',
-      tone: 'aqua' as const,
-      value: `${player.gamesPlayed}`,
-    },
-  ];
+  };
 }
 
 function getLobbyPreviewDetails(player: Player) {
@@ -1871,6 +1869,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     ...shadows.soft,
+  },
+  cancelRequestButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 235, 232, 0.88)',
+    borderColor: 'rgba(221, 71, 54, 0.24)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexShrink: 0,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
   },
   adminCopy: {
     flex: 1,

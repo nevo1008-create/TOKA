@@ -11,7 +11,6 @@ type NotificationPanelProps = {
   lobbies: Lobby[];
   notifications: Notification[];
   onClose: () => void;
-  onMarkAllRead: () => void;
   onNotificationPress: (notification: Notification) => void;
   visible: boolean;
 };
@@ -20,7 +19,6 @@ export function NotificationPanel({
   lobbies,
   notifications,
   onClose,
-  onMarkAllRead,
   onNotificationPress,
   visible,
 }: NotificationPanelProps) {
@@ -61,24 +59,16 @@ export function NotificationPanel({
             </View>
 
             {sortedNotifications.length > 0 ? (
-              <>
-                <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-                  {sortedNotifications.map((notification) => (
-                    <NotificationRow
-                      key={notification.id}
-                      lobby={notification.lobbyId ? lobbies.find((candidate) => candidate.id === notification.lobbyId) : undefined}
-                      notification={notification}
-                      onPress={() => onNotificationPress(notification)}
-                    />
-                  ))}
-                </ScrollView>
-
-                <Pressable accessibilityRole="button" onPress={onMarkAllRead} style={styles.markButton}>
-                  <AppText align="center" tone="accent" variant="chip" weight="900">
-                    Mark all as read
-                  </AppText>
-                </Pressable>
-              </>
+              <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+                {sortedNotifications.map((notification) => (
+                  <NotificationRow
+                    key={notification.id}
+                    lobby={notification.lobbyId ? lobbies.find((candidate) => candidate.id === notification.lobbyId) : undefined}
+                    notification={notification}
+                    onPress={() => onNotificationPress(notification)}
+                  />
+                ))}
+              </ScrollView>
             ) : (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIcon}>
@@ -128,7 +118,7 @@ function NotificationRow({
           </AppText>
           {!notification.read ? <View style={styles.unreadDot} /> : null}
         </View>
-        <AppText numberOfLines={2} tone="muted" variant="metadata" weight="600">
+        <AppText numberOfLines={3} style={styles.notificationBody} tone="muted" variant="metadata" weight="600">
           {notification.body}
         </AppText>
         {lobby ? (
@@ -139,13 +129,13 @@ function NotificationRow({
             </AppText>
           </View>
         ) : null}
-      </View>
 
-      <View style={styles.actionPill}>
-        <AppText numberOfLines={1} tone="accent" variant="caption" weight="900">
-          {actionLabel}
-        </AppText>
-        <Ionicons color={colors.primaryDark} name="chevron-forward" size={13} />
+        <View style={styles.actionPill}>
+          <AppText numberOfLines={1} style={styles.actionPillText} tone="accent" variant="caption" weight="900">
+            {actionLabel}
+          </AppText>
+          <Ionicons color={colors.primaryDark} name="chevron-forward" size={13} />
+        </View>
       </View>
     </Pressable>
   );
@@ -202,16 +192,21 @@ function getNotificationActionLabel(notification: Notification, lobby?: Lobby) {
 const styles = StyleSheet.create({
   actionPill: {
     alignItems: 'center',
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 2,
-    maxWidth: 92,
+    maxWidth: '100%',
     minHeight: 30,
+    marginTop: spacing.xs,
     paddingHorizontal: spacing.sm,
+  },
+  actionPillText: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   backdrop: {
     backgroundColor: 'rgba(18, 59, 42, 0.18)',
@@ -273,18 +268,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     maxHeight: 360,
   },
-  markButton: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(255, 255, 255, 0.58)',
-    borderColor: 'rgba(255, 255, 255, 0.78)',
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 38,
-  },
   modalRoot: {
     flex: 1,
+  },
+  notificationBody: {
+    flexShrink: 1,
   },
   notificationCopy: {
     flex: 1,
@@ -306,7 +294,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSoft,
   },
   notificationRow: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: colors.surfaceRaised,
     borderColor: 'rgba(255, 255, 255, 0.78)',
     borderRadius: 20,

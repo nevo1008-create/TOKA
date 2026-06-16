@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 import { colors, homeTypography, radius, shadows } from '../../theme';
 import { AppText } from '../AppText';
@@ -20,9 +22,9 @@ type NearbyGameCardProps = {
   players: string;
   requestStatusLabel?: string;
   secondarySpotsLeft?: string;
-  secondarySpotsTone?: 'green' | 'red' | 'yellow';
+  secondarySpotsTone?: 'green' | 'muted' | 'red' | 'yellow';
   selected?: boolean;
-  spotsTone?: 'green' | 'red' | 'yellow';
+  spotsTone?: 'green' | 'muted' | 'red' | 'yellow';
   spotsLeft?: string;
   status: 'Approval' | 'Closed' | 'Full';
   time: string;
@@ -144,10 +146,9 @@ export function NearbyGameCard({
                 </AppText>
               </View>
             ) : null}
-            <Pressable
-              accessibilityRole="button"
+            <CardAction
               disabled={disabled || actionDisabled}
-              onPress={onActionPress ?? onPress}
+              onPress={onPress ? undefined : onActionPress}
               style={[
                 styles.cardAction,
                 isWarningAction && styles.cardActionWarning,
@@ -176,7 +177,7 @@ export function NearbyGameCard({
                   size={14}
                 />
               )}
-            </Pressable>
+            </CardAction>
           </View>
         </View>
       </View>
@@ -204,6 +205,28 @@ export function NearbyGameCard({
   );
 }
 
+function CardAction({
+  children,
+  disabled,
+  onPress,
+  style,
+}: {
+  children: ReactNode;
+  disabled: boolean;
+  onPress?: () => void;
+  style: StyleProp<ViewStyle>;
+}) {
+  if (!onPress) {
+    return <View style={style}>{children}</View>;
+  }
+
+  return (
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={style}>
+      {children}
+    </Pressable>
+  );
+}
+
 function BeachThumb({
   badgeLabel,
   secondaryBadgeLabel,
@@ -213,8 +236,8 @@ function BeachThumb({
 }: {
   badgeLabel: string;
   secondaryBadgeLabel?: string;
-  secondaryTone: 'green' | 'red' | 'yellow';
-  tone: 'green' | 'red' | 'yellow';
+  secondaryTone: 'green' | 'muted' | 'red' | 'yellow';
+  tone: 'green' | 'muted' | 'red' | 'yellow';
   useHomeTypography: boolean;
   variant: 'morning' | 'sunset';
 }) {

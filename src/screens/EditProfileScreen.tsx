@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type ViewStyle } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -10,7 +11,8 @@ import type { Gender, Player, PlayerSide, PreferredFoot } from '../types';
 
 type EditProfileScreenProps = {
   onBack: () => void;
-  onSave: (player: Player) => void;
+  onSave: (player: Player) => Promise<void> | void;
+  onUploadProfilePhoto?: (imageUri: string) => Promise<{ avatarPath: string; avatarUrl: string }>;
   player: Player;
 };
 
@@ -31,8 +33,11 @@ const sideOptions: Array<{ label: string; value: PlayerSide }> = [
   { label: 'Both', value: 'both' },
 ];
 
-export function EditProfileScreen({ onBack, onSave, player }: EditProfileScreenProps) {
+export function EditProfileScreen({ onBack, onSave, onUploadProfilePhoto, player }: EditProfileScreenProps) {
   const initialName = splitName(player.name);
+  const [avatarPath, setAvatarPath] = useState<string | null>(player.avatarPath ?? null);
+  const [avatarPreviewUri, setAvatarPreviewUri] = useState<string | null>(player.avatarUrl ?? null);
+  const [selectedPhotoUri, setSelectedPhotoUri] = useState<string | null>(null);
   const [firstName, setFirstName] = useState(initialName.firstName);
   const [lastName, setLastName] = useState(initialName.lastName);
   const [location, setLocation] = useState(player.area);
@@ -41,18 +46,76 @@ export function EditProfileScreen({ onBack, onSave, player }: EditProfileScreenP
   const [preferredSide, setPreferredSide] = useState<PlayerSide>(player.side);
   const [hasBall, setHasBall] = useState(player.hasBall);
   const [hasCourtMarks, setHasCourtMarks] = useState(player.hasCourtMarks);
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const fullName = useMemo(() => [firstName.trim(), lastName.trim()].filter(Boolean).join(' '), [firstName, lastName]);
   const initials = getInitials(firstName, lastName, player.initials);
-  const canSave = firstName.trim().length > 0 && location.trim().length > 0;
+  const canSave = firstName.trim().length > 0 && location.trim().length > 0 && !isPhotoUploading;
 
-  function saveChanges() {
+  async function pickProfilePhoto() {
+    if (isPhotoUploading) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Photo access needed', 'Allow photo library access to choose a profile picture.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: Platform.OS !== 'web',
+      aspect: [1, 1],
+      mediaTypes: 'images',
+      quality: 1,
+    });
+
+    if (result.canceled || !result.assets[0]?.uri) {
+      return;
+    }
+
+    const imageUri = getProfilePhotoPreviewUri(result.assets[0]);
+
+    setAvatarPath(null);
+    setAvatarPreviewUri(imageUri);
+    setSelectedPhotoUri(imageUri);
+    setPhotoError(null);
+  }
+
+  async function saveChanges() {
     if (!canSave) {
       return;
     }
 
-    onSave({
+    let nextAvatarPath = avatarPath;
+    let nextAvatarUrl = avatarPreviewUri;
+
+    if (selectedPhotoUri && onUploadProfilePhoto) {
+      try {
+        setIsPhotoUploading(true);
+        const uploadedPhoto = await onUploadProfilePhoto(selectedPhotoUri);
+
+        nextAvatarPath = uploadedPhoto.avatarPath;
+        nextAvatarUrl = uploadedPhoto.avatarUrl;
+        setAvatarPath(uploadedPhoto.avatarPath);
+        setAvatarPreviewUri(uploadedPhoto.avatarUrl);
+        setSelectedPhotoUri(null);
+      } catch (error) {
+        setPhotoError(error instanceof Error ? error.message : 'Could not save profile photo.');
+        return;
+      } finally {
+        setIsPhotoUploading(false);
+      }
+    }
+
+    await onSave({
       ...player,
       area: location.trim(),
+      avatarFocusX: 50,
+      avatarFocusY: 50,
+      avatarPath: nextAvatarPath,
+      avatarUrl: nextAvatarUrl,
       gender,
       hasBall,
       hasCourtMarks,
@@ -98,21 +161,37 @@ export function EditProfileScreen({ onBack, onSave, player }: EditProfileScreenP
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.previewCard}>
-          <View style={styles.avatarWrap}>
-            <LinearGradient
-              colors={[colors.surfaceAqua, colors.surfaceYellow]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.avatar}
-            >
-              <AppText align="center" variant="heroTitle" weight="900">
-                {initials}
-              </AppText>
-            </LinearGradient>
-            <View style={styles.avatarEditBadge}>
-              <Ionicons color={colors.primaryDark} name="camera-outline" size={13} />
+          <Pressable
+            accessibilityLabel="Choose profile picture"
+            accessibilityRole="button"
+            disabled={isPhotoUploading}
+            onPress={pickProfilePhoto}
+            style={styles.avatarWrap}
+          >
+            <View style={styles.avatarClip}>
+              {avatarPreviewUri ? (
+                <AvatarPreviewImage uri={avatarPreviewUri} />
+              ) : (
+                <LinearGradient
+                  colors={[colors.surfaceAqua, colors.surfaceYellow]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.avatar}
+                >
+                  <AppText align="center" variant="heroTitle" weight="900">
+                    {initials}
+                  </AppText>
+                </LinearGradient>
+              )}
             </View>
-          </View>
+            <View style={styles.avatarEditBadge}>
+              {isPhotoUploading ? (
+                <ActivityIndicator color={colors.primaryDark} size="small" />
+              ) : (
+                <Ionicons color={colors.primaryDark} name="camera-outline" size={13} />
+              )}
+            </View>
+          </Pressable>
           <View style={styles.previewCopy}>
             <AppText numberOfLines={1} variant="sectionHeading" weight="900">
               {fullName || 'Your name'}
@@ -123,6 +202,11 @@ export function EditProfileScreen({ onBack, onSave, player }: EditProfileScreenP
                 {location.trim() || 'Add location'}
               </AppText>
             </View>
+            {photoError ? (
+              <AppText tone="danger" variant="caption" weight="700">
+                {photoError}
+              </AppText>
+            ) : null}
           </View>
         </View>
 
@@ -198,7 +282,7 @@ export function EditProfileScreen({ onBack, onSave, player }: EditProfileScreenP
           style={[styles.saveButton, !canSave && styles.saveButtonDisabled]}
         >
           <AppText align="center" tone="inverse" variant="button" weight="900">
-            Save changes
+            {isPhotoUploading ? 'Saving photo...' : 'Save changes'}
           </AppText>
         </Pressable>
       </View>
@@ -352,6 +436,34 @@ function getInitials(firstName: string, lastName: string, fallback: string) {
   return initials || fallback;
 }
 
+function AvatarPreviewImage({ uri }: { uri: string }) {
+  if (Platform.OS === 'web') {
+    return (
+      <View
+        style={[
+          styles.avatarImage,
+          {
+            backgroundImage: `url("${uri}")`,
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: 'cover',
+          } as ViewStyle,
+        ]}
+      />
+    );
+  }
+
+  return <Image resizeMode="cover" source={{ uri }} style={styles.avatarImage} />;
+}
+
+function getProfilePhotoPreviewUri(asset: ImagePicker.ImagePickerAsset) {
+  if (Platform.OS === 'web' && asset.file) {
+    return URL.createObjectURL(asset.file);
+  }
+
+  return asset.uri;
+}
+
 const styles = StyleSheet.create({
   avatar: {
     alignItems: 'center',
@@ -360,6 +472,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     height: 76,
     justifyContent: 'center',
+    width: 76,
+  },
+  avatarClip: {
+    borderRadius: radius.round,
+    height: 76,
+    overflow: 'hidden',
     width: 76,
   },
   avatarEditBadge: {
@@ -378,6 +496,11 @@ const styles = StyleSheet.create({
   },
   avatarWrap: {
     position: 'relative',
+  },
+  avatarImage: {
+    backgroundColor: colors.surfaceMuted,
+    height: 76,
+    width: 76,
   },
   backgroundGlow: {
     height: 430,

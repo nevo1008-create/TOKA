@@ -40,6 +40,7 @@ export function RatePlayerWizard({
   const [friendRequested, setFriendRequested] = useState(false);
   const [hasSubmittedRating, setHasSubmittedRating] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const selectedRank = playerLevels[rankIndex];
   const submittedRank = getSubmittedRank(currentRank, selectedRank, skillVoteType);
 
@@ -55,6 +56,7 @@ export function RatePlayerWizard({
     setFriendRequested(false);
     setHasSubmittedRating(false);
     setIsSubmittingRating(false);
+    setSubmitError(null);
   }, [behaviorRating, currentRank, player?.id, visible]);
 
   function handleBack() {
@@ -86,6 +88,7 @@ export function RatePlayerWizard({
     }
 
     setIsSubmittingRating(true);
+    setSubmitError(null);
 
     try {
       const result = await onSubmitRating?.({
@@ -96,11 +99,14 @@ export function RatePlayerWizard({
       });
 
       if (result === false) {
+        setSubmitError('Rating was not saved. Please try again.');
         return;
       }
 
       setHasSubmittedRating(true);
       setStep('done');
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Rating could not be saved. Please try again.');
     } finally {
       setIsSubmittingRating(false);
     }
@@ -152,6 +158,7 @@ export function RatePlayerWizard({
               onContinue={submitRating}
               playerName={player.name}
               rating={rating}
+              submitError={submitError}
             />
           ) : null}
 
@@ -446,12 +453,14 @@ function BehaviorStep({
   onContinue,
   playerName,
   rating,
+  submitError,
 }: {
   isSubmitting: boolean;
   onChange: (rating: number) => void;
   onContinue: () => void;
   playerName: string;
   rating: number;
+  submitError: string | null;
 }) {
   return (
     <View style={styles.step}>
@@ -479,6 +488,11 @@ function BehaviorStep({
       </View>
 
       <WizardButton disabled={isSubmitting} label={isSubmitting ? 'Saving...' : 'Submit rating'} onPress={onContinue} />
+      {submitError ? (
+        <AppText align="center" tone="danger" variant="metadata" weight="700">
+          {submitError}
+        </AppText>
+      ) : null}
     </View>
   );
 }

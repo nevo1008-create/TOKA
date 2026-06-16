@@ -8,7 +8,6 @@ import {
 } from '../../data/mock';
 import { listLobbyMessages, sendLobbyMessage as persistLobbyMessage } from '../chat/chatRepository';
 import {
-  createUniqueNotification,
   listNotifications,
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
@@ -21,7 +20,7 @@ import {
 import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle } from './lobbyDateTime';
-import { ratingOpenAfterStartMinutes, ratingWindowMinutes, shouldApplyLateLeavePenalty } from './lobbyLifecycle';
+import { shouldApplyLateLeavePenalty } from './lobbyLifecycle';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
@@ -35,6 +34,7 @@ import {
   moveLobbyParticipantToWaitlist as persistMoveLobbyParticipantToWaitlist,
   rejectJoinRequest as persistRejectJoinRequest,
   requestWaitlistApproval as persistRequestWaitlistApproval,
+  transferLobbyHost as persistTransferLobbyHost,
   updateLobbySettings as persistUpdateLobbySettings,
 } from './lobbyRepository';
 import {
@@ -67,27 +67,26 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     try {
       const nextLobbies = await listLobbies();
 
-      setLobbies(nextLobbies);
+      setLobbies((current) => {
+        if (nextLobbies.length === 0 && current.length > 0) {
+          console.warn('Lobby refresh returned no rows; keeping the last loaded lobby list.');
+          return current;
+        }
+
+        return nextLobbies;
+      });
 
       try {
         const nextRatingTasks = await listSubmittedRatingTasks(currentPlayer.id, nextLobbies);
 
         setRatingTasks(nextRatingTasks);
-        void syncRatingNotifications(currentPlayer, nextLobbies, nextRatingTasks).then((createdNotifications) => {
-          if (createdNotifications.length > 0) {
-            setNotifications((current) => mergeNotifications(current, createdNotifications));
-          }
-        }).catch((notificationError) => {
-          console.warn('Could not create rating notifications.', notificationError);
-        });
       } catch (error) {
         console.warn('Could not load submitted player ratings.', error);
-        setRatingTasks([]);
       }
     } catch (error) {
       console.warn('Falling back to mock lobby data after lobby load failed.', error);
-      setLobbies(mockLobbies.map((lobby) => applyLobbyLifecycle(lobby)));
-      setRatingTasks(mockRatingTasks);
+      setLobbies((current) => current.length > 0 ? current : mockLobbies.map((lobby) => applyLobbyLifecycle(lobby)));
+      setRatingTasks((current) => current.length > 0 ? current : mockRatingTasks);
     }
 
     try {
@@ -343,6 +342,30 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     return result;
   }
 
+  async function transferLobbyHost(lobby: Lobby, playerId: string): Promise<LobbyStoreActionResult> {
+    const player = players.find((candidate) => candidate.id === playerId);
+
+    if (!player) {
+      return {
+        messages: ['Could not find this player in the player list.'],
+        success: false,
+      };
+    }
+
+    const result = await persistTransferLobbyHost(lobby, player, currentPlayer.id);
+
+    if (result.success) {
+      setLobbies((current) =>
+        current.map((candidate) => (candidate.id === lobby.id ? transferHostLocal(candidate, currentPlayer.id, playerId) : candidate)),
+      );
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after transferring host.', error);
+      });
+    }
+
+    return result;
+  }
+
   async function closeLobby(lobby: Lobby): Promise<LobbyStoreActionResult> {
     const result = await persistCloseLobby(lobby, currentPlayer.id);
 
@@ -497,50 +520,6 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     };
   }
 
-  async function syncRatingNotifications(player: Player, sourceLobbies: Lobby[], sourceRatingTasks: RatingTask[]) {
-    const createdNotifications: Notification[] = [];
-
-    for (const task of sourceRatingTasks) {
-      if (task.playerId !== player.id || task.status !== 'open' || task.remainingPlayerIds.length === 0) {
-        continue;
-      }
-
-      const lobby = sourceLobbies.find((candidate) => candidate.id === task.lobbyId);
-
-      if (!lobby) {
-        continue;
-      }
-
-      const ratingOpenNotification = await createUniqueNotification({
-        body: `Rating is open for ${lobby.title}. Rate the players from your match.`,
-        lobbyId: lobby.id,
-        recipientPlayerId: player.id,
-        title: 'Rating is open',
-        type: 'rating_required',
-      });
-
-      if (ratingOpenNotification) {
-        createdNotifications.push(ratingOpenNotification);
-      }
-
-      if (isRatingClosingSoon(lobby)) {
-        const closingNotification = await createUniqueNotification({
-          body: `Rating for ${lobby.title} closes in less than 2 hours.`,
-          lobbyId: lobby.id,
-          recipientPlayerId: player.id,
-          title: 'Rating closes soon',
-          type: 'rating_closing_soon',
-        });
-
-        if (closingNotification) {
-          createdNotifications.push(closingNotification);
-        }
-      }
-    }
-
-    return createdNotifications;
-  }
-
   function getVerifiedPrivateAccessCode(lobby: Lobby) {
     return hasPrivateAccess(lobby.id) ? lobby.accessCode : undefined;
   }
@@ -575,6 +554,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     sendLobbyChatMessage,
     shouldConfirmMoveToWaitlist,
     submitPlayerRating,
+    transferLobbyHost,
     updateLobbySettings,
     unreadNotificationCount,
     unreadNotifications,
@@ -634,26 +614,29 @@ function removeParticipantLocal(lobby: Lobby, playerId: string): Lobby {
   };
 }
 
-function mergeNotifications(current: Notification[], incoming: Notification[]) {
-  const existingIds = new Set(current.map((notification) => notification.id));
+function transferHostLocal(lobby: Lobby, currentHostId: string, nextHostId: string): Lobby {
+  return {
+    ...lobby,
+    adminId: nextHostId,
+    participants: lobby.participants.map((participant) => {
+      if (participant.playerId === nextHostId) {
+        return {
+          ...participant,
+          role: 'admin',
+          status: participant.status === 'attended' ? participant.status : 'approved',
+        };
+      }
 
-  return [
-    ...incoming.filter((notification) => !existingIds.has(notification.id)),
-    ...current,
-  ];
-}
+      if (participant.playerId === currentHostId && participant.role === 'admin') {
+        return {
+          ...participant,
+          role: 'joined',
+        };
+      }
 
-function isRatingClosingSoon(lobby: Lobby, now = new Date()) {
-  const startTime = new Date(lobby.startsAt).getTime();
-
-  if (Number.isNaN(startTime)) {
-    return false;
-  }
-
-  const ratingCloseTime = startTime + (ratingOpenAfterStartMinutes + ratingWindowMinutes) * 60000;
-  const timeUntilClose = ratingCloseTime - now.getTime();
-
-  return timeUntilClose > 0 && timeUntilClose <= 2 * 60 * 60000;
+      return participant;
+    }),
+  };
 }
 
 function getOptimisticLobbyAfterLeave(lobby: Lobby, leavingPlayerId: string): Lobby | null {

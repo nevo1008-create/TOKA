@@ -20,7 +20,7 @@ export function GameInfoStrip({ items }: GameInfoStripProps) {
   return (
     <View style={styles.strip}>
       {items.map((item) => (
-        <View key={`${item.label}-${item.value}`} style={styles.cell}>
+        <View key={`${item.label}-${item.value}`} style={[styles.cell, item.wide ? styles.wideCell : styles.compactCell]}>
           <View style={styles.valueRow}>
             <Ionicons color={item.iconColor ?? colors.muted} name={item.icon} size={16} />
             <AppText
@@ -45,10 +45,12 @@ export function GameInfoStrip({ items }: GameInfoStripProps) {
 
 const styles = StyleSheet.create({
   cell: {
-    flex: 1,
     flexBasis: 0,
     gap: 3,
     minWidth: 0,
+  },
+  compactCell: {
+    flex: 0.9,
   },
   label: {
     color: colors.muted,
@@ -69,7 +71,7 @@ const styles = StyleSheet.create({
   value: {
     color: colors.ink,
     flex: 1,
-    fontSize: 11,
+    fontSize: 10,
     lineHeight: 15,
   },
   valueRow: {
@@ -77,5 +79,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 3,
     minWidth: 0,
+  },
+  wideCell: {
+    flex: 1.35,
   },
 });

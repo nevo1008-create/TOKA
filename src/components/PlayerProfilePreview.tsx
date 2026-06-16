@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, shadows, spacing } from '../theme';
+import type { Player } from '../types';
 import { AppText } from './AppText';
+import { Avatar } from './Avatar';
 
 type PlayerProfilePreviewProps = {
   context?: string;
@@ -13,6 +15,7 @@ type PlayerProfilePreviewProps = {
   moreActions?: PlayerPreviewAction[];
   name: string;
   onClose: () => void;
+  player?: Player;
   profileDetails?: PlayerPreviewDetail[];
   primaryAction?: {
     disabled?: boolean;
@@ -50,6 +53,7 @@ export function PlayerProfilePreview({
   moreActions = [],
   name,
   onClose,
+  player,
   profileDetails = [],
   primaryAction,
   rating,
@@ -116,10 +120,16 @@ export function PlayerProfilePreview({
             </View>
           ) : null}
 
-          <View style={styles.avatar}>
-            <AppText align="center" variant="heroTitle" weight="900">
-              {initials}
-            </AppText>
+          <View style={styles.avatarWrap}>
+            {player ? (
+              <Avatar player={player} size={76} />
+            ) : (
+              <View style={styles.avatar}>
+                <AppText align="center" variant="heroTitle" weight="900">
+                  {initials}
+                </AppText>
+              </View>
+            )}
           </View>
 
           <View style={styles.copy}>
@@ -158,7 +168,7 @@ export function PlayerProfilePreview({
           {trustCues.length ? (
             <View style={styles.sectionBlock}>
               <AppText tone="primary" variant="metadata" weight="800">
-                Trust snapshot
+                Profile snapshot
               </AppText>
               <View style={styles.detailGrid}>
                 {trustCues.map((detail) => (
@@ -286,6 +296,11 @@ const styles = StyleSheet.create({
     height: 76,
     justifyContent: 'center',
     width: 76,
+  },
+  avatarWrap: {
+    height: 80,
+    justifyContent: 'center',
+    width: 80,
   },
   backdrop: {
     backgroundColor: 'rgba(18, 59, 42, 0.16)',
