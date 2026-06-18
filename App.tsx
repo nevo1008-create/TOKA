@@ -1874,6 +1874,10 @@ function getOnboardingFallbackPlayer(user: User): Player {
       .toUpperCase() || 'PL',
     name,
     rankStatus: 'self_declared',
+    rating: {
+      average: null,
+      count: 0,
+    },
     tocaPoints: 0,
   };
 }

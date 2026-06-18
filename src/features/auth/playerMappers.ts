@@ -21,6 +21,10 @@ export function mapDbPlayerToPlayer(row: DbPlayer): Player {
     preferredFoot: row.preferred_foot,
     pushNotificationsEnabled: row.push_notifications_enabled ?? false,
     rankStatus: row.rank_status,
+    rating: {
+      average: row.rating_average ?? null,
+      count: row.rating_count ?? 0,
+    },
     side: row.side,
     tocaPoints: row.toca_points,
   };

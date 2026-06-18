@@ -6,11 +6,11 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { AppText } from '../components/AppText';
 import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { NearbyGameCard } from '../components/home/NearbyGameCard';
-import { getPlayerDisplayRating } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { formatLobbyStart, getEffectiveLobbyStatus } from '../features/lobbies/lobbyDateTime';
 import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
+import { formatPlayerRating } from '../features/ratings/playerRatingSummary';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { Lobby, LobbyParticipant, Player } from '../types';
 
@@ -163,7 +163,7 @@ export function InviteComposerScreen({
             context={getPlayerContext(targetPlayer, currentPlayer)}
             locked
             player={targetPlayer}
-            rating={getPlayerDisplayRating(targetPlayer, currentPlayer.id)}
+            rating={formatPlayerRating(targetPlayer)}
           />
         ) : null}
 
@@ -237,7 +237,7 @@ export function InviteComposerScreen({
                     key={player.id}
                     onPress={() => togglePlayer(player.id)}
                     player={player}
-                    rating={getPlayerDisplayRating(player, currentPlayer.id)}
+                    rating={formatPlayerRating(player)}
                     selected={selectedPlayerIds.includes(player.id)}
                   />
                 );

@@ -6,9 +6,10 @@ import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react
 import { AppText } from '../components/AppText';
 import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
-import { getPlayerDisplayRating, getPlayerPreviewPlayingDetails, getPlayerPreviewTrustCues } from '../components/playerProfilePreviewDetails';
+import { getPlayerPreviewPlayingDetails, getPlayerPreviewTrustCues } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { areFriends, getPendingFriendRequest } from '../features/friends/friendRules';
+import { formatPlayerRating } from '../features/ratings/playerRatingSummary';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { FriendRequest, Lobby, Player } from '../types';
 
@@ -172,7 +173,7 @@ export function AddFriendsScreen({
                       onPressProfile={() => setProfilePreviewPlayer(player)}
                       player={player}
                       primaryAction={getPrimaryAction(player, isFriend, isRequested, () => requestFriend(player.id))}
-                      rating={getPlayerDisplayRating(player, currentPlayer.id)}
+                      rating={formatPlayerRating(player)}
                       statusIcon={isFriend ? 'checkmark' : 'star'}
                     />
                   );
@@ -222,8 +223,8 @@ export function AddFriendsScreen({
             : undefined
         }
         profileDetails={profilePreviewPlayer ? getPlayerPreviewPlayingDetails(profilePreviewPlayer) : undefined}
-        rating={profilePreviewPlayer ? getPlayerDisplayRating(profilePreviewPlayer, currentPlayer.id) : undefined}
         trustCues={profilePreviewPlayer ? getPlayerPreviewTrustCues(profilePreviewPlayer, lobbies) : undefined}
+        rating={profilePreviewPlayer ? formatPlayerRating(profilePreviewPlayer) : undefined}
         secondaryAction={
           profilePreviewPlayer && !areFriends(currentPlayer, profilePreviewPlayer)
             ? {
