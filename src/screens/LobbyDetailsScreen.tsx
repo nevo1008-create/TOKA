@@ -10,7 +10,7 @@ import { BeachGameVisual } from '../components/home/BeachGameVisual';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } from '../components/PlayerActionSheet';
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
-import { getPlayerDisplayRating, getPlayerPreviewPlayingDetails, getPlayerPreviewTrustCues } from '../components/playerProfilePreviewDetails';
+import { getPlayerPreviewPlayingDetails, getPlayerPreviewTrustCues } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { RatePlayerWizard } from '../components/RatePlayerWizard';
 import { formatLobbyStart, getEffectiveLobbyStatus, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
@@ -27,6 +27,7 @@ import {
   isJoinedParticipant,
 } from '../features/lobbies/lobbyRules';
 import { canPlayerRateLobby, canRatePlayer, getRemainingRatingTargetIds } from '../features/ratings/ratingRules';
+import { formatPlayerRating, getInitialBehaviorRating } from '../features/ratings/playerRatingSummary';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
 import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, LobbyVisibility, Player, RatingTask, SkillRankVoteType } from '../types';
 
@@ -373,7 +374,7 @@ export function LobbyDetailsScreen({
               )
             : undefined
         }
-        rating={profilePreviewPlayer ? getPlayerDisplayRating(profilePreviewPlayer, currentPlayer.id) : undefined}
+        rating={profilePreviewPlayer ? formatPlayerRating(profilePreviewPlayer) : undefined}
         secondaryAction={
           profilePreviewSelection
             ? getLobbyProfilePreviewSecondaryAction(
@@ -389,7 +390,7 @@ export function LobbyDetailsScreen({
         visible={Boolean(profilePreviewSelection)}
       />
       <RatePlayerWizard
-        behaviorRating={ratingWizardPlayer ? Number(getPlayerDisplayRating(ratingWizardPlayer, currentPlayer.id)) : undefined}
+        behaviorRating={ratingWizardPlayer ? getInitialBehaviorRating(ratingWizardPlayer) : undefined}
         currentRank={ratingWizardPlayer?.level ?? currentPlayer.level}
         isFriend={Boolean(
           ratingWizardPlayer &&
@@ -783,7 +784,7 @@ function ParticipantsSection({
                 participant={participant}
                 player={player}
                 ratingTasks={ratingTasks}
-                rating={getPlayerDisplayRating(player, currentPlayerId)}
+                rating={formatPlayerRating(player)}
                 showRatingAction={showRatingAction}
               />
             ) : null;
@@ -963,7 +964,7 @@ function HostRequestRow({
             <View style={styles.hostRequestChip}>
               <Ionicons color={colors.accentGoldDark} name="star" size={9} />
               <AppText tone="primary" variant="caption" weight="800">
-                {getPlayerDisplayRating(player, currentPlayerId)}
+                {formatPlayerRating(player)}
               </AppText>
             </View>
             <View style={[styles.hostRequestChip, styles.hostRequestPointsChip]}>

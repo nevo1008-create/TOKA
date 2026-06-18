@@ -9,12 +9,12 @@ import { PlayerActionSheet, type PlayerAction, type PlayerActionSheetPlayer } fr
 import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import {
   getFallbackPreviewPlayingDetails,
-  getPlayerDisplayRating,
   getPlayerPreviewPlayingDetails,
   getPlayerPreviewTrustCues,
 } from '../components/playerProfilePreviewDetails';
 import { PlayerRow, type PlayerRowAction } from '../components/PlayerRow';
 import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
+import { formatPlayerRating } from '../features/ratings/playerRatingSummary';
 import { getRatingTargetIds } from '../features/ratings/ratingRules';
 import { formatTocaPoints, getTocaPointProgress } from '../features/tocaPoints/tocaPointProgression';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
@@ -56,7 +56,7 @@ function getLeaderboardRows(currentPlayer: Player, players: Player[]): Leaderboa
       name: player.name,
       points: player.tocaPoints,
       rank: index + 1,
-      rating: getPlayerDisplayRating(player, currentPlayer.id),
+      rating: formatPlayerRating(player),
     }));
 }
 
@@ -133,7 +133,7 @@ export function CommunityScreen({
     level: player.level,
     name: player.name,
     points: player.tocaPoints,
-    rating: getPlayerDisplayRating(player, currentPlayer.id),
+    rating: formatPlayerRating(player),
     sourcePlayerId: player.id,
   }));
   const requestCards: CommunityPlayerCard[] = pendingReceivedRequests
@@ -146,7 +146,7 @@ export function CommunityScreen({
 
       return mapPlayerToCommunityCard(player, index, {
         friendRequestId: request.id,
-        rating: getPlayerDisplayRating(player, currentPlayer.id),
+        rating: formatPlayerRating(player),
       });
     })
     .filter((player): player is CommunityPlayerCard => Boolean(player));
@@ -160,7 +160,7 @@ export function CommunityScreen({
 
       return mapPlayerToCommunityCard(player, index, {
         friendRequestId: request.id,
-        rating: getPlayerDisplayRating(player, currentPlayer.id),
+        rating: formatPlayerRating(player),
       });
     })
     .filter((player): player is CommunityPlayerCard => Boolean(player));
@@ -172,7 +172,7 @@ export function CommunityScreen({
       !pendingReceivedRequests.some((request) => request.requesterPlayerId === player.id),
     )
     .slice(0, 5)
-    .map((player, index) => mapPlayerToCommunityCard(player, index, { rating: getPlayerDisplayRating(player, currentPlayer.id) }));
+    .map((player, index) => mapPlayerToCommunityCard(player, index, { rating: formatPlayerRating(player) }));
   const activeSocialCards = activeFriendView === 'Friends' ? friendCards : requestCards;
 
   useEffect(() => {
@@ -662,7 +662,7 @@ function MyStandingCard({ currentPlayer }: { currentPlayer: Player }) {
 
       <View style={styles.standingFooter}>
         <StandingMetric icon="ribbon-outline" label="Rank" value={currentPlayer.level} />
-        <StandingMetric icon="star" label="Rating" value={getPlayerDisplayRating(currentPlayer, currentPlayer.id)} />
+        <StandingMetric icon="star" label="Rating" value={formatPlayerRating(currentPlayer)} />
         <StandingMetric icon="trending-up-outline" label="To next" value={`+${formatTocaPoints(tocaProgress.pointsToNextLevel)}`} />
       </View>
     </LinearGradient>
@@ -1052,7 +1052,7 @@ function mapPlayerToCommunityCard(
     level: player.level,
     name: player.name,
     points: player.tocaPoints,
-    rating: options.rating ?? getPlayerDisplayRating(player),
+    rating: options.rating ?? formatPlayerRating(player),
     sourcePlayerId: player.id,
   };
 }
@@ -1232,7 +1232,11 @@ function getProfilePlayerFromCommunity(player: ProfilePreviewPlayer, players: Pl
     level: player.level,
     name: player.name,
     preferredFoot: 'right',
-    rankStatus: 'self_declared',
+    rankStatus: player.badge === 'shield' ? 'established' : 'self_declared',
+    rating: {
+      average: player.rating === 'New' ? null : Number(player.rating),
+      count: player.rating === 'New' ? 0 : 1,
+    },
     side: 'both',
     tocaPoints: player.points,
   };

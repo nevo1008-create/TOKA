@@ -11,13 +11,13 @@ import { PlayerProfilePreview } from '../components/PlayerProfilePreview';
 import {
   getPlayerCompletedGamesCount,
   getPlayerCompletedLobbies,
-  getPlayerDisplayRating,
   getPlayerHostedGamesCount,
   getPlayerPreviewPlayingDetails,
   getPlayerPreviewTrustCues,
 } from '../components/playerProfilePreviewDetails';
 import { PlayerRow } from '../components/PlayerRow';
 import { areFriends, getPendingSentFriendRequest } from '../features/friends/friendRules';
+import { formatPlayerRating } from '../features/ratings/playerRatingSummary';
 import { ProgressBar } from '../components/ProgressBar';
 import { getTocaPointProgress } from '../features/tocaPoints/tocaPointProgression';
 import { colors, radius, shadows, spacing } from '../theme';
@@ -200,7 +200,7 @@ export function ProfileScreen({
         <View style={styles.summaryStrip}>
           <SummaryItem icon="ribbon-outline" label="Rank" value={player.level} />
           <View style={styles.summaryDivider} />
-          <SummaryItem icon="star-outline" label="Rating" tone="rating" value={getPlayerDisplayRating(player, currentPlayer.id)} />
+          <SummaryItem icon="star-outline" label="Rating" tone="rating" value={formatPlayerRating(player)} />
           <View style={styles.summaryDivider} />
           <SummaryItem icon="calendar-outline" label="Games" value={`${profileStats.completedGames}`} />
           <View style={styles.summaryDivider} />
@@ -343,8 +343,8 @@ export function ProfileScreen({
               }
             : undefined
         }
-        rating={profilePreviewPlayer ? getPlayerDisplayRating(profilePreviewPlayer.player, currentPlayer.id) : undefined}
         trustCues={profilePreviewPlayer ? getPlayerPreviewTrustCues(profilePreviewPlayer.player, lobbies) : undefined}
+        rating={profilePreviewPlayer ? formatPlayerRating(profilePreviewPlayer.player) : undefined}
         visible={Boolean(profilePreviewPlayer)}
       />
     </View>
@@ -512,7 +512,7 @@ function PeopleSection({
               onMore={() => onMore(person, context)}
               onPressProfile={() => onPressProfile(person, context)}
               player={person}
-              rating={getPlayerDisplayRating(person, ownerPlayer.id)}
+              rating={formatPlayerRating(person)}
               statusIcon={person.id === 'p3' ? 'shield-checkmark' : 'star'}
             />
           );
@@ -569,7 +569,7 @@ function PlayerMiniCard({
       </AppText>
       <View style={styles.playerMetaRow}>
         <MiniChip label={player.level} />
-        <MiniChip icon="star" label={getPlayerDisplayRating(player)} warning />
+        <MiniChip icon="star" label={formatPlayerRating(player)} warning />
       </View>
       <AppText align="center" tone="muted" variant="metadata" weight="600">
         {recency ?? `${player.tocaPoints} points`}

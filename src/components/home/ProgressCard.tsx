@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Animated, StyleSheet, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 
+import { formatPlayerRating, getPlayerRatingValue } from '../../features/ratings/playerRatingSummary';
 import { formatTocaPoints, getTocaPointProgress } from '../../features/tocaPoints/tocaPointProgression';
 import { colors, homeTypography, radius, shadows, spacing } from '../../theme';
 import type { Player } from '../../types';
@@ -11,7 +12,6 @@ import { ProgressBar } from '../ProgressBar';
 
 type ProgressProps = {
   player: Player;
-  rating?: string;
   tocaPointGain?: {
     amount: number;
     from: number;
@@ -20,7 +20,7 @@ type ProgressProps = {
   } | null;
 };
 
-export function PlayerStatusStrip({ player, rating = '3.6', tocaPointGain }: ProgressProps) {
+export function PlayerStatusStrip({ player, tocaPointGain }: ProgressProps) {
   const tocaProgress = getTocaPointProgress(player.tocaPoints);
   const animatedProgress = useRef(new Animated.Value(tocaProgress.progressToNextLevel)).current;
   const [isGainVisible, setIsGainVisible] = useState(false);
@@ -100,7 +100,7 @@ export function PlayerStatusStrip({ player, rating = '3.6', tocaPointGain }: Pro
       <View style={stripStyles.metricPill}>
         <Ionicons color="rgba(255, 200, 61, 0.86)" name="star" size={13} />
         <AppText style={stripStyles.metricValue} variant="button" weight="800">
-          {rating}
+          {formatPlayerRating(player)}
         </AppText>
       </View>
 
@@ -114,8 +114,9 @@ export function PlayerStatusStrip({ player, rating = '3.6', tocaPointGain }: Pro
   );
 }
 
-export function ProgressCard({ player, rating = '3.6' }: ProgressProps) {
+export function ProgressCard({ player }: ProgressProps) {
   const tocaProgress = getTocaPointProgress(player.tocaPoints);
+  const starFillCount = getPlayerRatingValue(player.rating) ?? 0;
 
   return (
     <View style={styles.card}>
@@ -148,14 +149,14 @@ export function ProgressCard({ player, rating = '3.6' }: ProgressProps) {
       <View style={styles.rating}>
         <Ionicons color="rgba(255, 200, 61, 0.82)" name="star-outline" size={24} />
         <AppText variant="title" weight="800">
-          {rating}
+          {formatPlayerRating(player)}
         </AppText>
         <View style={styles.starsRow}>
           {[0, 1, 2, 3, 4].map((index) => (
             <Ionicons
               key={index}
-              color={index < 4 ? 'rgba(255, 200, 61, 0.82)' : 'rgba(138, 150, 131, 0.58)'}
-              name={index < 4 ? 'star' : 'star-outline'}
+              color={index < Math.round(starFillCount) ? 'rgba(255, 200, 61, 0.82)' : 'rgba(138, 150, 131, 0.58)'}
+              name={index < Math.round(starFillCount) ? 'star' : 'star-outline'}
               size={12}
             />
           ))}

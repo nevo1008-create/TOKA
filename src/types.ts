@@ -74,12 +74,18 @@ export type TocaPointEventType =
   | 'weekly_five_match_bonus'
   | 'new_player_played_with';
 
+export type PlayerRatingSummary = {
+  average: number | null;
+  count: number;
+};
+
 export type Player = {
   id: string;
   name: string;
   gender: Gender;
   level: PlayerLevel;
   rankStatus: RankStatus;
+  rating: PlayerRatingSummary;
   tocaPoints: number;
   gamesPlayed: number;
   preferredFoot: PreferredFoot;
