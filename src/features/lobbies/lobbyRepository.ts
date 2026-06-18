@@ -636,6 +636,23 @@ export async function transferLobbyHost(lobby: Lobby, player: Player, hostPlayer
   }
 
   const now = new Date().toISOString();
+  const { error: nextHostError } = await supabase
+    .from('lobby_memberships')
+    .update({
+      approved_at: now,
+      approved_by_player_id: hostPlayerId,
+      left_at: null,
+      role: 'host',
+      status: 'joined',
+    })
+    .eq('lobby_id', syncedLobby.id)
+    .eq('player_id', player.id)
+    .in('status', ['joined', 'attended']);
+
+  if (nextHostError) {
+    throw nextHostError;
+  }
+
   const { error: lobbyError } = await supabase
     .from('lobbies')
     .update({ host_player_id: player.id })
@@ -653,23 +670,6 @@ export async function transferLobbyHost(lobby: Lobby, player: Player, hostPlayer
 
   if (previousHostError) {
     throw previousHostError;
-  }
-
-  const { error: nextHostError } = await supabase
-    .from('lobby_memberships')
-    .update({
-      approved_at: now,
-      approved_by_player_id: hostPlayerId,
-      left_at: null,
-      role: 'host',
-      status: 'joined',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', player.id)
-    .in('status', ['joined', 'attended']);
-
-  if (nextHostError) {
-    throw nextHostError;
   }
 
   await createNotificationBestEffort({
