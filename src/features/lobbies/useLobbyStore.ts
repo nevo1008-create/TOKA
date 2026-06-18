@@ -20,6 +20,7 @@ import {
 import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle } from './lobbyDateTime';
+import { getUniqueLobbies } from './lobbyListUtils';
 import { shouldApplyLateLeavePenalty } from './lobbyLifecycle';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
@@ -73,7 +74,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
           return current;
         }
 
-        return nextLobbies;
+        return getUniqueLobbies(nextLobbies);
       });
 
       try {
@@ -97,12 +98,19 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     }
 
     try {
-      setNotifications(await listNotifications(currentPlayer.id));
+      await refreshNotifications();
     } catch (error) {
       console.warn('Falling back to mock notification data after Supabase load failed.', error);
       setNotifications(mockNotifications);
     }
   }, [currentPlayer.id, isEnabled]);
+
+  async function refreshNotifications() {
+    const nextNotifications = await listNotifications(currentPlayer.id);
+
+    setNotifications(nextNotifications);
+    return nextNotifications;
+  }
 
   useEffect(() => {
     if (!isEnabled) {
@@ -429,7 +437,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     setLobbies((current) =>
       current.some((lobby) => lobby.id === nextLobby.id)
         ? current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby))
-        : [nextLobby, ...current],
+        : getUniqueLobbies([nextLobby, ...current]),
     );
     setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, nextLobby.id] : current));
     void refreshLobbyData();
@@ -438,13 +446,30 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   }
 
   async function markAllNotificationsRead() {
-    await markNotificationsRead(notifications.map((notification) => notification.id));
+    const unreadNotificationIds = notifications
+      .filter((notification) => !notification.read)
+      .map((notification) => notification.id);
+
+    await markNotificationsRead(unreadNotificationIds);
     setNotifications((current) =>
       current.map((notification) => ({
         ...notification,
         read: true,
       })),
     );
+  }
+
+  async function refreshAndMarkAllNotificationsRead() {
+    const nextNotifications = await refreshNotifications();
+    const unreadNotificationIds = nextNotifications
+      .filter((notification) => !notification.read)
+      .map((notification) => notification.id);
+
+    await markNotificationsRead(unreadNotificationIds);
+    setNotifications(nextNotifications.map((notification) => ({
+      ...notification,
+      read: true,
+    })));
   }
 
   async function markNotificationRead(notificationId: string) {
@@ -545,6 +570,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     markAllNotificationsRead,
     markLobbyChatRead,
     markNotificationRead,
+    refreshAndMarkAllNotificationsRead,
     notifications,
     moveLobbyParticipantToWaitlist,
     rejectJoinRequest,

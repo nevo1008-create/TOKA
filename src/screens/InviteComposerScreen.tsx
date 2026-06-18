@@ -55,6 +55,7 @@ export function InviteComposerScreen({
   const [invitedPlayerIdsByLobby, setInvitedPlayerIdsByLobby] = useState<Record<string, string[]>>({});
   const [isSendingInvites, setIsSendingInvites] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const selectedLobby = lobbies.find((lobby) => lobby.id === selectedLobbyId);
   const selectedPlayers = players.filter((player) => selectedPlayerIds.includes(player.id));
@@ -78,6 +79,7 @@ export function InviteComposerScreen({
       current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId],
     );
     setSuccessMessage(null);
+    setErrorMessage(null);
   }
 
   function selectLobby(lobby: Lobby) {
@@ -87,6 +89,7 @@ export function InviteComposerScreen({
 
     setSelectedLobbyId(lobby.id);
     setSuccessMessage(null);
+    setErrorMessage(null);
   }
 
   async function sendInvites() {
@@ -97,10 +100,12 @@ export function InviteComposerScreen({
     const invitedPlayerIds = selectedPlayerIds;
 
     setIsSendingInvites(true);
+    setErrorMessage(null);
 
     try {
       await onSendInvites(selectedLobby, invitedPlayerIds);
-    } catch {
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not send invite. Please try again.');
       return;
     } finally {
       setIsSendingInvites(false);
@@ -154,6 +159,15 @@ export function InviteComposerScreen({
             <Ionicons color={colors.primaryDark} name="checkmark-circle" size={18} />
             <AppText style={styles.successText} tone="accent" variant="metadata" weight="800">
               {successMessage}
+            </AppText>
+          </View>
+        ) : null}
+
+        {errorMessage ? (
+          <View style={[styles.successBanner, styles.errorBanner]}>
+            <Ionicons color={colors.danger} name="alert-circle" size={18} />
+            <AppText style={styles.successText} tone="danger" variant="metadata" weight="800">
+              {errorMessage}
             </AppText>
           </View>
         ) : null}
@@ -1001,6 +1015,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: spacing.md,
     ...shadows.soft,
+  },
+  errorBanner: {
+    backgroundColor: 'rgba(217, 74, 58, 0.08)',
+    borderColor: 'rgba(217, 74, 58, 0.28)',
   },
   successText: {
     flex: 1,

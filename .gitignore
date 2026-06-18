@@ -26,6 +26,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 dev-server*.log
+expo-*.log
 screenshots/
 .codex/
 

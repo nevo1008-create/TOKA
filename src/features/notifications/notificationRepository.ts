@@ -95,12 +95,22 @@ export async function createNotification({
 
 export async function createUniqueNotification(input: CreateNotificationInput): Promise<Notification | null> {
   if (!isUuid(input.recipientPlayerId)) {
-    return null;
+    throw new Error('Notification recipient is not a valid player profile. Refresh players and try again.');
   }
 
+  const existingNotification = await findMatchingUnreadNotification(input);
+
+  if (existingNotification) {
+    return existingNotification;
+  }
+
+  return createNotificationAndSelect(input);
+}
+
+async function findMatchingUnreadNotification(input: CreateNotificationInput) {
   let query = supabase
     .from('notifications')
-    .select('id')
+    .select(notificationSelect)
     .eq('recipient_player_id', input.recipientPlayerId)
     .eq('type', input.type)
     .eq('title', input.title)
@@ -120,11 +130,9 @@ export async function createUniqueNotification(input: CreateNotificationInput): 
     throw error;
   }
 
-  if ((data ?? []).length > 0) {
-    return null;
-  }
+  const [notification] = (data ?? []) as DbNotification[];
 
-  return createNotificationAndSelect(input);
+  return notification ? mapDbNotificationToNotification(notification) : null;
 }
 
 async function createNotificationAndSelect({
@@ -147,7 +155,7 @@ async function createNotificationAndSelect({
 
   if (error) {
     if (isDuplicateNotificationError(error)) {
-      return null;
+      return findMatchingUnreadNotification({ body, lobbyId, playerId, recipientPlayerId, title, type });
     }
 
     throw error;

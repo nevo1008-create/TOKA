@@ -9,6 +9,7 @@ import { NearbyGameCard } from '../components/home/NearbyGameCard';
 import { PlayerStatusStrip } from '../components/home/ProgressCard';
 import { QuickActionRow } from '../components/home/QuickActionRow';
 import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart } from '../features/lobbies/lobbyDateTime';
+import { getUniqueLobbies } from '../features/lobbies/lobbyListUtils';
 import { getAutoCancelCountdownLabel } from '../features/lobbies/lobbyLifecycle';
 import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import { isJoinedParticipant } from '../features/lobbies/lobbyRules';
@@ -51,7 +52,7 @@ export function HomeScreen({
   tocaPointGain,
 }: HomeScreenProps) {
   useLifecycleClock();
-  const upcomingLobbies = lobbies.filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
+  const upcomingLobbies = getUniqueLobbies(lobbies).filter(isLobbyDiscoverable).sort((left, right) => getLobbyStartTime(left) - getLobbyStartTime(right));
   const joinedUpcomingLobbies = upcomingLobbies.filter((lobby) => isCurrentPlayerJoined(lobby, currentPlayer.id));
   const featuredLobby = joinedUpcomingLobbies[0];
   const nearbyLobbies = upcomingLobbies

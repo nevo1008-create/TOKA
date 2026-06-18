@@ -40,6 +40,7 @@ Immediate work:
 - Apply or re-apply the notification retention and dedupe migration when Supabase is stable enough
 - Verify indexes exist for notification recipient lookups, unread lookups, related lobby lookups, and cleanup queries
 - Add a safe scheduled or manual cleanup process for old notifications
+- Patch direct SQL notification inserts, especially `friend_accepted`, to ignore duplicate unread notifications safely
 - Re-check Supabase Query Performance after fresh app usage, not only historical data
 
 Specific checks:

@@ -48,7 +48,7 @@ import {
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
-import { createUniqueNotification } from './src/features/notifications/notificationRepository';
+import { createNotification } from './src/features/notifications/notificationRepository';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -171,6 +171,7 @@ export default function App() {
   const [isLobbyChatOpen, setIsLobbyChatOpen] = useState(false);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
+  const [pendingCreatedLobby, setPendingCreatedLobby] = useState<Lobby | null>(null);
   const [isHostManagementOpen, setIsHostManagementOpen] = useState(false);
   const [pendingLobbyActionKey, setPendingLobbyActionKey] = useState<string | null>(null);
   const lastHomeTocaPlayerIdRef = useRef<string | null>(null);
@@ -179,7 +180,9 @@ export default function App() {
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = lobbyStore.unreadNotifications;
   const unreadNotificationCount = lobbyStore.unreadNotificationCount;
-  const selectedLobby = selectedLobbyId ? lobbyStore.getLobbyById(selectedLobbyId) : null;
+  const selectedLobby = selectedLobbyId
+    ? lobbyStore.getLobbyById(selectedLobbyId) ?? (pendingCreatedLobby?.id === selectedLobbyId ? pendingCreatedLobby : null)
+    : null;
   const visibleSelectedLobby = selectedLobby ? lobbyStore.getVisibleLobby(selectedLobby) : null;
   const selectedLobbyIndex = selectedLobby ? lobbyStore.getLobbyIndex(selectedLobby.id) : 0;
   const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
@@ -267,6 +270,12 @@ export default function App() {
 
     return () => clearTimeout(clearTimer);
   }, [homeTocaPointGain?.id]);
+
+  useEffect(() => {
+    if (pendingCreatedLobby && lobbyStore.getLobbyById(pendingCreatedLobby.id)) {
+      setPendingCreatedLobby(null);
+    }
+  }, [lobbyStore, pendingCreatedLobby]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
@@ -596,9 +605,9 @@ export default function App() {
 
   async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
     try {
-      await Promise.all(
+      const inviteResults = await Promise.all(
         playerIds.map((playerId) =>
-          createUniqueNotification({
+          createNotification({
             body: `${profilePlayer.name} invited you to ${lobby.title}.`,
             lobbyId: lobby.id,
             playerId: profilePlayer.id,
@@ -608,8 +617,19 @@ export default function App() {
           }),
         ),
       );
+      const sentCount = inviteResults.filter(Boolean).length;
+
+      if (sentCount === 0) {
+        throw new Error('No invite notification was sent. Refresh players and try again.');
+      }
 
       await lobbyStore.refreshLobbyData();
+      Alert.alert(
+        sentCount === 1 ? 'Invite sent' : 'Invites sent',
+        sentCount === 1
+          ? `Your invite to ${lobby.title} was sent.`
+          : `${sentCount} invites to ${lobby.title} were sent.`,
+      );
     } catch (error) {
       showActionError(error);
       throw error;
@@ -853,9 +873,7 @@ export default function App() {
     setIsSideMenuOpen(false);
     setIsLobbyChatOpen(false);
     setIsNotificationsOpen(true);
-    if (unreadNotificationCount > 0) {
-      markAllNotificationsRead();
-    }
+    markAllNotificationsRead();
   }
 
   function showLobbyActionMessages(messages: string[]) {
@@ -1039,6 +1057,7 @@ export default function App() {
     try {
       const nextLobby = await lobbyStore.createLobby(draft);
 
+      setPendingCreatedLobby(nextLobby);
       setSelectedLobbyId(nextLobby.id);
       setIsLobbyChatOpen(false);
       setGamesInitialSection('My Games');
@@ -1145,7 +1164,7 @@ export default function App() {
   }
 
   function markAllNotificationsRead() {
-    void lobbyStore.markAllNotificationsRead().catch(showActionError);
+    void lobbyStore.refreshAndMarkAllNotificationsRead().catch(showActionError);
   }
 
   function handleNotificationPress(notification: Notification) {

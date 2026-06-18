@@ -13,6 +13,9 @@ import {
 } from './lobbyRules';
 import { mapDbLobbyToLobby } from './lobbyMappers';
 
+const lifecycleSyncKeysInFlight = new Set<string>();
+const lifecycleSyncKeysCompleted = new Set<string>();
+
 export async function listLobbies(): Promise<Lobby[]> {
   const { data, error } = await supabase
     .from('lobbies')
@@ -101,8 +104,9 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
     throw lobbyError;
   }
 
-  const [membershipResult, messageResult] = await Promise.all([
-    supabase.from('lobby_memberships').insert({
+  const { data: membership, error: membershipError } = await supabase
+    .from('lobby_memberships')
+    .insert({
       brings_ball: currentPlayer.hasBall,
       brings_court_marks: currentPlayer.hasCourtMarks,
       joined_at: new Date().toISOString(),
@@ -111,34 +115,20 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
       position: 1,
       role: 'host',
       status: 'joined',
-    }),
-    supabase.from('lobby_messages').insert({
-      body: 'Game created. Use this chat to coordinate with players.',
-      channel: 'all',
-      lobby_id: lobby.id,
-      sender_player_id: currentPlayer.id,
-    }),
-  ]);
-
-  if (membershipResult.error) {
-    throw membershipResult.error;
-  }
-
-  if (messageResult.error) {
-    throw messageResult.error;
-  }
-
-  const { data: createdLobbyRow, error: createdLobbyError } = await supabase
-    .from('lobbies')
-    .select('*, locations (*), lobby_memberships (*)')
-    .eq('id', lobby.id)
+    })
+    .select()
     .single();
 
-  if (createdLobbyError) {
-    throw createdLobbyError;
+  if (membershipError) {
+    throw membershipError;
   }
 
-  const createdLobby = mapDbLobbyToLobby(createdLobbyRow as unknown as DbLobbyWithRelations);
+  void createInitialLobbyMessageBestEffort(lobby.id, currentPlayer.id);
+
+  const createdLobby = mapDbLobbyToLobby({
+    ...(lobby as unknown as DbLobbyWithRelations),
+    lobby_memberships: [membership as DbLobbyMembership],
+  });
 
   return createdLobby;
 }
@@ -906,6 +896,7 @@ async function hasMatchingNotification(options: {
     .eq('related_player_id', options.playerId)
     .eq('type', options.type)
     .eq('title', options.title)
+    .is('read_at', null)
     .limit(1);
 
   if (error) {
@@ -1012,6 +1003,22 @@ async function syncLobbyLifecycleBestEffort(row: DbLobbyWithRelations, lobby: Lo
     return;
   }
 
+  const syncKey = [
+    lobby.id,
+    row.status,
+    lobby.status,
+    row.match_locked_at ?? 'no-lock',
+    lobby.matchLockedAt ?? 'no-lock',
+    (row.match_participant_ids ?? []).join(','),
+    (lobby.matchParticipantIds ?? []).join(','),
+  ].join('|');
+
+  if (lifecycleSyncKeysInFlight.has(syncKey) || lifecycleSyncKeysCompleted.has(syncKey)) {
+    return;
+  }
+
+  lifecycleSyncKeysInFlight.add(syncKey);
+
   const update: Partial<{
     match_locked_at: string;
     match_participant_ids: string[];
@@ -1027,15 +1034,25 @@ async function syncLobbyLifecycleBestEffort(row: DbLobbyWithRelations, lobby: Lo
     update.match_participant_ids = getMatchParticipantIds(lobby);
   }
 
-  const { error } = await supabase
+  let updateQuery = supabase
     .from('lobbies')
     .update(update)
     .eq('id', lobby.id);
+
+  if (hasLifecycleStatusChanged && !shouldPersistMatchLock) {
+    updateQuery = updateQuery.neq('status', lobby.status);
+  }
+
+  const { error } = await updateQuery;
+
+  lifecycleSyncKeysInFlight.delete(syncKey);
 
   if (error) {
     console.warn('Could not persist derived lobby lifecycle state.', error.message);
     return;
   }
+
+  lifecycleSyncKeysCompleted.add(syncKey);
 
   if (row.status !== 'cancelled' && lobby.status === 'cancelled') {
     await notifyCurrentLobbyMembers(lobby, null, {
@@ -1072,6 +1089,19 @@ async function syncLobbyHostBestEffort(lobbyId: string) {
 
   if (error) {
     throw error;
+  }
+}
+
+async function createInitialLobbyMessageBestEffort(lobbyId: string, playerId: string) {
+  const { error } = await supabase.from('lobby_messages').insert({
+    body: 'Game created. Use this chat to coordinate with players.',
+    channel: 'all',
+    lobby_id: lobbyId,
+    sender_player_id: playerId,
+  });
+
+  if (error) {
+    console.warn('Could not create initial lobby chat message.', error.message);
   }
 }
 
