@@ -29,6 +29,8 @@ export type DbPlayer = {
   gender: Gender;
   level: PlayerLevel;
   rank_status: RankStatus;
+  rating_average: number | null;
+  rating_count: number;
   toca_points: number;
   games_played: number;
   preferred_foot: PreferredFoot;

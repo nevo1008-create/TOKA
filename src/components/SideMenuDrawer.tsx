@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Animated, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
+import { formatPlayerRating } from '../features/ratings/playerRatingSummary';
 import { colors, radius, shadows, spacing } from '../theme';
 import type { Player } from '../types';
 import { AppText } from './AppText';
@@ -57,13 +58,14 @@ export function SideMenuDrawer({
   onPlaceholderAction,
   onViewProfile,
   player,
-  rating = '3.6',
+  rating,
   visible,
 }: SideMenuDrawerProps) {
   const { width } = useWindowDimensions();
   const drawerWidth = Math.min(Math.round(width * 0.86), 360);
   const slideAnim = useRef(new Animated.Value(drawerWidth)).current;
   const profileName = getProfileName(player);
+  const ratingLabel = rating ?? formatPlayerRating(player);
 
   useEffect(() => {
     Animated.timing(slideAnim, {
@@ -185,7 +187,7 @@ export function SideMenuDrawer({
                 <View style={styles.ratingChip}>
                   <Ionicons color={colors.accentGoldDark} name="star-outline" size={11} />
                   <AppText variant="chip" weight="800">
-                    {rating} rating
+                    {ratingLabel} rating
                   </AppText>
                 </View>
               </View>
