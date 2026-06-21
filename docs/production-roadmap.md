@@ -116,9 +116,57 @@ Exit criteria:
 - No subscription event triggers the same write path again
 - Manual refresh still works
 
-## Phase 4: Query And Data Optimization
+Phase 3 handoff note:
 
-Goal: reduce egress and make every common screen cheap to load.
+- The broad multi-device realtime QA pass remains required, but it is intentionally carried forward as Phase 4 Mission 1 so Phase 4 starts by proving the realtime work before deeper polish or optimization.
+
+## Phase 4: App Quality Polish In Preview
+
+Goal: clean and harden everything that can be confidently tested in preview before moving to real-device builds.
+
+Mission 1 - Multi-device realtime QA gate:
+
+- Use two real logged-in users on two browser sessions or devices
+- Test the main realtime flows end to end without manual refresh as the normal success path
+- Cover notifications, lobby list updates, lobby details, join/request/approve/reject/cancel/leave, waitlist movement, host transfer, chat, friends/community, and ratings/lifecycle
+- Watch for stale state, duplicate banners, duplicate notifications, delayed state, confusing disabled buttons, and screens that require refresh
+- Fix any stale-state edge cases found before starting the optimization missions below
+- Keep manual refresh available as a fallback, but do not treat it as the normal expected behavior
+
+Mission 2 - Copy, empty states, and errors:
+
+- Review user-facing copy for clarity and consistency
+- Polish loading states, empty states, error popups, and blocked-action messages
+- Make confusing disabled buttons explain why an action is unavailable
+- Clean notification wording where needed, without changing backend behavior unless required
+
+Mission 3 - Preview layout and interaction polish:
+
+- Check common screens in normal web preview and mobile-sized browser viewports
+- Fix obvious overlap, clipped text, awkward spacing, and scroll issues
+- Verify modals, sheets, chat, profile, community, lobby cards, and rating screens remain usable
+- Keep mobile-first behavior as the source of truth, while remembering preview is not a replacement for real phones
+
+Mission 4 - Stale-state and duplicate-state cleanup:
+
+- Remove duplicate banners, duplicate notifications, repeated toasts, and stale local state
+- Confirm leave/kick/host-transfer/lobby-delete/rating-complete states close or update the right screens
+- Keep manual refresh as a fallback, but fix flows that normally require refresh
+
+Mission 5 - Query and data optimization:
+
+- Inspect the freshest Supabase Query Performance report after normal app usage
+- Identify the biggest repeated reads and writes by screen or feature
+- Separate historical noise from current behavior before changing code
+- Replace broad `select('*')` calls with explicit columns where possible
+- Add limits and pagination to list-style screens
+- Avoid returning large text fields when a list only needs summary data
+- Avoid fetching unrelated notifications, lobbies, players, ratings, or chat messages
+- Keep realtime refetches targeted to the affected domain
+- Confirm profile, community, chat, and rating screens do not over-fetch shared app data
+- Add missing indexes for common filters and joins
+- Verify RLS policies are not forcing expensive scans
+- Re-check the query report after index or query changes
 
 Work items:
 
@@ -142,30 +190,35 @@ Priority screens:
 
 Exit criteria:
 
+- Phase 4 Mission 1 realtime QA has passed or remaining issues are documented
+- common confusing UI states are cleaned up
+- preview and mobile-sized viewport checks do not show obvious layout breakage
 - common screens use explicit fields and bounded queries
 - fresh query report shows no obvious runaway query
 - database indexes match the production access patterns
 
-## Phase 5: Native Build Readiness
+## Phase 5: Real Phone QA And Build Setup
 
-Goal: make the Expo app ready for real iOS and Android builds.
+Goal: run the app on real phones and fix issues that preview cannot honestly prove.
 
 Work items:
 
+- choose the first phone-testing path: Expo Go, Expo development build, internal Android build, or TestFlight/development iOS build
 - add production bundle identifiers in `app.json`
 - add Android package name
 - add iOS build number and Android version code
-- add app icon, adaptive Android icon, splash screen, and notification icon assets
 - configure EAS build profiles
 - verify environment variables for dev, preview, and production
 - verify deep links or universal links if needed
+- test real touch behavior, keyboard behavior, scrolling, safe areas, native modals, and screen sizes
+- test realtime with two real phones or one phone plus one browser/device
+- test app background/foreground behavior for realtime state recovery
 - test on real iOS and Android devices
 - remove web-only assumptions from core flows
 
 Likely current gaps:
 
 - native app identifiers need final values
-- store-ready assets need to be verified
 - EAS build config needs to be added or confirmed
 - device QA has not been completed yet
 
@@ -174,14 +227,17 @@ Exit criteria:
 - internal Android build installs on a real device
 - internal iOS build installs through TestFlight or development build
 - app opens, logs in, and completes core flows on devices
-- no required app asset is missing
+- real-phone issues are fixed or documented before store preparation
 
-## Phase 6: Store Compliance And Production Policy
+## Phase 6: Production/App Store Preparation
 
-Goal: prepare for Apple App Store and Google Play review.
+Goal: make the app, backend, and store package ready for Apple App Store and Google Play review.
 
 Work items:
 
+- add app icon, adaptive Android icon, splash screen, and notification icon assets
+- verify app permissions, native configuration, and production build settings
+- verify production Supabase environment variables and security posture
 - create privacy policy
 - create support/contact page or support email
 - complete Google Play Data Safety answers
@@ -192,17 +248,20 @@ Work items:
 - add report/block/moderation flows if needed for public user content
 - prepare demo account for reviewers if login is required
 - prepare screenshots, descriptions, and store metadata
+- run final security and data-access checks for production Supabase
 
 Exit criteria:
 
+- no required app asset is missing
+- production Supabase is stable and correctly configured
 - Apple review requirements are covered
 - Google Play policy requirements are covered
 - store metadata and screenshots are ready
 - reviewer can access the app without confusion
 
-## Phase 7: Product QA
+## Phase 7: Launch Candidate And Release
 
-Goal: prove the V1 product works through real user journeys, not just isolated screens.
+Goal: freeze the branch, prove the full V1 journey, and prepare the build that can go to testers or stores.
 
 Core flows to test:
 
@@ -232,16 +291,6 @@ Regression checks:
 - no runaway database writes
 - no huge egress spike from normal use
 
-Exit criteria:
-
-- all core flows pass on real devices
-- known bugs are either fixed or explicitly accepted
-- V1 release notes are written
-
-## Phase 8: Release Candidate
-
-Goal: freeze the branch and prepare for release.
-
 Work items:
 
 - run final TypeScript check
@@ -254,6 +303,9 @@ Work items:
 
 Exit criteria:
 
+- all core flows pass on real devices
+- known bugs are either fixed or explicitly accepted
+- V1 release notes are written
 - production Supabase is stable
 - native builds are installable
 - store assets and compliance are ready
@@ -265,14 +317,13 @@ Exit criteria:
 2. Clean and index Supabase tables
 3. Move critical writes server-side
 4. Add scoped realtime instead of polling
-5. Optimize expensive reads
-6. Prepare native builds
-7. Finish store compliance
-8. Complete device QA
-9. Release V1
+5. Polish preview-tested app quality and optimize expensive reads
+6. Prepare native builds and complete real-phone QA
+7. Finish store compliance and production setup
+8. Release V1
 
 ## Simple Explanation
 
-The MVP proved the app flow. V1 needs the same app to behave like a real production app: no runaway database writes, no expensive polling, no fragile client-only business logic, real native builds, store-ready assets, privacy/compliance coverage, and real-device QA.
+The MVP proved the app flow. V1 needs the same app to behave like a real production app: no runaway database writes, no expensive polling, no fragile client-only business logic, polished preview-tested UX, real native builds, store-ready assets, privacy/compliance coverage, and real-device QA.
 
-The next smartest move is to make Supabase quiet and predictable first. After that, realtime and native release work become much safer.
+The next smartest move is to finish the realtime branch, then start Phase 4 by proving realtime with two users before polishing UI states and optimizing expensive reads. After that, real-phone testing and native release work become much safer.

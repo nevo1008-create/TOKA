@@ -425,7 +425,7 @@ export function CommunityScreen({
               </AppText>
               <View style={styles.summaryStrip}>
                 <SummaryItem footer="connected" icon="people-outline" label="Friends" value={`${friendPlayers.length}`} />
-                <SummaryItem footer="received" icon="star-outline" label="Rated me" value="0" />
+                <SummaryItem footer="received" icon="star-outline" label="Rated me" value={`${currentPlayer.rating.count}`} />
                 <SummaryItem footer="submitted" icon="checkmark-done-outline" label="I rated" value={`${ratedByMeCount}`} warning />
               </View>
             </View>

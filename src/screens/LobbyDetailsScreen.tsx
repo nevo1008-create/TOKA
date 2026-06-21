@@ -1122,10 +1122,23 @@ export function LobbyChatSheet({
     : [];
 
   useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
     setActiveChannelId(lobby.chatChannels[0]?.id ?? '');
     setDraft('');
     setIsExpanded(false);
-  }, [lobby.id, lobby.chatChannels]);
+  }, [lobby.id, visible]);
+
+  useEffect(() => {
+    const channelIds = lobby.chatChannels.map((channel) => channel.id);
+    const hasActiveChannel = channelIds.includes(activeChannelId);
+
+    if (!hasActiveChannel) {
+      setActiveChannelId(lobby.chatChannels[0]?.id ?? '');
+    }
+  }, [activeChannelId, lobby.chatChannels]);
 
   function sendMessage() {
     if (!activeChannel || !draft.trim()) {
@@ -1138,11 +1151,11 @@ export function LobbyChatSheet({
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
-      <View style={styles.chatModalRoot}>
+      <View style={[styles.chatModalRoot, isExpanded && styles.chatModalRootExpanded]}>
         <Pressable accessibilityLabel="Close lobby chat" accessibilityRole="button" onPress={onClose} style={styles.chatBackdrop} />
 
         <View style={[styles.chatSheet, isExpanded && styles.chatSheetExpanded]}>
-          <View style={styles.chatHandle} />
+          {!isExpanded ? <View style={styles.chatHandle} /> : null}
 
           <View style={styles.chatHeader}>
             <View style={styles.chatTitleWrap}>
@@ -1193,7 +1206,11 @@ export function LobbyChatSheet({
             })}
           </View>
 
-          <ScrollView contentContainerStyle={styles.chatMessageList} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={[styles.chatMessageList, isExpanded && styles.chatMessageListExpanded]}
+            showsVerticalScrollIndicator={false}
+            style={[styles.chatMessageScroller, isExpanded && styles.chatMessageScrollerExpanded]}
+          >
             {channelMessages.length > 0 ? (
               channelMessages.map((message) => (
                 <ChatMessageBubble currentPlayer={currentPlayer} key={message.id} message={message} players={players} />
@@ -2232,11 +2249,28 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingBottom: spacing.xs,
   },
+  chatMessageListExpanded: {
+    flexGrow: 1,
+    paddingBottom: spacing.md,
+  },
+  chatMessageScroller: {
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  chatMessageScrollerExpanded: {
+    flex: 1,
+    minHeight: 0,
+  },
   chatModalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
+  },
+  chatModalRootExpanded: {
+    justifyContent: 'flex-start',
+    paddingBottom: 0,
+    paddingHorizontal: 0,
   },
   chatSendButton: {
     alignItems: 'center',
@@ -2260,7 +2294,15 @@ const styles = StyleSheet.create({
     ...shadows.hero,
   },
   chatSheetExpanded: {
-    maxHeight: '82%',
+    borderRadius: 0,
+    bottom: 0,
+    left: 0,
+    maxHeight: '100%',
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.xxl,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
   chatTab: {
     alignItems: 'center',

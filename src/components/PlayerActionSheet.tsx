@@ -57,8 +57,9 @@ export function PlayerActionSheet({
 
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={closeSheet}>
-      <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdrop}>
-        <Pressable accessibilityRole="menu" onPress={(event) => event.stopPropagation()} style={styles.sheet}>
+      <View style={styles.backdrop}>
+        <Pressable accessibilityLabel="Close player actions" accessibilityRole="button" onPress={closeSheet} style={styles.backdropHitbox} />
+        <View accessibilityRole="menu" style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <View style={styles.avatar}>
@@ -160,8 +161,8 @@ export function PlayerActionSheet({
             })}
             </View>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -210,6 +211,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(18, 59, 42, 0.16)',
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  backdropHitbox: {
+    ...StyleSheet.absoluteFill,
   },
   closeButton: {
     alignItems: 'center',

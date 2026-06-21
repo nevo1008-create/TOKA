@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   chatMessages as mockChatMessages,
@@ -18,6 +18,7 @@ import {
   submitPlayerRating as persistSubmitPlayerRating,
 } from '../ratings/ratingRepository';
 import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
+import { subscribeToAppRealtime, type AppRealtimeChange, type RealtimeDomain } from '../realtime/realtimeSubscriptions';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle } from './lobbyDateTime';
 import { getUniqueLobbies } from './lobbyListUtils';
@@ -51,32 +52,72 @@ export type LobbyStoreActionResult = {
 
 type LobbyStoreOptions = {
   enabled?: boolean;
+  onRealtimeChange?: (change: AppRealtimeChange) => void;
 };
+
+function applyChatUnreadCounts(lobbies: Lobby[], messages: ChatMessage[], readMessageIds: Set<string>, currentPlayerId: string) {
+  return lobbies.map((lobby) => ({
+    ...lobby,
+    chatChannels: lobby.chatChannels.map((channel) => ({
+      ...channel,
+      unreadCount: messages.filter((message) =>
+        message.lobbyId === lobby.id &&
+        message.channelId === channel.id &&
+        message.playerId !== currentPlayerId &&
+        !readMessageIds.has(message.id)
+      ).length,
+    })),
+  }));
+}
 
 export function useLobbyStore(currentPlayer: Player, players: Player[], options: LobbyStoreOptions = {}) {
   const isEnabled = options.enabled ?? true;
+  const onRealtimeChange = options.onRealtimeChange;
   const [lobbies, setLobbies] = useState<Lobby[]>([]);
   const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [ratingTasks, setRatingTasks] = useState<RatingTask[]>(mockRatingTasks);
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
+  const readChatMessageIdsRef = useRef<Set<string>>(new Set());
+  const hasSeededReadChatMessagesRef = useRef(false);
 
-  const refreshLobbyData = useCallback(async () => {
+  const refreshNotifications = useCallback(async () => {
+    const nextNotifications = await listNotifications(currentPlayer.id);
+
+    setNotifications(nextNotifications);
+    return nextNotifications;
+  }, [currentPlayer.id]);
+
+  const refreshChatMessages = useCallback(async () => {
+    const nextMessages = await listLobbyMessages();
+
+    if (!hasSeededReadChatMessagesRef.current) {
+      readChatMessageIdsRef.current = new Set(nextMessages.map((message) => message.id));
+      hasSeededReadChatMessagesRef.current = true;
+    }
+
+    chatMessagesRef.current = nextMessages;
+    setChatMessages(nextMessages);
+    setLobbies((current) => applyChatUnreadCounts(current, nextMessages, readChatMessageIdsRef.current, currentPlayer.id));
+
+    return nextMessages;
+  }, [currentPlayer.id]);
+
+  const refreshLobbies = useCallback(async () => {
     if (!isEnabled) {
-      return;
+      return [];
     }
 
     try {
       const nextLobbies = await listLobbies();
 
-      setLobbies((current) => {
-        if (nextLobbies.length === 0 && current.length > 0) {
-          console.warn('Lobby refresh returned no rows; keeping the last loaded lobby list.');
-          return current;
-        }
-
-        return getUniqueLobbies(nextLobbies);
-      });
+      setLobbies(applyChatUnreadCounts(
+        getUniqueLobbies(nextLobbies),
+        chatMessagesRef.current,
+        readChatMessageIdsRef.current,
+        currentPlayer.id,
+      ));
 
       try {
         const nextRatingTasks = await listSubmittedRatingTasks(currentPlayer.id, nextLobbies);
@@ -85,16 +126,29 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       } catch (error) {
         console.warn('Could not load submitted player ratings.', error);
       }
+
+      return nextLobbies;
     } catch (error) {
       console.warn('Falling back to mock lobby data after lobby load failed.', error);
       setLobbies((current) => current.length > 0 ? current : mockLobbies.map((lobby) => applyLobbyLifecycle(lobby)));
       setRatingTasks((current) => current.length > 0 ? current : mockRatingTasks);
+
+      return [];
+    }
+  }, [currentPlayer.id, isEnabled]);
+
+  const refreshLobbyData = useCallback(async () => {
+    if (!isEnabled) {
+      return;
     }
 
+    await refreshLobbies();
+
     try {
-      setChatMessages(await listLobbyMessages());
+      await refreshChatMessages();
     } catch (error) {
       console.warn('Falling back to mock chat data after Supabase load failed.', error);
+      chatMessagesRef.current = mockChatMessages;
       setChatMessages(mockChatMessages);
     }
 
@@ -104,14 +158,12 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       console.warn('Falling back to mock notification data after Supabase load failed.', error);
       setNotifications(mockNotifications);
     }
-  }, [currentPlayer.id, isEnabled]);
+  }, [isEnabled, refreshChatMessages, refreshLobbies, refreshNotifications]);
 
-  async function refreshNotifications() {
-    const nextNotifications = await listNotifications(currentPlayer.id);
-
-    setNotifications(nextNotifications);
-    return nextNotifications;
-  }
+  useEffect(() => {
+    readChatMessageIdsRef.current = new Set();
+    hasSeededReadChatMessagesRef.current = false;
+  }, [currentPlayer.id]);
 
   useEffect(() => {
     if (!isEnabled) {
@@ -120,6 +172,68 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
     void refreshLobbyData();
   }, [isEnabled, refreshLobbyData]);
+
+  useEffect(() => {
+    if (!isEnabled) {
+      return undefined;
+    }
+
+    let refreshTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    let pendingRealtimeDomains = new Set<RealtimeDomain>();
+
+    const scheduleRefresh = (domain: RealtimeDomain) => {
+      pendingRealtimeDomains.add(domain);
+
+      if (refreshTimeoutId) {
+        clearTimeout(refreshTimeoutId);
+      }
+
+      refreshTimeoutId = setTimeout(() => {
+        const domainsToRefresh = pendingRealtimeDomains;
+
+        pendingRealtimeDomains = new Set<RealtimeDomain>();
+
+        const refreshTasks: Promise<unknown>[] = [];
+
+        if (domainsToRefresh.has('lobbies') || domainsToRefresh.has('players') || domainsToRefresh.has('ratings')) {
+          refreshTasks.push(refreshLobbies());
+        }
+
+        if (domainsToRefresh.has('chat')) {
+          refreshTasks.push(refreshChatMessages());
+        }
+
+        if (domainsToRefresh.has('notifications')) {
+          refreshTasks.push(refreshNotifications());
+        }
+
+        void Promise.all(refreshTasks).catch((error) => {
+          console.warn('Could not refresh after realtime change.', error);
+        });
+      }, 450);
+    };
+
+    const unsubscribe = subscribeToAppRealtime({
+      currentPlayerId: currentPlayer.id,
+      onChange: (change) => {
+        onRealtimeChange?.(change);
+        scheduleRefresh(change.domain);
+      },
+      onStatusChange: (status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`Realtime subscription status: ${status}`);
+        }
+      },
+    });
+
+    return () => {
+      if (refreshTimeoutId) {
+        clearTimeout(refreshTimeoutId);
+      }
+
+      unsubscribe();
+    };
+  }, [currentPlayer.id, isEnabled, onRealtimeChange, refreshChatMessages, refreshLobbies, refreshNotifications]);
 
   const unreadNotifications = useMemo(
     () => notifications.filter((notification) => !notification.read),
@@ -398,6 +512,16 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   }
 
   function markLobbyChatRead(lobby: Lobby) {
+    const visibleChannelIds = new Set(getVisibleChatChannels(lobby, currentPlayer.id).map((channel) => channel.id));
+    const visibleMessageIds = chatMessages
+      .filter((message) => message.lobbyId === lobby.id && visibleChannelIds.has(message.channelId))
+      .map((message) => message.id);
+
+    readChatMessageIdsRef.current = new Set([
+      ...Array.from(readChatMessageIdsRef.current),
+      ...visibleMessageIds,
+    ]);
+
     setLobbies((current) =>
       current.map((candidate) =>
         candidate.id === lobby.id
@@ -421,7 +545,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     }
 
     await persistLobbyMessage(lobby.id, channelId, currentPlayer.id, trimmedBody);
-    setChatMessages(await listLobbyMessages());
+    await refreshChatMessages();
   }
 
   function getLobbyMessages(lobbyId: string) {

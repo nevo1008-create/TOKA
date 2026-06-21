@@ -15,6 +15,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from './src/components/AppText';
 import { BottomNav, type Tab } from './src/components/BottomNav';
+import { LiveNotificationBanner } from './src/components/LiveNotificationBanner';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { PlayerProfilePreview } from './src/components/PlayerProfilePreview';
 import {
@@ -47,8 +48,11 @@ import {
 } from './src/features/friends/friendRepository';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
+import { isLobbyHost } from './src/features/lobbies/lobbyLabels';
 import { sendLobbyInvites } from './src/features/lobbies/lobbyRepository';
+import { getPlayerLobbyRelationship } from './src/features/lobbies/lobbyRules';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
+import type { AppRealtimeChange } from './src/features/realtime/realtimeSubscriptions';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -149,7 +153,29 @@ export default function App() {
     toLevel: number;
   } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
-  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, { enabled: authFlow === 'app' });
+  const [liveNotification, setLiveNotification] = useState<Notification | null>(null);
+  const socialRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleAppRealtimeChange = useCallback((change: AppRealtimeChange) => {
+    if (authFlow !== 'app' || (change.domain !== 'friends' && change.domain !== 'players' && change.domain !== 'ratings')) {
+      return;
+    }
+
+    if (socialRefreshTimeoutRef.current) {
+      clearTimeout(socialRefreshTimeoutRef.current);
+    }
+
+    socialRefreshTimeoutRef.current = setTimeout(() => {
+      socialRefreshTimeoutRef.current = null;
+
+      void refreshCurrentPlayer().catch((error) => {
+        console.warn('Could not refresh social data after realtime change.', error);
+      });
+    }, 450);
+  }, [authFlow, profilePlayer.id]);
+  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, {
+    enabled: authFlow === 'app',
+    onRealtimeChange: handleAppRealtimeChange,
+  });
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [previewProfilePlayer, setPreviewProfilePlayer] = useState<Player | null>(null);
   const [communityInitialFriendView, setCommunityInitialFriendView] = useState<'Friends' | 'Friend requests'>('Friends');
@@ -176,6 +202,12 @@ export default function App() {
   const [pendingLobbyActionKey, setPendingLobbyActionKey] = useState<string | null>(null);
   const lastHomeTocaPlayerIdRef = useRef<string | null>(null);
   const lastHomeTocaPointsRef = useRef<number | null>(null);
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const hasSeededNotificationIdsRef = useRef(false);
+  const selectedLobbyPresenceRef = useRef<{ hadPresence: boolean; lobbyId: string | null }>({
+    hadPresence: false,
+    lobbyId: null,
+  });
   const pendingLobbyActionRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = lobbyStore.unreadNotifications;
@@ -185,6 +217,19 @@ export default function App() {
     : null;
   const visibleSelectedLobby = selectedLobby ? lobbyStore.getVisibleLobby(selectedLobby) : null;
   const selectedLobbyIndex = selectedLobby ? lobbyStore.getLobbyIndex(selectedLobby.id) : 0;
+  const selectedVisibleLobbyMessageCount = selectedLobby
+    ? lobbyStore.getVisibleLobbyMessages(selectedLobby).length
+    : 0;
+  const selectedCurrentParticipant = selectedLobby?.participants.find((participant) =>
+    participant.playerId === profilePlayer.id &&
+    (participant.status === 'approved' || participant.status === 'attended')
+  );
+  const selectedLobbyRelationship = selectedLobby
+    ? getPlayerLobbyRelationship(profilePlayer.id, selectedLobby)
+    : 'none';
+  const selectedCurrentUserIsHost = selectedLobby
+    ? isLobbyHost(selectedLobby, profilePlayer.id, selectedCurrentParticipant)
+    : false;
   const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
 
   useEffect(() => {
@@ -208,9 +253,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (socialRefreshTimeoutRef.current) {
+        clearTimeout(socialRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (authFlow !== 'app') {
+      if (socialRefreshTimeoutRef.current) {
+        clearTimeout(socialRefreshTimeoutRef.current);
+        socialRefreshTimeoutRef.current = null;
+      }
+
       lastHomeTocaPlayerIdRef.current = null;
       lastHomeTocaPointsRef.current = null;
+      seenNotificationIdsRef.current = new Set();
+      hasSeededNotificationIdsRef.current = false;
+      setLiveNotification(null);
       setHomeTocaPointGain(null);
       return;
     }
@@ -258,6 +319,52 @@ export default function App() {
   }, [activeTab, authFlow, profilePlayer.id, profilePlayer.tocaPoints]);
 
   useEffect(() => {
+    if (authFlow !== 'app') {
+      return;
+    }
+
+    const currentNotificationIds = new Set(lobbyStore.notifications.map((notification) => notification.id));
+
+    if (!hasSeededNotificationIdsRef.current) {
+      seenNotificationIdsRef.current = currentNotificationIds;
+      hasSeededNotificationIdsRef.current = true;
+      return;
+    }
+
+    const nextLiveNotification = lobbyStore.notifications.find(
+      (notification) => !notification.read && !seenNotificationIdsRef.current.has(notification.id),
+    );
+
+    seenNotificationIdsRef.current = currentNotificationIds;
+
+    if (nextLiveNotification && !isNotificationsOpen) {
+      setLiveNotification(nextLiveNotification);
+    }
+  }, [authFlow, isNotificationsOpen, lobbyStore.notifications]);
+
+  useEffect(() => {
+    if (!liveNotification) {
+      return undefined;
+    }
+
+    const clearTimer = setTimeout(() => {
+      setLiveNotification((currentNotification) => (
+        currentNotification?.id === liveNotification.id ? null : currentNotification
+      ));
+    }, 5200);
+
+    return () => clearTimeout(clearTimer);
+  }, [liveNotification?.id]);
+
+  useEffect(() => {
+    if (!isLobbyChatOpen || !selectedLobby) {
+      return;
+    }
+
+    lobbyStore.markLobbyChatRead(selectedLobby);
+  }, [isLobbyChatOpen, selectedLobby?.id, selectedVisibleLobbyMessageCount]);
+
+  useEffect(() => {
     if (!homeTocaPointGain) {
       return undefined;
     }
@@ -275,7 +382,78 @@ export default function App() {
     if (pendingCreatedLobby && lobbyStore.getLobbyById(pendingCreatedLobby.id)) {
       setPendingCreatedLobby(null);
     }
-  }, [lobbyStore, pendingCreatedLobby]);
+  }, [lobbyStore.lobbies, pendingCreatedLobby?.id]);
+
+  useEffect(() => {
+    if (!selectedLobbyId || selectedLobby || pendingCreatedLobby?.id === selectedLobbyId) {
+      return;
+    }
+
+    setIsHostManagementOpen(false);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setGamesInitialSection('Find Games');
+    setConfirmationModal({
+      body: 'This lobby is no longer available. It may have been closed, cancelled, or removed.',
+      title: 'Lobby updated',
+    });
+  }, [pendingCreatedLobby?.id, selectedLobby, selectedLobbyId]);
+
+  useEffect(() => {
+    if (!selectedLobbyId) {
+      selectedLobbyPresenceRef.current = {
+        hadPresence: false,
+        lobbyId: null,
+      };
+      return;
+    }
+
+    if (selectedLobbyPresenceRef.current.lobbyId !== selectedLobbyId) {
+      selectedLobbyPresenceRef.current = {
+        hadPresence: false,
+        lobbyId: selectedLobbyId,
+      };
+    }
+
+    const hasPresence = selectedLobbyRelationship !== 'none' && selectedLobbyRelationship !== 'rejected';
+
+    if (hasPresence) {
+      selectedLobbyPresenceRef.current = {
+        hadPresence: true,
+        lobbyId: selectedLobbyId,
+      };
+      return;
+    }
+
+    if (!selectedLobby || !selectedLobbyPresenceRef.current.hadPresence) {
+      return;
+    }
+
+    selectedLobbyPresenceRef.current = {
+      hadPresence: false,
+      lobbyId: selectedLobbyId,
+    };
+    setIsHostManagementOpen(false);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setGamesInitialSection('Find Games');
+    setConfirmationModal({
+      body: 'You are no longer in this lobby. The room view was closed so your screen stays up to date.',
+      title: 'Lobby access changed',
+    });
+  }, [selectedLobby, selectedLobbyId, selectedLobbyRelationship]);
+
+  useEffect(() => {
+    if (!isHostManagementOpen || !selectedLobby || selectedCurrentUserIsHost) {
+      return;
+    }
+
+    setIsHostManagementOpen(false);
+    setConfirmationModal({
+      body: 'Host tools were closed because host permission changed.',
+      title: 'Host changed',
+    });
+  }, [isHostManagementOpen, selectedCurrentUserIsHost, selectedLobby]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
@@ -1158,6 +1336,9 @@ export default function App() {
   }
 
   function handleNotificationPress(notification: Notification) {
+    setLiveNotification((currentNotification) => (
+      currentNotification?.id === notification.id ? null : currentNotification
+    ));
     void lobbyStore.markNotificationRead(notification.id).catch(showActionError);
     setIsNotificationsOpen(false);
 
@@ -1779,6 +1960,12 @@ export default function App() {
               onClose={closeNotifications}
               onNotificationPress={handleNotificationPress}
               visible={isNotificationsOpen}
+            />
+            <LiveNotificationBanner
+              notification={liveNotification}
+              onClose={() => setLiveNotification(null)}
+              onPress={(notification) => handleNotificationPress(notification)}
+              visible={Boolean(liveNotification) && !isNotificationsOpen}
             />
             <PlayerProfilePreview
               context={previewProfilePlayer ? `${previewProfilePlayer.area} regular` : undefined}

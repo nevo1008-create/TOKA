@@ -114,8 +114,9 @@ export function RatePlayerWizard({
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
-      <Pressable accessibilityRole="button" onPress={onClose} style={styles.backdrop}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.card}>
+      <View style={styles.backdrop}>
+        <Pressable accessibilityLabel="Close rating wizard" accessibilityRole="button" onPress={onClose} style={styles.backdropHitbox} />
+        <View style={styles.card}>
           <LinearGradient
             colors={['rgba(255, 246, 215, 0.95)', 'rgba(255, 249, 236, 0.95)', 'rgba(221, 245, 241, 0.72)']}
             locations={[0, 0.55, 1]}
@@ -178,8 +179,8 @@ export function RatePlayerWizard({
               playerName={player.name}
             />
           ) : null}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -644,6 +645,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.xl2,
+  },
+  backdropHitbox: {
+    ...StyleSheet.absoluteFill,
   },
   cancelButton: {
     alignItems: 'center',
