@@ -5,7 +5,6 @@ import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle, getEffectiveLobbyStatus, isFutureStartsAt } from './lobbyDateTime';
 import { getMatchParticipantIds } from './lobbyLifecycle';
 import {
-  getCancellationStatus,
   getJoinedParticipants,
 } from './lobbyRules';
 import { mapDbLobbyToLobby } from './lobbyMappers';
@@ -61,6 +60,7 @@ async function callLobbyActionRpc(
     | 'join_lobby'
     | 'join_lobby_waitlist'
     | 'kick_lobby_participant'
+    | 'leave_lobby'
     | 'move_lobby_member_to_waitlist'
     | 'reject_lobby_waitlist_request'
     | 'request_lobby_waitlist_approval'
@@ -314,51 +314,9 @@ export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
 }
 
 export async function leaveLobby(lobby: Lobby, player: Player) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const timingCheck = assertLobbyAllowsLeave(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const participant = syncedLobby.participants.find((candidate) => candidate.playerId === player.id);
-
-  if (!participant) {
-    if (syncedLobby.adminId === player.id) {
-      await syncLobbyHostBestEffort(syncedLobby.id);
-
-      return {
-        messages: [],
-        success: true,
-      };
-    }
-
-    return {
-      messages: [],
-      success: false,
-    };
-  }
-
-  const remainingParticipants = syncedLobby.participants.filter((candidate) => candidate.playerId !== player.id);
-  const status = participant.role === 'waitlist' ? 'cancelled_on_time' : getCancellationStatus(syncedLobby);
-
-  await markMembershipLeft(syncedLobby.id, player.id, status);
-
-  if (syncedLobby.adminId === player.id) {
-    if (remainingParticipants.length === 0) {
-      await closeAndDeleteLobbyBestEffort(syncedLobby.id);
-    } else {
-      await syncLobbyHostBestEffort(syncedLobby.id);
-    }
-  } else if (remainingParticipants.length === 0) {
-    await closeAndDeleteLobbyBestEffort(syncedLobby.id);
-  }
-
-  return {
-    messages: [],
-    success: true,
-  };
+  return callLobbyActionRpc('leave_lobby', {
+    target_lobby_id: lobby.id,
+  });
 }
 
 function assertLobbyHost(lobby: Lobby, hostPlayerId: string) {
@@ -485,41 +443,6 @@ function hasMeaningfulLobbyEdit(lobby: Lobby, draft: LobbySettingsDraft, selecte
   );
 }
 
-async function markMembershipLeft(
-  lobbyId: string,
-  playerId: string,
-  status: ReturnType<typeof getCancellationStatus>,
-) {
-  const { error } = await supabase
-    .from('lobby_memberships')
-    .update({
-      left_at: new Date().toISOString(),
-      role: 'member',
-      status,
-    })
-    .eq('lobby_id', lobbyId)
-    .eq('player_id', playerId);
-
-  if (error) {
-    throw error;
-  }
-}
-
-async function closeAndDeleteLobbyBestEffort(lobbyId: string) {
-  const { error: closeError } = await supabase
-    .from('lobbies')
-    .update({ status: 'closed' })
-    .eq('id', lobbyId);
-
-  if (closeError) {
-    console.warn('Could not mark empty lobby closed before cleanup.', closeError);
-  }
-
-  await deleteLobbyCascade(lobbyId).catch((error) => {
-    console.warn('Could not delete empty lobby after last participant left.', error);
-  });
-}
-
 function assertLobbyOpenForHostRosterChanges(lobby: Lobby) {
   const status = getEffectiveLobbyStatus(lobby);
 
@@ -533,22 +456,6 @@ function assertLobbyOpenForHostRosterChanges(lobby: Lobby) {
   return {
     messages: [],
     success: true,
-  };
-}
-
-function assertLobbyAllowsLeave(lobby: Lobby) {
-  const status = getEffectiveLobbyStatus(lobby);
-
-  if (status === 'open' || status === 'full' || status === 'closing_soon' || status === 'cancelled') {
-    return {
-      messages: [],
-      success: true,
-    };
-  }
-
-  return {
-    messages: ['This game has already started, so lobby actions are closed.'],
-    success: false,
   };
 }
 
@@ -686,44 +593,6 @@ async function syncLobbyLifecycleForAction(lobby: Lobby) {
   }
 
   return applyLobbyLifecycle(mapDbLobbyToLobby(data as unknown as DbLobbyWithRelations));
-}
-
-async function deleteLobbyCascade(lobbyId: string) {
-  const { error: notificationError } = await supabase
-    .from('notifications')
-    .delete()
-    .eq('related_lobby_id', lobbyId);
-
-  if (notificationError) {
-    throw notificationError;
-  }
-
-  const { error: messagesError } = await supabase
-    .from('lobby_messages')
-    .delete()
-    .eq('lobby_id', lobbyId);
-
-  if (messagesError) {
-    throw messagesError;
-  }
-
-  const { error: membershipsError } = await supabase
-    .from('lobby_memberships')
-    .delete()
-    .eq('lobby_id', lobbyId);
-
-  if (membershipsError) {
-    throw membershipsError;
-  }
-
-  const { error: lobbyError } = await supabase
-    .from('lobbies')
-    .delete()
-    .eq('id', lobbyId);
-
-  if (lobbyError) {
-    throw lobbyError;
-  }
 }
 
 function hasCurrentMembership(lobby: DbLobbyWithRelations) {
