@@ -135,6 +135,7 @@ export function LobbyDetailsScreen({
   const [isPinEntryOpen, setIsPinEntryOpen] = useState(false);
   const [pinCode, setPinCode] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [blockedJoinReasons, setBlockedJoinReasons] = useState<string[] | null>(null);
   const profilePreviewPlayer = profilePreviewSelection?.player;
   const isCurrentUserAdmin = isLobbyHost(lobby, currentPlayer.id, currentParticipant);
   const lifecycleStatus = getEffectiveLobbyStatus(lobby);
@@ -160,6 +161,7 @@ export function LobbyDetailsScreen({
       setIsPinEntryOpen(true);
     },
     onRequestWaitlistApproval,
+    onShowJoinBlockedReasons: setBlockedJoinReasons,
   });
   const playerSectionAction = getPlayerSectionAction({
     allLobbies,
@@ -167,6 +169,7 @@ export function LobbyDetailsScreen({
     hasPrivateAccess,
     lobby,
     onJoinGame,
+    onShowJoinBlockedReasons: setBlockedJoinReasons,
   });
   const waitlistSectionAction = getWaitlistSectionAction({
     allLobbies,
@@ -279,6 +282,14 @@ export function LobbyDetailsScreen({
             isLobbyCancelled={lifecycleStatus === 'cancelled'}
             participant={currentParticipant}
             onLeave={onLeaveLobby}
+            waitlistAction={
+              currentParticipant.role === 'waitlist' && arePreStartActionsOpen && primaryAction.label === lobbyLabels.moveToPlayers
+                ? {
+                    disabled: isActionPending || primaryAction.disabled,
+                    onPress: primaryAction.onPress,
+                  }
+                : undefined
+            }
           />
         ) : null}
 
@@ -409,6 +420,11 @@ export function LobbyDetailsScreen({
         onViewProfile={onViewPlayerProfile}
         player={ratingWizardPlayer}
         visible={Boolean(ratingWizardPlayer)}
+      />
+      <JoinBlockedModal
+        onClose={() => setBlockedJoinReasons(null)}
+        reasons={blockedJoinReasons ?? []}
+        visible={Boolean(blockedJoinReasons)}
       />
     </View>
   );
@@ -636,6 +652,48 @@ function PendingApprovalPanel({
   );
 }
 
+function JoinBlockedModal({
+  onClose,
+  reasons,
+  visible,
+}: {
+  onClose: () => void;
+  reasons: string[];
+  visible: boolean;
+}) {
+  const formattedReasons = reasons.length > 0
+    ? reasons.map(formatJoinBlockedReason)
+    : ['This game is not available for joining right now.'];
+
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={styles.joinBlockedOverlay}>
+        <Pressable accessibilityLabel="Close join blocked message" accessibilityRole="button" onPress={onClose} style={styles.joinBlockedBackdrop} />
+        <View style={styles.joinBlockedCard}>
+          <View style={styles.joinBlockedIcon}>
+            <Ionicons color={colors.danger} name="alert-circle-outline" size={22} />
+          </View>
+          <AppText align="center" variant="titleSmall" weight="900">
+            Cannot join players
+          </AppText>
+          <View style={styles.joinBlockedReasonList}>
+            {formattedReasons.map((reason) => (
+              <AppText key={reason} align="center" tone="muted" variant="uiBody" weight="600">
+                {reason}
+              </AppText>
+            ))}
+          </View>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.joinBlockedButton}>
+            <AppText align="center" tone="inverse" variant="button" weight="900">
+              OK
+            </AppText>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function HostPrivatePinPanel({ pin }: { pin: string }) {
   return (
     <View style={styles.hostPinPanel}>
@@ -665,12 +723,17 @@ function RoomMembershipPanel({
   isLobbyCancelled,
   onLeave,
   participant,
+  waitlistAction,
 }: {
   disabled: boolean;
   isHost: boolean;
   isLobbyCancelled: boolean;
   onLeave: () => void;
   participant: LobbyParticipant;
+  waitlistAction?: {
+    disabled: boolean;
+    onPress?: () => void;
+  };
 }) {
   const statusLabel = isHost
     ? participant.role === 'waitlist'
@@ -699,17 +762,32 @@ function RoomMembershipPanel({
           </AppText>
         </View>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        disabled={disabled}
-        onPress={onLeave}
-        style={[styles.leaveRoomButton, disabled && styles.actionButtonDisabled]}
-      >
-        <Ionicons color={colors.danger} name="exit-outline" size={16} />
-        <AppText tone="danger" variant="button" weight="800">
-          {buttonLabel}
-        </AppText>
-      </Pressable>
+      <View style={styles.membershipActions}>
+        {waitlistAction ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={waitlistAction.disabled}
+            onPress={waitlistAction.onPress}
+            style={[styles.moveToPlayersButton, waitlistAction.disabled && styles.actionButtonDisabled]}
+          >
+            <Ionicons color={colors.textOnGreen} name="log-in-outline" size={16} />
+            <AppText tone="inverse" variant="button" weight="800">
+              {lobbyLabels.moveToPlayers}
+            </AppText>
+          </Pressable>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          disabled={disabled}
+          onPress={onLeave}
+          style={[styles.leaveRoomButton, disabled && styles.actionButtonDisabled]}
+        >
+          <Ionicons color={colors.danger} name="exit-outline" size={16} />
+          <AppText tone="danger" variant="button" weight="800">
+            {buttonLabel}
+          </AppText>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -1398,6 +1476,7 @@ function getLobbyPrimaryAction({
   onJoinWaitlist,
   onOpenPinEntry,
   onRequestWaitlistApproval,
+  onShowJoinBlockedReasons,
 }: {
   allLobbies: Lobby[];
   canCurrentPlayerRateLobby: boolean;
@@ -1410,6 +1489,7 @@ function getLobbyPrimaryAction({
   onJoinWaitlist: () => void;
   onOpenPinEntry: () => void;
   onRequestWaitlistApproval: () => void;
+  onShowJoinBlockedReasons: (reasons: string[]) => void;
 }): LobbyPrimaryAction {
   const lifecycleStatus = getEffectiveLobbyStatus(lobby);
 
@@ -1500,10 +1580,11 @@ function getLobbyPrimaryAction({
 
   if (relationship === 'pending_approval' && !hasPrivateAccess) {
     return {
-      disabled: true,
+      disabled: false,
       icon: 'time-outline',
       iconColor: colors.muted,
       label: lobbyLabels.accessRequested,
+      onPress: () => onShowJoinBlockedReasons(['Host approval is still pending.']),
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1534,10 +1615,11 @@ function getLobbyPrimaryAction({
 
   if (accessDecision.kind === 'locked') {
     return {
-      disabled: true,
+      disabled: false,
       icon: 'lock-closed-outline',
       iconColor: colors.muted,
       label: 'Locked',
+      onPress: () => onShowJoinBlockedReasons(accessDecision.reasons),
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1558,10 +1640,11 @@ function getLobbyPrimaryAction({
           tone: 'green',
         }
       : {
-          disabled: true,
-          icon: 'time-outline',
+          disabled: false,
+          icon: 'alert-circle-outline',
           iconColor: colors.muted,
-          label: lobbyLabels.onWaitlist,
+          label: lobbyLabels.moveToPlayers,
+          onPress: () => onShowJoinBlockedReasons(joinDecision.reasons),
           textTone: 'muted',
           tone: 'muted',
         };
@@ -1592,13 +1675,30 @@ function getLobbyPrimaryAction({
   }
 
   return {
-    disabled: true,
+    disabled: false,
     icon: 'close-circle-outline',
     iconColor: colors.muted,
     label: joinDecision.label,
+    onPress: () => onShowJoinBlockedReasons(joinDecision.reasons),
     textTone: 'muted',
     tone: 'muted',
   };
+}
+
+function formatJoinBlockedReason(reason: string) {
+  if (reason === 'level_exception') {
+    return 'Your rank is outside this game range.';
+  }
+
+  if (reason === 'gender_exception') {
+    return 'This game is limited by gender settings.';
+  }
+
+  if (reason === 'private_access') {
+    return 'This is a private game. Enter the PIN first.';
+  }
+
+  return reason;
 }
 
 function getPlayerSectionAction({
@@ -1607,12 +1707,14 @@ function getPlayerSectionAction({
   hasPrivateAccess,
   lobby,
   onJoinGame,
+  onShowJoinBlockedReasons,
 }: {
   allLobbies: Lobby[];
   currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
   onJoinGame: () => void;
+  onShowJoinBlockedReasons: (reasons: string[]) => void;
 }): LobbySectionAction | undefined {
   const relationship = getPlayerLobbyRelationship(currentPlayer.id, lobby);
   const activeCurrentParticipant = getActiveCurrentParticipant(lobby, currentPlayer.id);
@@ -1638,7 +1740,13 @@ function getPlayerSectionAction({
         label: joinDecision.label,
         onPress: onJoinGame,
       }
-    : undefined;
+    : relationship === 'waitlist'
+      ? {
+          icon: 'alert-circle-outline',
+          label: lobbyLabels.moveToPlayers,
+          onPress: () => onShowJoinBlockedReasons(joinDecision.reasons),
+        }
+      : undefined;
 }
 
 function getWaitlistSectionAction({
@@ -1893,6 +2001,54 @@ const styles = StyleSheet.create({
   },
   actionButtonDisabled: {
     opacity: 0.56,
+  },
+  joinBlockedBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  joinBlockedButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: colors.primary,
+    borderRadius: radius.round,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+  },
+  joinBlockedCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(221, 71, 54, 0.22)',
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: spacing.md,
+    maxWidth: 340,
+    padding: spacing.xl,
+    width: '86%',
+    ...shadows.soft,
+  },
+  joinBlockedIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 235, 232, 0.92)',
+    borderColor: 'rgba(221, 71, 54, 0.24)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  joinBlockedOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 34, 32, 0.42)',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    padding: spacing.xl,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  joinBlockedReasonList: {
+    gap: spacing.sm,
   },
   avatarWrap: {
     position: 'relative',
@@ -2351,6 +2507,17 @@ const styles = StyleSheet.create({
     minHeight: 34,
     paddingHorizontal: spacing.sm,
   },
+  moveToPlayersButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
+  },
   lobbyTitle: {
     maxWidth: 278,
   },
@@ -2379,6 +2546,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     minWidth: 0,
+  },
+  membershipActions: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+    gap: spacing.xs,
   },
   membershipIcon: {
     alignItems: 'center',

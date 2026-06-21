@@ -44,9 +44,21 @@ export async function listLobbies(): Promise<Lobby[]> {
     });
   }
 
-  const lobbies = activeRows.map((row) => applyLobbyLifecycle(mapDbLobbyToLobby(row)));
+  const lobbyEntries = activeRows.map((row) => ({
+    lobby: applyLobbyLifecycle(mapDbLobbyToLobby(row)),
+    row,
+  }));
 
-  void Promise.all(lobbies.map((lobby, index) => syncLobbyLifecycleBestEffort(activeRows[index], lobby))).catch((syncError) => {
+  const autoCancelledEntries = lobbyEntries.filter((entry) => entry.row.status !== 'cancelled' && entry.lobby.status === 'cancelled');
+
+  if (autoCancelledEntries.length > 0) {
+    await Promise.all(autoCancelledEntries.map((entry) => syncLobbyLifecycleBestEffort(entry.row, entry.lobby)));
+  }
+
+  const activeLobbyEntries = lobbyEntries.filter((entry) => entry.lobby.status !== 'cancelled');
+  const lobbies = activeLobbyEntries.map((entry) => entry.lobby);
+
+  void Promise.all(activeLobbyEntries.map((entry) => syncLobbyLifecycleBestEffort(entry.row, entry.lobby))).catch((syncError) => {
     console.warn('Could not sync lobby lifecycle state.', syncError);
   });
 

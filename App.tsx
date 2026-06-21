@@ -862,11 +862,12 @@ export default function App() {
     setIsSideMenuOpen(false);
     setIsLobbyChatOpen(false);
     setIsNotificationsOpen(true);
-    markAllNotificationsRead();
+    void lobbyStore.refreshNotifications().catch(showActionError);
   }
 
   function showLobbyActionMessages(messages: string[]) {
     if (messages.length === 0) {
+      Alert.alert('Game update', 'Nothing changed. Refresh the lobby and try again.');
       return;
     }
 
@@ -1187,6 +1188,13 @@ export default function App() {
         openLobbyDetails(lobby);
         return;
       }
+    }
+
+    if (notification.type === 'lobby_changed') {
+      setSelectedLobbyId(null);
+      setGamesInitialSection('Find Games');
+      setActiveTab('games');
+      return;
     }
 
     Alert.alert(notification.title, 'This notification context will be connected in a later pass.');

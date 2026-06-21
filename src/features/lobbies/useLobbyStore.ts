@@ -580,6 +580,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     markAllNotificationsRead,
     markLobbyChatRead,
     markNotificationRead,
+    refreshNotifications,
     refreshAndMarkAllNotificationsRead,
     notifications,
     moveLobbyParticipantToWaitlist,
