@@ -37,8 +37,6 @@ export function mapPlayerToDbProfile(player: Player, authUserId: string): Partia
     avatar_focus_x: player.avatarFocusX ?? 50,
     avatar_focus_y: player.avatarFocusY ?? 50,
     display_name: player.name,
-    friend_ids: player.friendIds,
-    games_played: player.gamesPlayed,
     gender: player.gender,
     has_ball: player.hasBall,
     has_court_marks: player.hasCourtMarks,
@@ -46,9 +44,7 @@ export function mapPlayerToDbProfile(player: Player, authUserId: string): Partia
     level: player.level,
     preferred_foot: player.preferredFoot,
     push_notifications_enabled: player.pushNotificationsEnabled ?? false,
-    rank_status: player.rankStatus,
     side: player.side,
-    toca_points: player.tocaPoints,
   };
 
   if (player.avatarPath) {
