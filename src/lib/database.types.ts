@@ -326,6 +326,27 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      create_lobby: {
+        Args: {
+          next_capacity_mode: CapacityMode;
+          next_gender_rule: GenderRule;
+          next_location_city: string;
+          next_location_description: string;
+          next_location_name: string;
+          next_max_players: number;
+          next_min_players: number;
+          next_note: string;
+          next_pin_code_hash: string | null;
+          next_rank_exact: PlayerLevel | null;
+          next_rank_max: PlayerLevel | null;
+          next_rank_min: PlayerLevel | null;
+          next_rank_rule_type: RankRuleType;
+          next_starts_at: string;
+          next_title: string;
+          next_visibility: LobbyVisibility;
+        };
+        Returns: DbLobby;
+      };
       host_update_lobby_settings: {
         Args: {
           next_capacity_mode: CapacityMode;

@@ -86,7 +86,7 @@ async function callLobbyActionRpc(
   };
 }
 
-export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player): Promise<Lobby> {
+export async function createLobby(draft: CreateLobbyDraft): Promise<Lobby> {
   const scheduleCheck = assertFutureSchedule(draft.startsAt);
 
   if (!scheduleCheck.success) {
@@ -94,83 +94,42 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
   }
 
   const selectedPlayerCounts = draft.playerCounts.length > 0 ? draft.playerCounts : [draft.maxPlayers];
-  const { data: location, error: locationError } = await supabase
-    .from('locations')
-    .insert({
-      area: 'Central Israel',
-      city: draft.locationCity,
-      description: draft.meetingPoint,
-      name: draft.locationName,
-    })
-    .select()
-    .single();
-
-  if (locationError) {
-    throw locationError;
-  }
-
-  const { data: lobby, error: lobbyError } = await supabase
-    .from('lobbies')
-    .insert({
-      ball_needed: currentPlayer.hasBall,
-      capacity_mode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
-      competitive_level: 'balanced',
-      court_marks_needed: currentPlayer.hasCourtMarks,
-      exception_requests_enabled: true,
-      gender_rule: draft.genderRule,
-      host_player_id: currentPlayer.id,
-      location_description: draft.meetingPoint,
-      location_id: location.id,
-      max_players: Math.max(...selectedPlayerCounts),
-      min_players: Math.min(...selectedPlayerCounts),
-      note: draft.visibility === 'password'
-        ? `Private game. ${draft.meetingPoint}`
-        : draft.meetingPoint,
-      pin_code_hash: draft.accessCode,
-      rank_exact: draft.rankExact,
-      rank_max: draft.rankMax,
-      rank_min: draft.rankMin,
-      rank_rule_type: draft.rankRuleType,
-      starts_at: draft.startsAt,
-      status: 'open',
-      title: draft.title,
-      visibility: draft.visibility,
-      waitlist_enabled: true,
-    })
-    .select('*, locations (*), lobby_memberships (*)')
-    .single();
-
-  if (lobbyError) {
-    throw lobbyError;
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from('lobby_memberships')
-    .insert({
-      brings_ball: currentPlayer.hasBall,
-      brings_court_marks: currentPlayer.hasCourtMarks,
-      joined_at: new Date().toISOString(),
-      lobby_id: lobby.id,
-      player_id: currentPlayer.id,
-      position: 1,
-      role: 'host',
-      status: 'joined',
-    })
-    .select()
-    .single();
-
-  if (membershipError) {
-    throw membershipError;
-  }
-
-  void createInitialLobbyMessageBestEffort(lobby.id, currentPlayer.id);
-
-  const createdLobby = mapDbLobbyToLobby({
-    ...(lobby as unknown as DbLobbyWithRelations),
-    lobby_memberships: [membership as DbLobbyMembership],
+  const { data: createdLobby, error: createError } = await supabase.rpc('create_lobby', {
+    next_capacity_mode: selectedPlayerCounts.length > 1 ? 'flexible' : 'fixed',
+    next_gender_rule: draft.genderRule,
+    next_location_city: draft.locationCity,
+    next_location_description: draft.meetingPoint,
+    next_location_name: draft.locationName,
+    next_max_players: Math.max(...selectedPlayerCounts),
+    next_min_players: Math.min(...selectedPlayerCounts),
+    next_note: draft.visibility === 'password'
+      ? `Private game. ${draft.meetingPoint}`
+      : draft.meetingPoint,
+    next_pin_code_hash: draft.accessCode ?? null,
+    next_rank_exact: draft.rankRuleType === 'exact' ? draft.rankExact ?? null : null,
+    next_rank_max: draft.rankRuleType === 'range' ? draft.rankMax ?? null : null,
+    next_rank_min: draft.rankRuleType === 'range' ? draft.rankMin ?? null : null,
+    next_rank_rule_type: draft.rankRuleType,
+    next_starts_at: draft.startsAt,
+    next_title: draft.title,
+    next_visibility: draft.visibility,
   });
 
-  return createdLobby;
+  if (createError) {
+    throw createError;
+  }
+
+  const { data: lobby, error: loadError } = await supabase
+    .from('lobbies')
+    .select('*, locations (*), lobby_memberships (*)')
+    .eq('id', createdLobby.id)
+    .single();
+
+  if (loadError) {
+    throw loadError;
+  }
+
+  return mapDbLobbyToLobby(lobby as unknown as DbLobbyWithRelations);
 }
 
 export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
@@ -439,19 +398,6 @@ async function syncLobbyHostBestEffort(lobbyId: string) {
 
   if (error) {
     throw error;
-  }
-}
-
-async function createInitialLobbyMessageBestEffort(lobbyId: string, playerId: string) {
-  const { error } = await supabase.from('lobby_messages').insert({
-    body: 'Game created. Use this chat to coordinate with players.',
-    channel: 'all',
-    lobby_id: lobbyId,
-    sender_player_id: playerId,
-  });
-
-  if (error) {
-    console.warn('Could not create initial lobby chat message.', error.message);
   }
 }
 

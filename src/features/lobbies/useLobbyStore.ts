@@ -442,7 +442,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   }
 
   async function createLobby(draft: CreateLobbyDraft) {
-    const nextLobby = await persistCreateLobby(draft, currentPlayer);
+    const nextLobby = await persistCreateLobby(draft);
 
     setLobbies((current) =>
       current.some((lobby) => lobby.id === nextLobby.id)
