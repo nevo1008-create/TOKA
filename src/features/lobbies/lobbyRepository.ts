@@ -54,7 +54,13 @@ export async function listLobbies(): Promise<Lobby[]> {
 }
 
 async function callLobbyActionRpc(
-  functionName: 'join_lobby' | 'join_lobby_waitlist' | 'request_lobby_waitlist_approval',
+  functionName:
+    | 'approve_lobby_waitlist_request'
+    | 'cancel_lobby_waitlist_request'
+    | 'join_lobby'
+    | 'join_lobby_waitlist'
+    | 'reject_lobby_waitlist_request'
+    | 'request_lobby_waitlist_approval',
   params: Record<string, string | null>,
 ): Promise<LobbyActionRpcResult> {
   const { data, error } = await supabase.rpc(functionName, params);
@@ -181,153 +187,23 @@ export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
 }
 
 export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('lobby_memberships')
-    .update({
-      approved_at: now,
-      approved_by_player_id: hostPlayerId,
-      brings_ball: player.hasBall,
-      brings_court_marks: player.hasCourtMarks,
-      joined_at: now,
-      request_message: null,
-      requested_at: null,
-      requested_reasons: [],
-      role: syncedLobby.adminId === player.id ? 'host' : 'member',
-      status: 'waitlisted',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', player.id)
-    .eq('status', 'pending_approval')
-    .select('id')
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return {
-      messages: ['This request is no longer pending.'],
-      success: false,
-    };
-  }
-
-  await createNotification({
-    body: `You were added to the waitlist for ${syncedLobby.title}.`,
-    lobbyId: syncedLobby.id,
-    playerId: hostPlayerId,
-    recipientPlayerId: player.id,
-    title: 'Request approved',
-    type: 'request_approved',
+  return callLobbyActionRpc('approve_lobby_waitlist_request', {
+    target_lobby_id: lobby.id,
+    target_player_id: player.id,
   });
-
-  return {
-    messages: [`${player.name} approved to waitlist.`],
-    success: true,
-  };
 }
 
 export async function rejectJoinRequest(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const { data, error } = await supabase
-    .from('lobby_memberships')
-    .update({
-      declined_at: new Date().toISOString(),
-      declined_by_player_id: hostPlayerId,
-      request_message: null,
-      requested_at: null,
-      requested_reasons: [],
-      status: 'declined',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', player.id)
-    .eq('status', 'pending_approval')
-    .select('id')
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return {
-      messages: ['This request is no longer pending.'],
-      success: false,
-    };
-  }
-
-  await createNotification({
-    body: `Your request for ${syncedLobby.title} was declined.`,
-    lobbyId: syncedLobby.id,
-    playerId: hostPlayerId,
-    recipientPlayerId: player.id,
-    title: 'Request rejected',
-    type: 'request_rejected',
+  return callLobbyActionRpc('reject_lobby_waitlist_request', {
+    target_lobby_id: lobby.id,
+    target_player_id: player.id,
   });
-
-  return {
-    messages: [],
-    success: true,
-  };
 }
 
 export async function cancelJoinRequest(lobby: Lobby, player: Player) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const pendingRequest = syncedLobby.joinRequests.find(
-    (request) => request.playerId === player.id && request.status === 'pending',
-  );
-
-  if (!pendingRequest) {
-    return {
-      messages: [],
-      success: false,
-    };
-  }
-
-  const { error } = await supabase
-    .from('lobby_memberships')
-    .update({
-      left_at: new Date().toISOString(),
-      request_message: null,
-      requested_at: null,
-      requested_reasons: [],
-      status: 'left',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', player.id)
-    .eq('status', 'pending_approval');
-
-  if (error) {
-    throw error;
-  }
-
-  return {
-    messages: [],
-    success: true,
-  };
+  return callLobbyActionRpc('cancel_lobby_waitlist_request', {
+    target_lobby_id: lobby.id,
+  });
 }
 
 export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraft, hostPlayerId: string) {
