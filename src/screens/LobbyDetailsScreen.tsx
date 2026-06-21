@@ -1739,7 +1739,7 @@ function getLobbyPlayerActions({
   player: Player;
 }): PlayerAction[] {
   const isSelf = player.id === currentPlayer.id;
-  const canTransferHost = participant && participant.role !== 'waitlist';
+  const canTransferHost = Boolean(participant);
   const hostActions: PlayerAction[] =
     canManageLobby && isCurrentUserAdmin && participant && !isSelf
       ? [

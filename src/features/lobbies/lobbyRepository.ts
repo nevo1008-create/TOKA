@@ -57,10 +57,14 @@ async function callLobbyActionRpc(
   functionName:
     | 'approve_lobby_waitlist_request'
     | 'cancel_lobby_waitlist_request'
+    | 'close_lobby_by_host'
     | 'join_lobby'
     | 'join_lobby_waitlist'
+    | 'kick_lobby_participant'
+    | 'move_lobby_member_to_waitlist'
     | 'reject_lobby_waitlist_request'
-    | 'request_lobby_waitlist_approval',
+    | 'request_lobby_waitlist_approval'
+    | 'transfer_lobby_host',
   params: Record<string, string | null>,
 ): Promise<LobbyActionRpcResult> {
   const { data, error } = await supabase.rpc(functionName, params);
@@ -283,284 +287,30 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
 }
 
 export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
-
-  if (!hostCheck.success) {
-    return hostCheck;
-  }
-
-  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const participant = syncedLobby.participants.find((candidate) => candidate.playerId === player.id);
-
-  if (!participant || participant.role === 'waitlist') {
-    return {
-      messages: ['Only joined players can be moved to the waitlist.'],
-      success: false,
-    };
-  }
-
-  if (player.id === hostPlayerId) {
-    return {
-      messages: ['Use the lobby action to move yourself to the waitlist.'],
-      success: false,
-    };
-  }
-
-  let { data, error } = await supabase.rpc('host_move_lobby_member_to_waitlist', {
-    target_lobby_id: syncedLobby.id,
+  return callLobbyActionRpc('move_lobby_member_to_waitlist', {
+    target_lobby_id: lobby.id,
     target_player_id: player.id,
   });
-
-  if (error) {
-    if (error.message.toLowerCase().includes('could not find the function')) {
-      const fallback = await moveLobbyParticipantToWaitlistDirectly(syncedLobby.id, player.id, hostPlayerId);
-
-      data = fallback.data;
-      error = fallback.error;
-    }
-  }
-
-  if (error) {
-    if (error.message.toLowerCase().includes('could not find the function')) {
-      throw new Error('Host membership actions are not installed in Supabase. Run the latest migration and try again.');
-    }
-
-    throw new Error(error.message);
-  }
-
-  if (!data || data.status !== 'waitlisted') {
-    return {
-      messages: ['Could not move this player. The host update did not persist.'],
-      success: false,
-    };
-  }
-
-  await createNotificationBestEffort({
-    body: `The host moved you to the waitlist for ${syncedLobby.title}.`,
-    lobbyId: syncedLobby.id,
-    playerId: hostPlayerId,
-    recipientPlayerId: player.id,
-    title: 'Moved to waitlist',
-    type: 'waitlist_update',
-  });
-
-  return {
-    messages: [`${player.name} moved to waitlist.`],
-    success: true,
-  };
-}
-
-async function moveLobbyParticipantToWaitlistDirectly(lobbyId: string, playerId: string, hostPlayerId: string) {
-  return supabase
-    .from('lobby_memberships')
-    .update({
-      approved_at: new Date().toISOString(),
-      approved_by_player_id: hostPlayerId,
-      left_at: null,
-      role: 'member',
-      status: 'waitlisted',
-    })
-    .eq('lobby_id', lobbyId)
-    .eq('player_id', playerId)
-    .in('status', ['joined', 'attended'])
-    .select('id,status,role')
-    .maybeSingle();
 }
 
 export async function kickLobbyParticipant(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
-
-  if (!hostCheck.success) {
-    return hostCheck;
-  }
-
-  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  if (player.id === hostPlayerId) {
-    return {
-      messages: ['Hosts cannot kick themselves. Use Leave game or Close lobby.'],
-      success: false,
-    };
-  }
-
-  const { error } = await supabase
-    .from('lobby_memberships')
-    .update({
-      left_at: new Date().toISOString(),
-      role: 'member',
-      status: 'removed',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', player.id)
-    .in('status', ['joined', 'waitlisted', 'attended']);
-
-  if (error) {
-    throw error;
-  }
-
-  await createNotificationBestEffort({
-    body: `The host removed you from ${syncedLobby.title}. You can join or request again later.`,
-    lobbyId: syncedLobby.id,
-    playerId: hostPlayerId,
-    recipientPlayerId: player.id,
-    title: 'Removed from lobby',
-    type: 'waitlist_update',
+  return callLobbyActionRpc('kick_lobby_participant', {
+    target_lobby_id: lobby.id,
+    target_player_id: player.id,
   });
-
-  return {
-    messages: [`${player.name} was removed from the lobby.`],
-    success: true,
-  };
 }
 
 export async function transferLobbyHost(lobby: Lobby, player: Player, hostPlayerId: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
-
-  if (!hostCheck.success) {
-    return hostCheck;
-  }
-
-  const timingCheck = assertLobbyOpenForHostRosterChanges(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  if (player.id === hostPlayerId) {
-    return {
-      messages: ['You are already the host.'],
-      success: false,
-    };
-  }
-
-  const targetParticipant = syncedLobby.participants.find(
-    (participant) =>
-      participant.playerId === player.id &&
-      participant.role !== 'waitlist' &&
-      (participant.status === 'approved' || participant.status === 'attended'),
-  );
-
-  if (!targetParticipant) {
-    return {
-      messages: ['Host can only be transferred to an active player.'],
-      success: false,
-    };
-  }
-
-  const now = new Date().toISOString();
-  const { error: nextHostError } = await supabase
-    .from('lobby_memberships')
-    .update({
-      approved_at: now,
-      approved_by_player_id: hostPlayerId,
-      left_at: null,
-      role: 'host',
-      status: 'joined',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', player.id)
-    .in('status', ['joined', 'attended']);
-
-  if (nextHostError) {
-    throw nextHostError;
-  }
-
-  const { error: lobbyError } = await supabase
-    .from('lobbies')
-    .update({ host_player_id: player.id })
-    .eq('id', syncedLobby.id);
-
-  if (lobbyError) {
-    throw lobbyError;
-  }
-
-  const { error: previousHostError } = await supabase
-    .from('lobby_memberships')
-    .update({ role: 'member' })
-    .eq('lobby_id', syncedLobby.id)
-    .eq('player_id', hostPlayerId);
-
-  if (previousHostError) {
-    throw previousHostError;
-  }
-
-  await createNotificationBestEffort({
-    body: `You are now the host for ${syncedLobby.title}.`,
-    lobbyId: syncedLobby.id,
-    playerId: hostPlayerId,
-    recipientPlayerId: player.id,
-    title: 'Host transferred',
-    type: 'lobby_changed',
+  return callLobbyActionRpc('transfer_lobby_host', {
+    target_lobby_id: lobby.id,
+    target_player_id: player.id,
   });
-
-  return {
-    messages: [`${player.name} is now the host.`],
-    success: true,
-  };
 }
 
 export async function closeLobby(lobby: Lobby, hostPlayerId: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const hostCheck = assertLobbyHost(syncedLobby, hostPlayerId);
-
-  if (!hostCheck.success) {
-    return hostCheck;
-  }
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  await notifyCurrentLobbyMembers(syncedLobby, hostPlayerId, {
-    body: `${syncedLobby.title} was closed by the host.`,
-    title: 'Lobby closed',
-    type: 'lobby_changed',
+  return callLobbyActionRpc('close_lobby_by_host', {
+    target_lobby_id: lobby.id,
   });
-
-  const { error: lobbyError } = await supabase
-    .from('lobbies')
-    .update({ status: 'closed' })
-    .eq('id', syncedLobby.id);
-
-  if (lobbyError) {
-    throw lobbyError;
-  }
-
-  const { error: membershipsError } = await supabase
-    .from('lobby_memberships')
-    .update({
-      left_at: new Date().toISOString(),
-      status: 'removed',
-    })
-    .eq('lobby_id', syncedLobby.id)
-    .in('status', ['joined', 'waitlisted', 'pending_approval', 'attended']);
-
-  if (membershipsError) {
-    throw membershipsError;
-  }
-
-  return {
-    messages: ['Lobby closed.'],
-    success: true,
-  };
 }
 
 export async function leaveLobby(lobby: Lobby, player: Player) {
@@ -639,22 +389,6 @@ function assertFutureSchedule(startsAt: string) {
   return {
     messages: [],
     success: true,
-  };
-}
-
-function assertLobbyBeforeStart(lobby: Lobby) {
-  const status = getEffectiveLobbyStatus(lobby);
-
-  if (status === 'open' || status === 'full' || status === 'closing_soon') {
-    return {
-      messages: [],
-      success: true,
-    };
-  }
-
-  return {
-    messages: ['This game has already started, so lobby actions are closed.'],
-    success: false,
   };
 }
 
@@ -954,10 +688,6 @@ async function syncLobbyLifecycleForAction(lobby: Lobby) {
   return applyLobbyLifecycle(mapDbLobbyToLobby(data as unknown as DbLobbyWithRelations));
 }
 
-function replaceLobbyInList(lobbies: Lobby[], lobby: Lobby) {
-  return lobbies.map((candidate) => (candidate.id === lobby.id ? lobby : candidate));
-}
-
 async function deleteLobbyCascade(lobbyId: string) {
   const { error: notificationError } = await supabase
     .from('notifications')
@@ -1002,42 +732,6 @@ function hasCurrentMembership(lobby: DbLobbyWithRelations) {
 
 function isCurrentMembership(membership: DbLobbyMembership) {
   return membership.status === 'joined' || membership.status === 'waitlisted' || membership.status === 'attended';
-}
-
-async function upsertMembership(
-  lobbyId: string,
-  player: Player,
-  status: 'joined' | 'waitlisted' | 'pending_approval',
-  options: {
-    approvedByPlayerId?: string;
-    requestedReasons?: string[];
-    requestMessage?: string;
-  } = {},
-) {
-  const now = new Date().toISOString();
-  const { error } = await supabase
-    .from('lobby_memberships')
-    .upsert({
-      approved_at: status === 'pending_approval' ? undefined : now,
-      approved_by_player_id: options.approvedByPlayerId,
-      brings_ball: player.hasBall,
-      brings_court_marks: player.hasCourtMarks,
-      declined_at: null,
-      declined_by_player_id: null,
-      joined_at: status === 'joined' || status === 'waitlisted' ? now : null,
-      left_at: null,
-      lobby_id: lobbyId,
-      player_id: player.id,
-      request_message: options.requestMessage ?? null,
-      requested_at: status === 'pending_approval' ? now : null,
-      requested_reasons: options.requestedReasons ?? [],
-      role: 'member',
-      status,
-    }, { onConflict: 'lobby_id,player_id' });
-
-  if (error) {
-    throw error;
-  }
 }
 
 async function createNotification({
