@@ -3,7 +3,6 @@ import type { DbLobbyMembership, DbLobbyWithRelations } from '../../lib/database
 import type { Lobby, Player } from '../../types';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle, getEffectiveLobbyStatus, isFutureStartsAt } from './lobbyDateTime';
-import { getMatchParticipantIds } from './lobbyLifecycle';
 import {
   getJoinedParticipants,
 } from './lobbyRules';
@@ -14,11 +13,13 @@ const lifecycleSyncKeysCompleted = new Set<string>();
 
 type LobbyActionRpcRow = {
   messages?: string[] | null;
+  sent_count?: number | null;
   success?: boolean | null;
 };
 
 type LobbyActionRpcResult = {
   messages: string[];
+  sentCount?: number;
   success: boolean;
 };
 
@@ -64,8 +65,9 @@ async function callLobbyActionRpc(
     | 'move_lobby_member_to_waitlist'
     | 'reject_lobby_waitlist_request'
     | 'request_lobby_waitlist_approval'
+    | 'send_lobby_invites'
     | 'transfer_lobby_host',
-  params: Record<string, string | null>,
+  params: Record<string, string | string[] | null>,
 ): Promise<LobbyActionRpcResult> {
   const { data, error } = await supabase.rpc(functionName, params);
 
@@ -79,6 +81,7 @@ async function callLobbyActionRpc(
 
   return {
     messages: row?.messages ?? [],
+    sentCount: typeof row?.sent_count === 'number' ? row.sent_count : undefined,
     success: Boolean(row?.success),
   };
 }
@@ -272,18 +275,17 @@ export async function updateLobbySettings(lobby: Lobby, draft: LobbySettingsDraf
     throw new Error(error.message);
   }
 
-  if (hasMeaningfulLobbyEdit(syncedLobby, draft, selectedPlayerCounts)) {
-    await notifyCurrentLobbyMembers(syncedLobby, hostPlayerId, {
-      body: `${syncedLobby.title} date, place, or player count was updated by the host.`,
-      title: 'Lobby updated',
-      type: 'lobby_changed',
-    });
-  }
-
   return {
     messages: ['Lobby settings updated.'],
     success: true,
   };
+}
+
+export async function sendLobbyInvites(lobby: Lobby, playerIds: string[]) {
+  return callLobbyActionRpc('send_lobby_invites', {
+    target_lobby_id: lobby.id,
+    target_player_ids: playerIds,
+  });
 }
 
 export async function moveLobbyParticipantToWaitlist(lobby: Lobby, player: Player, hostPlayerId: string) {
@@ -350,97 +352,8 @@ function assertFutureSchedule(startsAt: string) {
   };
 }
 
-async function notifyCurrentLobbyMembers(
-  lobby: Lobby,
-  actorPlayerId: string | null,
-  notification: {
-    body: string;
-    dedupe?: boolean;
-    title: string;
-    type: string;
-  },
-) {
-  const recipientIds = Array.from(
-    new Set(
-      lobby.participants
-        .map((participant) => participant.playerId)
-        .filter((playerId) => (actorPlayerId ? playerId !== actorPlayerId : true)),
-    ),
-  );
-
-  await Promise.all(
-    recipientIds.map((recipientPlayerId) =>
-      createNotificationBestEffort({
-        ...notification,
-        lobbyId: lobby.id,
-        playerId: actorPlayerId ?? lobby.adminId,
-        recipientPlayerId,
-      }),
-    ),
-  );
-}
-
-async function createNotificationBestEffort(options: {
-  body: string;
-  dedupe?: boolean;
-  lobbyId: string;
-  playerId: string;
-  recipientPlayerId: string;
-  title: string;
-  type: string;
-}) {
-  try {
-    if (options.dedupe && await hasMatchingNotification(options)) {
-      return;
-    }
-
-    await createNotification(options);
-  } catch (error) {
-    console.warn('Could not create lobby notification.', error);
-  }
-}
-
-async function hasMatchingNotification(options: {
-  lobbyId: string;
-  playerId: string;
-  recipientPlayerId: string;
-  title: string;
-  type: string;
-}) {
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('id')
-    .eq('recipient_player_id', options.recipientPlayerId)
-    .eq('related_lobby_id', options.lobbyId)
-    .eq('related_player_id', options.playerId)
-    .eq('type', options.type)
-    .eq('title', options.title)
-    .is('read_at', null)
-    .limit(1);
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).length > 0;
-}
-
 function generatePrivateAccessCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
-}
-
-function hasMeaningfulLobbyEdit(lobby: Lobby, draft: LobbySettingsDraft, selectedPlayerCounts: number[]) {
-  const nextMinPlayers = Math.min(...selectedPlayerCounts);
-  const nextMaxPlayers = Math.max(...selectedPlayerCounts);
-
-  return (
-    lobby.startsAt !== draft.startsAt ||
-    lobby.location.name !== draft.locationName ||
-    lobby.location.city !== draft.locationCity ||
-    (lobby.locationDescription ?? '') !== draft.meetingPoint ||
-    lobby.minPlayers !== nextMinPlayers ||
-    lobby.maxPlayers !== nextMaxPlayers
-  );
 }
 
 function assertLobbyOpenForHostRosterChanges(lobby: Lobby) {
@@ -487,48 +400,17 @@ async function syncLobbyLifecycleBestEffort(row: DbLobbyWithRelations, lobby: Lo
 
   lifecycleSyncKeysInFlight.add(syncKey);
 
-  const update: Partial<{
-    match_locked_at: string;
-    match_participant_ids: string[];
-    status: Lobby['status'];
-  }> = {};
+  try {
+    const { error } = await supabase.rpc('sync_lobby_lifecycle', { target_lobby_id: lobby.id });
 
-  if (hasLifecycleStatusChanged) {
-    update.status = lobby.status;
-  }
+    if (error) {
+      console.warn('Could not persist derived lobby lifecycle state.', error.message);
+      return;
+    }
 
-  if (shouldPersistMatchLock) {
-    update.match_locked_at = lobby.matchLockedAt;
-    update.match_participant_ids = getMatchParticipantIds(lobby);
-  }
-
-  let updateQuery = supabase
-    .from('lobbies')
-    .update(update)
-    .eq('id', lobby.id);
-
-  if (hasLifecycleStatusChanged && !shouldPersistMatchLock) {
-    updateQuery = updateQuery.neq('status', lobby.status);
-  }
-
-  const { error } = await updateQuery;
-
-  lifecycleSyncKeysInFlight.delete(syncKey);
-
-  if (error) {
-    console.warn('Could not persist derived lobby lifecycle state.', error.message);
-    return;
-  }
-
-  lifecycleSyncKeysCompleted.add(syncKey);
-
-  if (row.status !== 'cancelled' && lobby.status === 'cancelled') {
-    await notifyCurrentLobbyMembers(lobby, null, {
-      body: `${lobby.title} was cancelled because fewer than 4 players joined before the room closed.`,
-      dedupe: true,
-      title: 'Lobby cancelled',
-      type: 'lobby_changed',
-    });
+    lifecycleSyncKeysCompleted.add(syncKey);
+  } finally {
+    lifecycleSyncKeysInFlight.delete(syncKey);
   }
 }
 
@@ -601,41 +483,4 @@ function hasCurrentMembership(lobby: DbLobbyWithRelations) {
 
 function isCurrentMembership(membership: DbLobbyMembership) {
   return membership.status === 'joined' || membership.status === 'waitlisted' || membership.status === 'attended';
-}
-
-async function createNotification({
-  body,
-  lobbyId,
-  playerId,
-  recipientPlayerId,
-  title,
-  type,
-}: {
-  body: string;
-  lobbyId: string;
-  playerId: string;
-  recipientPlayerId: string;
-  title: string;
-  type: string;
-}) {
-  const { error } = await supabase.from('notifications').insert({
-    body,
-    related_lobby_id: lobbyId,
-    related_player_id: playerId,
-    recipient_player_id: recipientPlayerId,
-    title,
-    type,
-  });
-
-  if (error) {
-    if (isDuplicateNotificationError(error)) {
-      return;
-    }
-
-    throw error;
-  }
-}
-
-function isDuplicateNotificationError(error: { code?: string; message?: string }) {
-  return error.code === '23505' || Boolean(error.message?.toLowerCase().includes('duplicate key'));
 }

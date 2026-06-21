@@ -391,6 +391,17 @@ export type Database = {
         };
         Returns: void;
       };
+      send_lobby_invites: {
+        Args: {
+          target_lobby_id: string;
+          target_player_ids: string[];
+        };
+        Returns: Array<{
+          messages: string[];
+          sent_count: number;
+          success: boolean;
+        }>;
+      };
       sync_lobby_lifecycle: {
         Args: {
           target_lobby_id: string;

@@ -47,8 +47,8 @@ import {
 } from './src/features/friends/friendRepository';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
+import { sendLobbyInvites } from './src/features/lobbies/lobbyRepository';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
-import { createNotification } from './src/features/notifications/notificationRepository';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -605,22 +605,11 @@ export default function App() {
 
   async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
     try {
-      const inviteResults = await Promise.all(
-        playerIds.map((playerId) =>
-          createNotification({
-            body: `${profilePlayer.name} invited you to ${lobby.title}.`,
-            lobbyId: lobby.id,
-            playerId: profilePlayer.id,
-            recipientPlayerId: playerId,
-            title: 'New invite request',
-            type: 'room_invite',
-          }),
-        ),
-      );
-      const sentCount = inviteResults.filter(Boolean).length;
+      const result = await sendLobbyInvites(lobby, playerIds);
+      const sentCount = result.sentCount ?? 0;
 
-      if (sentCount === 0) {
-        throw new Error('No invite notification was sent. Refresh players and try again.');
+      if (!result.success || sentCount === 0) {
+        throw new Error(result.messages[0] ?? 'No invite notification was sent. Refresh players and try again.');
       }
 
       await lobbyStore.refreshLobbyData();
