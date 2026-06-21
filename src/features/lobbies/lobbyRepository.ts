@@ -6,15 +6,22 @@ import { applyLobbyLifecycle, getEffectiveLobbyStatus, isFutureStartsAt } from '
 import { getMatchParticipantIds } from './lobbyLifecycle';
 import {
   getCancellationStatus,
-  getJoinGameDecision,
   getJoinedParticipants,
-  getJoinWaitlistDecision,
-  getRuleExceptionReasons,
 } from './lobbyRules';
 import { mapDbLobbyToLobby } from './lobbyMappers';
 
 const lifecycleSyncKeysInFlight = new Set<string>();
 const lifecycleSyncKeysCompleted = new Set<string>();
+
+type LobbyActionRpcRow = {
+  messages?: string[] | null;
+  success?: boolean | null;
+};
+
+type LobbyActionRpcResult = {
+  messages: string[];
+  success: boolean;
+};
 
 export async function listLobbies(): Promise<Lobby[]> {
   const { data, error } = await supabase
@@ -44,6 +51,26 @@ export async function listLobbies(): Promise<Lobby[]> {
   });
 
   return lobbies;
+}
+
+async function callLobbyActionRpc(
+  functionName: 'join_lobby' | 'join_lobby_waitlist' | 'request_lobby_waitlist_approval',
+  params: Record<string, string | null>,
+): Promise<LobbyActionRpcResult> {
+  const { data, error } = await supabase.rpc(functionName, params);
+
+  if (error) {
+    throw error;
+  }
+
+  const row = Array.isArray(data)
+    ? (data[0] as LobbyActionRpcRow | undefined)
+    : (data as LobbyActionRpcRow | null | undefined);
+
+  return {
+    messages: row?.messages ?? [],
+    success: Boolean(row?.success),
+  };
 }
 
 export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player): Promise<Lobby> {
@@ -134,99 +161,23 @@ export async function createLobby(draft: CreateLobbyDraft, currentPlayer: Player
 }
 
 export async function joinGame(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-  const syncedLobbies = replaceLobbyInList(allLobbies, syncedLobby);
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const decision = getJoinGameDecision(player, syncedLobby, { accessCode, allLobbies: syncedLobbies });
-
-  if (!decision.canJoin) {
-    return {
-      messages: decision.reasons,
-      success: false,
-    };
-  }
-
-  await upsertMembership(syncedLobby.id, player, 'joined');
-
-  return {
-    messages: [],
-    success: true,
-  };
+  return callLobbyActionRpc('join_lobby', {
+    access_code: accessCode ?? null,
+    target_lobby_id: lobby.id,
+  });
 }
 
 export async function joinWaitlist(lobby: Lobby, player: Player, allLobbies: Lobby[], accessCode?: string) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-  const syncedLobbies = replaceLobbyInList(allLobbies, syncedLobby);
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  const decision = getJoinWaitlistDecision(player, syncedLobby, { accessCode, allLobbies: syncedLobbies });
-
-  if (!decision.canJoinWaitlist) {
-    return {
-      messages: decision.reasons,
-      success: false,
-    };
-  }
-
-  await upsertMembership(syncedLobby.id, player, 'waitlisted');
-
-  return {
-    messages: [],
-    success: true,
-  };
+  return callLobbyActionRpc('join_lobby_waitlist', {
+    access_code: accessCode ?? null,
+    target_lobby_id: lobby.id,
+  });
 }
 
 export async function requestWaitlistApproval(lobby: Lobby, player: Player) {
-  const syncedLobby = await syncLobbyLifecycleForAction(lobby);
-
-  const timingCheck = assertLobbyBeforeStart(syncedLobby);
-
-  if (!timingCheck.success) {
-    return timingCheck;
-  }
-
-  if (!syncedLobby.exceptionRequestsEnabled) {
-    return {
-      messages: ['This game does not accept exception requests.'],
-      success: false,
-    };
-  }
-
-  const reasons = getRuleExceptionReasons(player, syncedLobby);
-
-  if (syncedLobby.visibility === 'password') {
-    reasons.unshift('private_access');
-  }
-
-  await upsertMembership(syncedLobby.id, player, 'pending_approval', {
-    requestMessage: 'Requesting host approval to join the waitlist.',
-    requestedReasons: reasons.length > 0 ? reasons : ['approval_required'],
+  return callLobbyActionRpc('request_lobby_waitlist_approval', {
+    target_lobby_id: lobby.id,
   });
-
-  await createNotification({
-    body: `${player.name} requested approval for ${syncedLobby.title}.`,
-    lobbyId: syncedLobby.id,
-    playerId: player.id,
-    recipientPlayerId: syncedLobby.adminId,
-    title: 'New join request',
-    type: 'join_request_received',
-  });
-
-  return {
-    messages: [],
-    success: true,
-  };
 }
 
 export async function approveWaitlistRequest(lobby: Lobby, player: Player, hostPlayerId: string) {

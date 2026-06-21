@@ -12,7 +12,7 @@ import {
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
 } from '../notifications/notificationRepository';
-import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player, RatingTask, SkillRankVoteType } from '../../types';
+import type { ChatMessage, JoinRequestReason, Lobby, LobbyParticipant, Notification, Player, RatingTask, SkillRankVoteType } from '../../types';
 import {
   listSubmittedRatingTasks,
   submitPlayerRating as persistSubmitPlayerRating,
@@ -39,6 +39,7 @@ import {
   updateLobbySettings as persistUpdateLobbySettings,
 } from './lobbyRepository';
 import {
+  getRuleExceptionReasons,
   getVisibleChatChannels,
   isLobbyFull,
 } from './lobbyRules';
@@ -199,7 +200,16 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     const result = await persistRequestWaitlistApproval(lobby, currentPlayer);
 
     if (result.success) {
-      await refreshLobbyData();
+      setLobbies((current) =>
+        current.map((candidate) =>
+          candidate.id === lobby.id
+            ? getOptimisticLobbyAfterWaitlistRequest(candidate, currentPlayer)
+            : candidate,
+        ),
+      );
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after waitlist request.', error);
+      });
     }
 
     return result;
@@ -663,6 +673,35 @@ function transferHostLocal(lobby: Lobby, currentHostId: string, nextHostId: stri
       return participant;
     }),
   };
+}
+
+function getOptimisticLobbyAfterWaitlistRequest(lobby: Lobby, player: Player): Lobby {
+  const reasons = getOptimisticJoinRequestReasons(lobby, player);
+  const nextRequest = {
+    id: `local-pending-${lobby.id}-${player.id}`,
+    lobbyId: lobby.id,
+    message: 'Requesting host approval to join the waitlist.',
+    playerId: player.id,
+    reasons,
+    status: 'pending' as const,
+  };
+
+  return {
+    ...lobby,
+    joinRequests: lobby.joinRequests.some((request) => request.playerId === player.id)
+      ? lobby.joinRequests.map((request) => (request.playerId === player.id ? nextRequest : request))
+      : [...lobby.joinRequests, nextRequest],
+  };
+}
+
+function getOptimisticJoinRequestReasons(lobby: Lobby, player: Player): JoinRequestReason[] {
+  const reasons = getRuleExceptionReasons(player, lobby);
+
+  if (lobby.visibility === 'password') {
+    return ['private_access', ...reasons];
+  }
+
+  return reasons.length > 0 ? reasons : ['approval_required'];
 }
 
 function getOptimisticLobbyAfterLeave(lobby: Lobby, leavingPlayerId: string): Lobby | null {
