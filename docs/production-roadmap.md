@@ -68,12 +68,14 @@ Move or wrap these flows behind server-side RPC, edge functions, or trusted back
 - leaving a lobby
 - cancelling a lobby
 - waitlist promotion
-- substitute handling
+- substitute handling, if/when substitutes are added after MVP
 - invite creation
 - notification creation
 - rating submission
 - host approval or rejection
 - TOCA points updates
+
+MVP scope note: Phase 2 currently supports joined players, waitlisted players, pending approval, and host permissions. A substitute role exists only in product documentation for a future version; there is no active app or database substitute path to harden in this phase.
 
 Server-side rules should be idempotent. If the same client request is sent twice, it should not create duplicate rows or duplicate notifications.
 
