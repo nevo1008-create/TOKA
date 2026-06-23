@@ -41,7 +41,6 @@ type LobbyDetailsScreenProps = {
   onApproveWaitlistRequest: (playerId: string) => void;
   onBack: () => void;
   onCancelJoinRequest: () => void;
-  onEnterPrivatePin: (pin: string) => boolean;
   onInvite: () => void;
   onJoinGame: () => void;
   onJoinWaitlist: () => void;
@@ -55,6 +54,7 @@ type LobbyDetailsScreenProps = {
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   onSendFriendRequest: (playerId: string) => void;
+  onSubmitPrivatePin: (pin: string) => Promise<{ messages: string[]; success: boolean }>;
   onSubmitPlayerRating: (rating: { behaviorRating: number; rank: Player['level']; skillVoteType: SkillRankVoteType; targetPlayerId: string }) => boolean | Promise<boolean>;
   onTransferHost: (playerId: string) => Promise<void> | void;
   onViewPlayerProfile: (player: Player) => void;
@@ -84,6 +84,8 @@ type LobbySectionAction = {
   onPress: () => void;
 };
 
+const pendingApprovalReason = 'Host approval is still pending.';
+
 export function LobbyDetailsScreen({
   allLobbies,
   currentPlayer,
@@ -94,7 +96,6 @@ export function LobbyDetailsScreen({
   onApproveWaitlistRequest,
   onBack,
   onCancelJoinRequest,
-  onEnterPrivatePin,
   onInvite,
   onJoinGame,
   onJoinWaitlist,
@@ -108,6 +109,7 @@ export function LobbyDetailsScreen({
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
   onSendFriendRequest,
+  onSubmitPrivatePin,
   onSubmitPlayerRating,
   onTransferHost,
   onViewPlayerProfile,
@@ -198,12 +200,10 @@ export function LobbyDetailsScreen({
     });
     setActionSheetActions(
       getLobbyPlayerActions({
-        canInvite: arePreStartActionsOpen,
         canManageLobby: canManageLobbyPlayers,
         currentPlayer,
         isCurrentUserAdmin,
         isFriend,
-        onInvite,
         onKickPlayer,
         onRemoveFriend: (targetPlayer) => onRemoveFriend(targetPlayer.id),
         onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
@@ -216,15 +216,17 @@ export function LobbyDetailsScreen({
     );
   }
 
-  function submitPin() {
-    if (onEnterPrivatePin(pinCode)) {
+  async function submitPin() {
+    const result = await onSubmitPrivatePin(pinCode);
+
+    if (result.success) {
       setPinCode('');
       setPinError(null);
       setIsPinEntryOpen(false);
       return;
     }
 
-    setPinError('That PIN does not match this private game.');
+    setPinError(result.messages[0] ?? 'That PIN does not match this private game.');
   }
 
   return (
@@ -314,6 +316,7 @@ export function LobbyDetailsScreen({
 
         {isPinEntryOpen ? (
           <PrivatePinPanel
+            disabled={isActionPending}
             error={pinError}
             onChangePin={(value) => {
               setPinCode(value.replace(/\D/g, '').slice(0, 4));
@@ -544,14 +547,16 @@ function RoomHeroCard({
 }
 
 function PrivatePinPanel({
+  disabled,
   error,
   onChangePin,
   onSubmit,
   pin,
 }: {
+  disabled: boolean;
   error: string | null;
   onChangePin: (value: string) => void;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
   pin: string;
 }) {
   return (
@@ -582,12 +587,12 @@ function PrivatePinPanel({
         />
         <Pressable
           accessibilityRole="button"
-          disabled={pin.length !== 4}
+          disabled={disabled || pin.length !== 4}
           onPress={onSubmit}
-          style={[styles.pinSubmit, pin.length !== 4 && styles.pinSubmitDisabled]}
+          style={[styles.pinSubmit, (disabled || pin.length !== 4) && styles.pinSubmitDisabled]}
         >
           <AppText align="center" tone="inverse" variant="button" weight="800">
-            Unlock
+            {disabled ? 'Joining' : 'Unlock'}
           </AppText>
         </Pressable>
       </View>
@@ -664,6 +669,7 @@ function JoinBlockedModal({
   const formattedReasons = reasons.length > 0
     ? reasons.map(formatJoinBlockedReason)
     : ['This game is not available for joining right now.'];
+  const isPendingApprovalMessage = formattedReasons.length === 1 && formattedReasons[0] === pendingApprovalReason;
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
@@ -671,10 +677,10 @@ function JoinBlockedModal({
         <Pressable accessibilityLabel="Close join blocked message" accessibilityRole="button" onPress={onClose} style={styles.joinBlockedBackdrop} />
         <View style={styles.joinBlockedCard}>
           <View style={styles.joinBlockedIcon}>
-            <Ionicons color={colors.danger} name="alert-circle-outline" size={22} />
+            <Ionicons color={isPendingApprovalMessage ? colors.primaryDark : colors.danger} name={isPendingApprovalMessage ? 'time-outline' : 'alert-circle-outline'} size={22} />
           </View>
           <AppText align="center" variant="titleSmall" weight="900">
-            Cannot join players
+            {isPendingApprovalMessage ? lobbyLabels.accessRequested : 'Cannot join players'}
           </AppText>
           <View style={styles.joinBlockedReasonList}>
             {formattedReasons.map((reason) => (
@@ -1021,9 +1027,7 @@ function HostRequestRow({
     <View style={styles.hostRequestRow}>
       <View style={styles.hostRequestInfo}>
         <View style={styles.hostRequestAvatar}>
-          <AppText align="center" variant="titleSmall" weight="800">
-            {player.initials}
-          </AppText>
+          <Avatar player={player} size={38} />
           <View style={styles.hostRequestStatusBadge}>
             <Ionicons color={colors.ink} name="hourglass" size={9} />
           </View>
@@ -1601,7 +1605,7 @@ function getLobbyPrimaryAction({
       icon: 'time-outline',
       iconColor: colors.muted,
       label: lobbyLabels.accessRequested,
-      onPress: () => onShowJoinBlockedReasons(['Host approval is still pending.']),
+      onPress: () => onShowJoinBlockedReasons([pendingApprovalReason]),
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1833,12 +1837,10 @@ function formatRequestReasons(reasons: Lobby['joinRequests'][number]['reasons'])
 }
 
 function getLobbyPlayerActions({
-  canInvite = true,
   canManageLobby = true,
   currentPlayer,
   isCurrentUserAdmin,
   isFriend,
-  onInvite,
   onKickPlayer,
   onRemoveFriend,
   onSendFriendRequest,
@@ -1848,12 +1850,10 @@ function getLobbyPlayerActions({
   participant,
   player,
 }: {
-  canInvite?: boolean;
   canManageLobby?: boolean;
   currentPlayer: Player;
   isCurrentUserAdmin: boolean;
   isFriend: boolean;
-  onInvite: () => void;
   onKickPlayer: (playerId: string) => Promise<void> | void;
   onRemoveFriend?: (player: Player) => void;
   onSendFriendRequest?: (player: Player) => void;
@@ -1911,15 +1911,10 @@ function getLobbyPlayerActions({
       label: isFriend ? 'Show full profile' : 'View full profile',
       onPress: onViewProfile,
     },
-    ...(isFriend && canInvite
-      ? [{ icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInvite }]
-      : isFriend
-        ? []
-        : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
+    ...hostActions,
     ...(isFriend
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
-      : []),
-    ...hostActions,
+      : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
     { destructive: true, icon: 'ban-outline', label: 'Report & block' },
   ];
 }

@@ -321,8 +321,11 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B's approval request appeared in User A's host panel without manual refresh.
+	2. User B stayed on the pending approval state and could cancel the request.
+	3. Pressing the pending access action again did not create a duplicate pending request.
 
 ## TC-11: Host Rejects Approval Request
 
@@ -346,8 +349,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. After User A rejected the request, User B no longer saw pending approval.
+	2. User A's host panel no longer showed the rejected request.
+	3. User B received the rejection through notifications, with no extra modal required.
+	4. When User B requested access again after rejection, the request appeared in the host panel without creating another host notification.
 
 ## TC-12: Host Approves Approval Request
 
@@ -371,8 +378,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B saw the approved waitlist state without manual refresh.
+	2. User A saw User B in the correct waitlist section.
+	3. User B received at most one approval notification.
+	4. The pending request disappeared from the host panel.
 
 ## TC-13: Request Cancellation
 
@@ -396,8 +407,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B could cancel a pending request.
+	2. User A's host panel cleared the pending request without manual refresh.
+	3. User B no longer saw pending approval after cancellation.
+	4. No duplicate cancellation notification appeared.
 
 ## TC-14: Move Active Player To Waitlist
 
@@ -420,8 +435,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B moved from active players to waitlist in both sessions.
+	2. User B's available actions updated to the waitlist state.
+	3. User A did not see User B in both active and waitlist sections.
+	4. At most one notification/banner appeared.
 
 ## TC-15: Kick Participant
 
@@ -444,8 +463,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B was removed from participants.
+	2. User B no longer had joined-only actions or chat access.
+	3. User B was not stuck in a stale lobby view.
+	4. User A saw User B removed without manual refresh.
 
 ## TC-16: Transfer Host
 
@@ -470,8 +493,13 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B saw host controls become available.
+	2. User A saw host controls disappear or become disabled.
+	3. The lobby showed User B as host.
+	4. User A could not perform host-only actions after transfer.
+	5. No stale host panel remained open for User A.
 
 ## TC-17: New Host Performs Host Action
 
@@ -493,8 +521,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B's host action succeeded.
+	2. User A saw the resulting state without manual refresh.
+	3. No permission error appeared for User B.
+	4. User A could not perform the same host action after transfer.
 
 ## TC-18: Close Or Cancel Lobby
 
@@ -517,8 +549,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B saw the closed/cancelled state without manual refresh.
+	2. Join, waitlist, invite, and chat actions were disabled or hidden as appropriate.
+	3. Games list updated according to current product behavior.
+	4. No user remained in an actionable stale lobby state.
 
 ## TC-19: Lobby Chat Message Delivery
 
@@ -543,8 +579,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. Messages arrived in both sessions without manual refresh.
+	2. Message order was correct.
+	3. Sender names and timestamps were sensible.
+	4. Unread count appeared while chat was closed and cleared after opening.
 
 ## TC-20: Chat Access By Participant Role
 
@@ -567,8 +607,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. Active participants could access expected joined chat.
+	2. Waitlisted players only saw channels allowed for waitlist.
+	3. Non-members could not access restricted chat where applicable.
+	4. Chat access updated after role changes without manual refresh.
 
 ## TC-21: Invite Friend To Lobby
 
@@ -592,8 +636,12 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B received one invite notification.
+	2. The notification opened the intended lobby.
+	3. Invite context granted access where product rules allowed.
+	4. User B's join/request result updated User A without manual refresh.
 
 ## TC-22: Duplicate Invite Protection
 
@@ -614,8 +662,11 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. User B had at most one active unread invite notification for the same lobby invite.
+	2. Duplicate invite attempts were blocked or deduped.
+	3. No repeated live banner appeared for the duplicate.
 
 ## TC-23: Private Lobby Access Code
 
@@ -639,8 +690,9 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. Correct private PIN automatically moved User B into the waitlist without a second join tap.
 
 ## TC-24: Level Or Gender Rule Block
 
@@ -663,8 +715,9 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
+	1. Blocked rule state behaved correctly during manual QA.
 
 ## TC-25: Rating Flow Opens After Lifecycle
 

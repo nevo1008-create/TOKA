@@ -8,6 +8,7 @@ import {
 } from '../../data/mock';
 import { listLobbyMessages, sendLobbyMessage as persistLobbyMessage } from '../chat/chatRepository';
 import {
+  deleteNotificationsForCurrentUser,
   listNotifications,
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
@@ -77,6 +78,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [hasLoadedNotifications, setHasLoadedNotifications] = useState(false);
   const [ratingTasks, setRatingTasks] = useState<RatingTask[]>(mockRatingTasks);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   const readChatMessageIdsRef = useRef<Set<string>>(new Set());
@@ -86,6 +88,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     const nextNotifications = await listNotifications(currentPlayer.id);
 
     setNotifications(nextNotifications);
+    setHasLoadedNotifications(true);
     return nextNotifications;
   }, [currentPlayer.id]);
 
@@ -157,12 +160,14 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     } catch (error) {
       console.warn('Falling back to mock notification data after Supabase load failed.', error);
       setNotifications(mockNotifications);
+      setHasLoadedNotifications(true);
     }
   }, [isEnabled, refreshChatMessages, refreshLobbies, refreshNotifications]);
 
   useEffect(() => {
     readChatMessageIdsRef.current = new Set();
     hasSeededReadChatMessagesRef.current = false;
+    setHasLoadedNotifications(false);
   }, [currentPlayer.id]);
 
   useEffect(() => {
@@ -304,6 +309,26 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies, getVerifiedPrivateAccessCode(lobby));
 
     if (result.success) {
+      await refreshLobbyData();
+    }
+
+    return result;
+  }
+
+  async function joinPrivateWaitlistWithPin(lobby: Lobby, pin: string): Promise<LobbyStoreActionResult> {
+    const accessCode = pin.trim();
+
+    if (!lobby.accessCode || lobby.accessCode !== accessCode) {
+      return {
+        messages: ['That PIN does not match this private game.'],
+        success: false,
+      };
+    }
+
+    const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies, accessCode);
+
+    if (result.success) {
+      setVerifiedPrivateLobbyIds((current) => (current.includes(lobby.id) ? current : [...current, lobby.id]));
       await refreshLobbyData();
     }
 
@@ -613,6 +638,11 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     );
   }
 
+  async function deleteAllNotifications() {
+    await deleteNotificationsForCurrentUser();
+    setNotifications([]);
+  }
+
   async function submitPlayerRating(
     lobby: Lobby,
     targetPlayerId: string,
@@ -696,11 +726,14 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     getVisibleLobby,
     getVisibleLobbyMessages,
     hasPrivateAccess,
+    hasLoadedNotifications,
     joinGame,
+    joinPrivateWaitlistWithPin,
     joinWaitlist,
     kickLobbyParticipant,
     leaveLobby,
     lobbies,
+    deleteAllNotifications,
     markAllNotificationsRead,
     markLobbyChatRead,
     markNotificationRead,

@@ -56,3 +56,11 @@ export async function markNotificationsRead(notificationIds: string[]) {
     throw error;
   }
 }
+
+export async function deleteNotificationsForCurrentUser() {
+  const { error } = await supabase.rpc('delete_current_player_notifications');
+
+  if (error) {
+    throw error;
+  }
+}

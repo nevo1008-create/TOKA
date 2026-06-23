@@ -10,7 +10,9 @@ import { AppText } from './AppText';
 type NotificationPanelProps = {
   lobbies: Lobby[];
   notifications: Notification[];
+  onClearAll: () => void;
   onClose: () => void;
+  onMarkAllRead: () => void;
   onNotificationPress: (notification: Notification) => void;
   visible: boolean;
 };
@@ -18,12 +20,15 @@ type NotificationPanelProps = {
 export function NotificationPanel({
   lobbies,
   notifications,
+  onClearAll,
   onClose,
+  onMarkAllRead,
   onNotificationPress,
   visible,
 }: NotificationPanelProps) {
   const unreadCount = notifications.filter((notification) => !notification.read).length;
   const sortedNotifications = [...notifications].sort((a, b) => Number(a.read) - Number(b.read));
+  const hasNotifications = notifications.length > 0;
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
@@ -53,9 +58,21 @@ export function NotificationPanel({
                 </View>
               </View>
 
-              <Pressable accessibilityLabel="Close notifications" accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
-                <Ionicons color={colors.ink} name="close" size={17} />
-              </Pressable>
+              <View style={styles.headerActions}>
+                {unreadCount > 0 ? (
+                  <Pressable accessibilityLabel="Mark all notifications read" accessibilityRole="button" onPress={onMarkAllRead} style={styles.headerActionButton}>
+                    <Ionicons color={colors.primaryDark} name="checkmark-done-outline" size={17} />
+                  </Pressable>
+                ) : null}
+                {hasNotifications ? (
+                  <Pressable accessibilityLabel="Delete all notifications" accessibilityRole="button" onPress={onClearAll} style={styles.headerActionButton}>
+                    <Ionicons color={colors.danger} name="trash-outline" size={17} />
+                  </Pressable>
+                ) : null}
+                <Pressable accessibilityLabel="Close notifications" accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
+                  <Ionicons color={colors.ink} name="close" size={17} />
+                </Pressable>
+              </View>
             </View>
 
             {sortedNotifications.length > 0 ? (
@@ -249,6 +266,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  headerActionButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+    ...shadows.soft,
+  },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
   headerCopy: {
     flex: 1,

@@ -144,6 +144,7 @@ export default function App() {
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [confirmationModal, setConfirmationModal] = useState<{
+    badgeLabel?: string | null;
     body: string;
     title: string;
   } | null>(null);
@@ -153,6 +154,7 @@ export default function App() {
     toLevel: number;
   } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
+  const [isDeleteNotificationsConfirmOpen, setIsDeleteNotificationsConfirmOpen] = useState(false);
   const [liveNotification, setLiveNotification] = useState<Notification | null>(null);
   const socialRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleAppRealtimeChange = useCallback((change: AppRealtimeChange) => {
@@ -204,10 +206,16 @@ export default function App() {
   const lastHomeTocaPointsRef = useRef<number | null>(null);
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const hasSeededNotificationIdsRef = useRef(false);
-  const selectedLobbyPresenceRef = useRef<{ hadPresence: boolean; lobbyId: string | null }>({
+  const selectedLobbyPresenceRef = useRef<{
+    hadPresence: boolean;
+    lastRelationship: typeof selectedLobbyRelationship | null;
+    lobbyId: string | null;
+  }>({
     hadPresence: false,
+    lastRelationship: null,
     lobbyId: null,
   });
+  const selfCanceledRequestLobbyIdRef = useRef<string | null>(null);
   const pendingLobbyActionRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = lobbyStore.unreadNotifications;
@@ -259,6 +267,12 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    seenNotificationIdsRef.current = new Set();
+    hasSeededNotificationIdsRef.current = false;
+    setLiveNotification(null);
+  }, [profilePlayer.id]);
 
   useEffect(() => {
     if (authFlow !== 'app') {
@@ -319,7 +333,7 @@ export default function App() {
   }, [activeTab, authFlow, profilePlayer.id, profilePlayer.tocaPoints]);
 
   useEffect(() => {
-    if (authFlow !== 'app') {
+    if (authFlow !== 'app' || !lobbyStore.hasLoadedNotifications) {
       return;
     }
 
@@ -340,7 +354,7 @@ export default function App() {
     if (nextLiveNotification && !isNotificationsOpen) {
       setLiveNotification(nextLiveNotification);
     }
-  }, [authFlow, isNotificationsOpen, lobbyStore.notifications]);
+  }, [authFlow, isNotificationsOpen, lobbyStore.hasLoadedNotifications, lobbyStore.notifications]);
 
   useEffect(() => {
     if (!liveNotification) {
@@ -403,6 +417,7 @@ export default function App() {
     if (!selectedLobbyId) {
       selectedLobbyPresenceRef.current = {
         hadPresence: false,
+        lastRelationship: null,
         lobbyId: null,
       };
       return;
@@ -411,6 +426,7 @@ export default function App() {
     if (selectedLobbyPresenceRef.current.lobbyId !== selectedLobbyId) {
       selectedLobbyPresenceRef.current = {
         hadPresence: false,
+        lastRelationship: null,
         lobbyId: selectedLobbyId,
       };
     }
@@ -420,6 +436,7 @@ export default function App() {
     if (hasPresence) {
       selectedLobbyPresenceRef.current = {
         hadPresence: true,
+        lastRelationship: selectedLobbyRelationship,
         lobbyId: selectedLobbyId,
       };
       return;
@@ -429,18 +446,33 @@ export default function App() {
       return;
     }
 
+    const lastRelationship = selectedLobbyPresenceRef.current.lastRelationship;
+
     selectedLobbyPresenceRef.current = {
       hadPresence: false,
+      lastRelationship: null,
       lobbyId: selectedLobbyId,
     };
     setIsHostManagementOpen(false);
     setIsLobbyChatOpen(false);
     setSelectedLobbyId(null);
     setGamesInitialSection('Find Games');
-    setConfirmationModal({
-      body: 'You are no longer in this lobby. The room view was closed so your screen stays up to date.',
-      title: 'Lobby access changed',
-    });
+
+    if (selfCanceledRequestLobbyIdRef.current === selectedLobbyId) {
+      selfCanceledRequestLobbyIdRef.current = null;
+      setConfirmationModal({
+        badgeLabel: null,
+        body: '',
+        title: 'Requested access canceled',
+      });
+    } else if (lastRelationship === 'pending_approval') {
+      return;
+    } else {
+      setConfirmationModal({
+        body: `You have been kicked from ${selectedLobby.title}.`,
+        title: 'Lobby access changed',
+      });
+    }
   }, [selectedLobby, selectedLobbyId, selectedLobbyRelationship]);
 
   useEffect(() => {
@@ -1160,14 +1192,20 @@ export default function App() {
 
   async function handleCancelJoinRequest(lobby: Lobby) {
     try {
+      selfCanceledRequestLobbyIdRef.current = lobby.id;
       const result = await runLobbyAction(`cancel-request:${lobby.id}`, () => lobbyStore.cancelJoinRequest(lobby));
 
       if (!result) {
+        selfCanceledRequestLobbyIdRef.current = null;
         return;
       }
 
-      showLobbyActionMessages(result.messages);
+      if (!result.success) {
+        selfCanceledRequestLobbyIdRef.current = null;
+        showLobbyActionMessages(result.messages);
+      }
     } catch (error) {
+      selfCanceledRequestLobbyIdRef.current = null;
       showActionError(error);
     }
   }
@@ -1198,8 +1236,22 @@ export default function App() {
     Alert.alert('Game update failed', message);
   }
 
-  function handleEnterPrivatePin(lobby: Lobby, pin: string) {
-    return lobbyStore.enterPrivatePin(lobby, pin);
+  async function handleSubmitPrivatePin(lobby: Lobby, pin: string) {
+    try {
+      const result = await runLobbyAction(`private-pin:${lobby.id}`, () => lobbyStore.joinPrivateWaitlistWithPin(lobby, pin));
+
+      return result ?? {
+        messages: ['Another lobby action is already running.'],
+        success: false,
+      };
+    } catch (error) {
+      showActionError(error);
+
+      return {
+        messages: ['Could not join the waitlist. Please try again.'],
+        success: false,
+      };
+    }
   }
 
   function openLobbyChat(lobby: Lobby) {
@@ -1333,6 +1385,20 @@ export default function App() {
 
   function markAllNotificationsRead() {
     void lobbyStore.refreshAndMarkAllNotificationsRead().catch(showActionError);
+  }
+
+  function deleteAllNotifications() {
+    setIsDeleteNotificationsConfirmOpen(true);
+  }
+
+  async function confirmDeleteAllNotifications() {
+    setIsDeleteNotificationsConfirmOpen(false);
+
+    try {
+      await lobbyStore.deleteAllNotifications();
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
   function handleNotificationPress(notification: Notification) {
@@ -1804,7 +1870,6 @@ export default function App() {
                             setIsHostManagementOpen(false);
                             setSelectedLobbyId(null);
                           }}
-                          onEnterPrivatePin={(pin) => handleEnterPrivatePin(selectedLobby, pin)}
                           onCancelJoinRequest={() => handleCancelJoinRequest(selectedLobby)}
                           onInvite={() =>
                             openInviteComposer({
@@ -1825,6 +1890,7 @@ export default function App() {
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
                           onSendFriendRequest={handleSendFriendRequest}
+                          onSubmitPrivatePin={(pin) => handleSubmitPrivatePin(selectedLobby, pin)}
                           onSubmitPlayerRating={async ({ behaviorRating, rank, skillVoteType, targetPlayerId }) => {
                             const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank, skillVoteType });
 
@@ -1957,7 +2023,9 @@ export default function App() {
             <NotificationPanel
               lobbies={lobbyStore.lobbies}
               notifications={lobbyStore.notifications}
+              onClearAll={deleteAllNotifications}
               onClose={closeNotifications}
+              onMarkAllRead={markAllNotificationsRead}
               onNotificationPress={handleNotificationPress}
               visible={isNotificationsOpen}
             />
@@ -1994,6 +2062,7 @@ export default function App() {
               visible={Boolean(previewProfilePlayer)}
             />
             <SimpleConfirmationModal
+              badgeLabel={confirmationModal?.badgeLabel}
               body={confirmationModal?.body ?? ''}
               onClose={() => setConfirmationModal(null)}
               title={confirmationModal?.title ?? ''}
@@ -2006,6 +2075,14 @@ export default function App() {
               onConfirm={confirmRemoveFriend}
               title="Remove friend?"
               visible={Boolean(pendingFriendRemovalId)}
+            />
+            <ActionConfirmationModal
+              body="This will remove all notifications from your notification bell."
+              confirmLabel="Delete all"
+              onCancel={() => setIsDeleteNotificationsConfirmOpen(false)}
+              onConfirm={confirmDeleteAllNotifications}
+              title="Delete notifications?"
+              visible={isDeleteNotificationsConfirmOpen}
             />
             <LevelUpModal
               fromLevel={levelUpModal?.fromLevel ?? 1}
@@ -2086,11 +2163,13 @@ function getOnboardingFallbackPlayer(user: User): Player {
 }
 
 function SimpleConfirmationModal({
+  badgeLabel = '!',
   body,
   onClose,
   title,
   visible,
 }: {
+  badgeLabel?: string | null;
   body: string;
   onClose: () => void;
   title: string;
@@ -2101,17 +2180,21 @@ function SimpleConfirmationModal({
       <View style={styles.confirmationRoot}>
         <Pressable accessibilityLabel="Close confirmation" accessibilityRole="button" onPress={onClose} style={styles.confirmationBackdrop} />
         <View style={styles.confirmationCard}>
-          <View style={styles.confirmationIcon}>
-            <AppText align="center" tone="accent" variant="titleSmall" weight="900">
-              Sent
-            </AppText>
-          </View>
+          {badgeLabel ? (
+            <View style={styles.confirmationIcon}>
+              <AppText align="center" tone="accent" variant="titleSmall" weight="900">
+                {badgeLabel}
+              </AppText>
+            </View>
+          ) : null}
           <AppText align="center" variant="cardTitle" weight="900">
             {title}
           </AppText>
-          <AppText align="center" tone="muted" variant="bodySmall" weight="700">
-            {body}
-          </AppText>
+          {body ? (
+            <AppText align="center" tone="muted" variant="bodySmall" weight="700">
+              {body}
+            </AppText>
+          ) : null}
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.confirmationButton}>
             <AppText align="center" tone="inverse" variant="button" weight="900">
               Close
