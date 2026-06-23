@@ -126,6 +126,7 @@ Goal: clean and harden everything that can be confidently tested in preview befo
 
 Mission 1 - Multi-device realtime QA gate:
 
+- Working checklist: `docs/phase4-qa-checklist.md`
 - Use two real logged-in users on two browser sessions or devices
 - Test the main realtime flows end to end without manual refresh as the normal success path
 - Cover notifications, lobby list updates, lobby details, join/request/approve/reject/cancel/leave, waitlist movement, host transfer, chat, friends/community, and ratings/lifecycle
