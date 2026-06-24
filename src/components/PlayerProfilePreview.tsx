@@ -65,8 +65,9 @@ export function PlayerProfilePreview({
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" onPress={onClose} style={styles.backdrop}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.card}>
+      <View style={styles.backdrop}>
+        <Pressable accessibilityLabel="Close player preview" accessibilityRole="button" onPress={onClose} style={styles.backdropHitbox} />
+        <View style={styles.card}>
           <Pressable
             accessibilityRole="button"
             onPress={() => {
@@ -222,8 +223,8 @@ export function PlayerProfilePreview({
               </Pressable>
             ) : null}
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -307,6 +308,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.xl2,
+  },
+  backdropHitbox: {
+    ...StyleSheet.absoluteFill,
   },
   card: {
     alignItems: 'center',

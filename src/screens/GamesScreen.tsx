@@ -13,6 +13,7 @@ import { israelBeaches, israelLocations, israelPlaces } from '../data/israelPlac
 import { formatLobbyStart, getEffectiveLobbyStatus, isEveningLobbyStart, isLobbyReadyForRatings } from '../features/lobbies/lobbyDateTime';
 import { getLobbyMembershipBadgeLabel, getLobbyMembershipStatusLabel, isLobbyHost, lobbyLabels } from '../features/lobbies/lobbyLabels';
 import { getAutoCancelCountdownLabel, getMatchParticipantIds } from '../features/lobbies/lobbyLifecycle';
+import { getUniqueLobbies } from '../features/lobbies/lobbyListUtils';
 import { useLifecycleClock } from '../features/lobbies/useLifecycleClock';
 import { getJoinedParticipants, isJoinedParticipant } from '../features/lobbies/lobbyRules';
 import { getRemainingRatingTargetIds, shouldShowRatingLobby } from '../features/ratings/ratingRules';
@@ -935,30 +936,6 @@ function getLobbyStartTime(lobby: Lobby) {
   const startsAtTime = new Date(lobby.startsAt).getTime();
 
   return Number.isNaN(startsAtTime) ? Number.MAX_SAFE_INTEGER : startsAtTime;
-}
-
-function getUniqueLobbies(lobbies: Lobby[]) {
-  const lobbyKeys = new Set<string>();
-
-  return lobbies.filter((lobby) => {
-    const lobbyKey = getLobbyDedupeKey(lobby);
-
-    if (lobbyKeys.has(lobbyKey)) {
-      return false;
-    }
-
-    lobbyKeys.add(lobbyKey);
-    return true;
-  });
-}
-
-function getLobbyDedupeKey(lobby: Lobby) {
-  return [
-    normalizeSearchText(lobby.title),
-    normalizeSearchText(lobby.location.name),
-    normalizeSearchText(lobby.location.city),
-    lobby.adminId,
-  ].join('|');
 }
 
 function getLocationOptions(lobbies: Lobby[]) {

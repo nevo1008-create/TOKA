@@ -43,7 +43,7 @@ export function getPlayerPreviewTrustCues(player: Player, lobbies: Lobby[] = [])
 export function getPlayerCompletedLobbies(player: Player, lobbies: Lobby[]) {
   return lobbies.filter(
     (lobby) =>
-      lobby.status === 'completed' &&
+      hasLobbyReachedRatingStage(lobby) &&
       lobby.participants.some((participant) => participant.playerId === player.id && participant.status !== 'removed'),
   );
 }

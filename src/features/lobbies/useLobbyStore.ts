@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   chatMessages as mockChatMessages,
@@ -8,19 +8,24 @@ import {
 } from '../../data/mock';
 import { listLobbyMessages, sendLobbyMessage as persistLobbyMessage } from '../chat/chatRepository';
 import {
+  deleteNotificationsForCurrentUser,
   listNotifications,
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
 } from '../notifications/notificationRepository';
-import type { ChatMessage, Lobby, LobbyParticipant, Notification, Player, RatingTask, SkillRankVoteType } from '../../types';
+import type { DbLobbyMessage } from '../../lib/database.types';
+import type { ChatMessage, JoinRequestReason, Lobby, LobbyParticipant, Notification, Player, RatingTask, SkillRankVoteType } from '../../types';
 import {
   listSubmittedRatingTasks,
   submitPlayerRating as persistSubmitPlayerRating,
 } from '../ratings/ratingRepository';
 import { getRatingTargetIds, getRemainingRatingTargetIds } from '../ratings/ratingRules';
+import { subscribeToAppRealtime, type AppRealtimeChange, type RealtimeDomain } from '../realtime/realtimeSubscriptions';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle } from './lobbyDateTime';
+import { getUniqueLobbies } from './lobbyListUtils';
 import { shouldApplyLateLeavePenalty } from './lobbyLifecycle';
+import { mapDbMessageToChatMessage } from './lobbyMappers';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
@@ -38,6 +43,7 @@ import {
   updateLobbySettings as persistUpdateLobbySettings,
 } from './lobbyRepository';
 import {
+  getRuleExceptionReasons,
   getVisibleChatChannels,
   isLobbyFull,
 } from './lobbyRules';
@@ -49,32 +55,98 @@ export type LobbyStoreActionResult = {
 
 type LobbyStoreOptions = {
   enabled?: boolean;
+  onRealtimeChange?: (change: AppRealtimeChange) => void;
 };
+
+function applyChatUnreadCounts(lobbies: Lobby[], messages: ChatMessage[], readMessageIds: Set<string>, currentPlayerId: string) {
+  return lobbies.map((lobby) => ({
+    ...lobby,
+    chatChannels: lobby.chatChannels.map((channel) => ({
+      ...channel,
+      unreadCount: messages.filter((message) =>
+        message.lobbyId === lobby.id &&
+        message.channelId === channel.id &&
+        message.playerId !== currentPlayerId &&
+        !readMessageIds.has(message.id)
+      ).length,
+    })),
+  }));
+}
 
 export function useLobbyStore(currentPlayer: Player, players: Player[], options: LobbyStoreOptions = {}) {
   const isEnabled = options.enabled ?? true;
+  const onRealtimeChange = options.onRealtimeChange;
   const [lobbies, setLobbies] = useState<Lobby[]>([]);
   const [verifiedPrivateLobbyIds, setVerifiedPrivateLobbyIds] = useState<string[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [hasLoadedNotifications, setHasLoadedNotifications] = useState(false);
   const [ratingTasks, setRatingTasks] = useState<RatingTask[]>(mockRatingTasks);
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
+  const readChatMessageIdsRef = useRef<Set<string>>(new Set());
+  const hasSeededReadChatMessagesRef = useRef(false);
 
-  const refreshLobbyData = useCallback(async () => {
-    if (!isEnabled) {
+  const syncChatMessages = useCallback((nextMessages: ChatMessage[]) => {
+    chatMessagesRef.current = nextMessages;
+    setChatMessages(nextMessages);
+    setLobbies((current) => applyChatUnreadCounts(current, nextMessages, readChatMessageIdsRef.current, currentPlayer.id));
+  }, [currentPlayer.id]);
+
+  const applyRealtimeChatInsert = useCallback((change: AppRealtimeChange) => {
+    if (change.table !== 'lobby_messages' || change.payload.eventType !== 'INSERT') {
       return;
+    }
+
+    const row = change.payload.new as Partial<DbLobbyMessage>;
+
+    if (!isDbLobbyMessage(row) || row.deleted_at) {
+      return;
+    }
+
+    const nextMessage = mapDbMessageToChatMessage(row);
+
+    if (chatMessagesRef.current.some((message) => message.id === nextMessage.id)) {
+      return;
+    }
+
+    syncChatMessages([...chatMessagesRef.current, nextMessage].sort(sortChatMessages));
+  }, [syncChatMessages]);
+
+  const refreshNotifications = useCallback(async () => {
+    const nextNotifications = await listNotifications(currentPlayer.id);
+
+    setNotifications(nextNotifications);
+    setHasLoadedNotifications(true);
+    return nextNotifications;
+  }, [currentPlayer.id]);
+
+  const refreshChatMessages = useCallback(async () => {
+    const nextMessages = await listLobbyMessages();
+
+    if (!hasSeededReadChatMessagesRef.current) {
+      readChatMessageIdsRef.current = new Set(nextMessages.map((message) => message.id));
+      hasSeededReadChatMessagesRef.current = true;
+    }
+
+    syncChatMessages(nextMessages);
+
+    return nextMessages;
+  }, [syncChatMessages]);
+
+  const refreshLobbies = useCallback(async () => {
+    if (!isEnabled) {
+      return [];
     }
 
     try {
       const nextLobbies = await listLobbies();
 
-      setLobbies((current) => {
-        if (nextLobbies.length === 0 && current.length > 0) {
-          console.warn('Lobby refresh returned no rows; keeping the last loaded lobby list.');
-          return current;
-        }
-
-        return nextLobbies;
-      });
+      setLobbies(applyChatUnreadCounts(
+        getUniqueLobbies(nextLobbies),
+        chatMessagesRef.current,
+        readChatMessageIdsRef.current,
+        currentPlayer.id,
+      ));
 
       try {
         const nextRatingTasks = await listSubmittedRatingTasks(currentPlayer.id, nextLobbies);
@@ -83,26 +155,46 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       } catch (error) {
         console.warn('Could not load submitted player ratings.', error);
       }
+
+      return nextLobbies;
     } catch (error) {
       console.warn('Falling back to mock lobby data after lobby load failed.', error);
       setLobbies((current) => current.length > 0 ? current : mockLobbies.map((lobby) => applyLobbyLifecycle(lobby)));
       setRatingTasks((current) => current.length > 0 ? current : mockRatingTasks);
+
+      return [];
+    }
+  }, [currentPlayer.id, isEnabled]);
+
+  const refreshLobbyData = useCallback(async () => {
+    if (!isEnabled) {
+      return;
     }
 
+    await refreshLobbies();
+
     try {
-      setChatMessages(await listLobbyMessages());
+      await refreshChatMessages();
     } catch (error) {
       console.warn('Falling back to mock chat data after Supabase load failed.', error);
+      chatMessagesRef.current = mockChatMessages;
       setChatMessages(mockChatMessages);
     }
 
     try {
-      setNotifications(await listNotifications(currentPlayer.id));
+      await refreshNotifications();
     } catch (error) {
       console.warn('Falling back to mock notification data after Supabase load failed.', error);
       setNotifications(mockNotifications);
+      setHasLoadedNotifications(true);
     }
-  }, [currentPlayer.id, isEnabled]);
+  }, [isEnabled, refreshChatMessages, refreshLobbies, refreshNotifications]);
+
+  useEffect(() => {
+    readChatMessageIdsRef.current = new Set();
+    hasSeededReadChatMessagesRef.current = false;
+    setHasLoadedNotifications(false);
+  }, [currentPlayer.id]);
 
   useEffect(() => {
     if (!isEnabled) {
@@ -111,6 +203,69 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
     void refreshLobbyData();
   }, [isEnabled, refreshLobbyData]);
+
+  useEffect(() => {
+    if (!isEnabled) {
+      return undefined;
+    }
+
+    let refreshTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    let pendingRealtimeDomains = new Set<RealtimeDomain>();
+
+    const scheduleRefresh = (domain: RealtimeDomain) => {
+      pendingRealtimeDomains.add(domain);
+
+      if (refreshTimeoutId) {
+        clearTimeout(refreshTimeoutId);
+      }
+
+      refreshTimeoutId = setTimeout(() => {
+        const domainsToRefresh = pendingRealtimeDomains;
+
+        pendingRealtimeDomains = new Set<RealtimeDomain>();
+
+        const refreshTasks: Promise<unknown>[] = [];
+
+        if (domainsToRefresh.has('lobbies') || domainsToRefresh.has('players') || domainsToRefresh.has('ratings')) {
+          refreshTasks.push(refreshLobbies());
+        }
+
+        if (domainsToRefresh.has('chat')) {
+          refreshTasks.push(refreshChatMessages());
+        }
+
+        if (domainsToRefresh.has('notifications')) {
+          refreshTasks.push(refreshNotifications());
+        }
+
+        void Promise.all(refreshTasks).catch((error) => {
+          console.warn('Could not refresh after realtime change.', error);
+        });
+      }, 450);
+    };
+
+    const unsubscribe = subscribeToAppRealtime({
+      currentPlayerId: currentPlayer.id,
+      onChange: (change) => {
+        onRealtimeChange?.(change);
+        applyRealtimeChatInsert(change);
+        scheduleRefresh(change.domain);
+      },
+      onStatusChange: (status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`Realtime subscription status: ${status}`);
+        }
+      },
+    });
+
+    return () => {
+      if (refreshTimeoutId) {
+        clearTimeout(refreshTimeoutId);
+      }
+
+      unsubscribe();
+    };
+  }, [applyRealtimeChatInsert, currentPlayer.id, isEnabled, onRealtimeChange, refreshChatMessages, refreshLobbies, refreshNotifications]);
 
   const unreadNotifications = useMemo(
     () => notifications.filter((notification) => !notification.read),
@@ -187,11 +342,40 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     return result;
   }
 
+  async function joinPrivateWaitlistWithPin(lobby: Lobby, pin: string): Promise<LobbyStoreActionResult> {
+    const accessCode = pin.trim();
+
+    if (!lobby.accessCode || lobby.accessCode !== accessCode) {
+      return {
+        messages: ['That PIN does not match this private game.'],
+        success: false,
+      };
+    }
+
+    const result = await persistJoinWaitlist(lobby, currentPlayer, lobbies, accessCode);
+
+    if (result.success) {
+      setVerifiedPrivateLobbyIds((current) => (current.includes(lobby.id) ? current : [...current, lobby.id]));
+      await refreshLobbyData();
+    }
+
+    return result;
+  }
+
   async function requestWaitlistApproval(lobby: Lobby): Promise<LobbyStoreActionResult> {
     const result = await persistRequestWaitlistApproval(lobby, currentPlayer);
 
     if (result.success) {
-      await refreshLobbyData();
+      setLobbies((current) =>
+        current.map((candidate) =>
+          candidate.id === lobby.id
+            ? getOptimisticLobbyAfterWaitlistRequest(candidate, currentPlayer)
+            : candidate,
+        ),
+      );
+      void refreshLobbyData().catch((error) => {
+        console.warn('Could not refresh lobby data after waitlist request.', error);
+      });
     }
 
     return result;
@@ -379,7 +563,22 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     return result;
   }
 
-  function markLobbyChatRead(lobby: Lobby) {
+  function markLobbyChatChannelRead(lobby: Lobby, channelId: string) {
+    const canReadChannel = getVisibleChatChannels(lobby, currentPlayer.id).some((channel) => channel.id === channelId);
+
+    if (!canReadChannel) {
+      return;
+    }
+
+    const visibleMessageIds = chatMessages
+      .filter((message) => message.lobbyId === lobby.id && message.channelId === channelId)
+      .map((message) => message.id);
+
+    readChatMessageIdsRef.current = new Set([
+      ...Array.from(readChatMessageIdsRef.current),
+      ...visibleMessageIds,
+    ]);
+
     setLobbies((current) =>
       current.map((candidate) =>
         candidate.id === lobby.id
@@ -387,7 +586,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
               ...candidate,
               chatChannels: candidate.chatChannels.map((channel) => ({
                 ...channel,
-                unreadCount: 0,
+                unreadCount: channel.id === channelId ? 0 : channel.unreadCount,
               })),
             }
           : candidate,
@@ -403,7 +602,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     }
 
     await persistLobbyMessage(lobby.id, channelId, currentPlayer.id, trimmedBody);
-    setChatMessages(await listLobbyMessages());
+    await refreshChatMessages();
   }
 
   function getLobbyMessages(lobbyId: string) {
@@ -424,12 +623,12 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   }
 
   async function createLobby(draft: CreateLobbyDraft) {
-    const nextLobby = await persistCreateLobby(draft, currentPlayer);
+    const nextLobby = await persistCreateLobby(draft);
 
     setLobbies((current) =>
       current.some((lobby) => lobby.id === nextLobby.id)
         ? current.map((lobby) => (lobby.id === nextLobby.id ? nextLobby : lobby))
-        : [nextLobby, ...current],
+        : getUniqueLobbies([nextLobby, ...current]),
     );
     setVerifiedPrivateLobbyIds((current) => (draft.visibility === 'password' ? [...current, nextLobby.id] : current));
     void refreshLobbyData();
@@ -438,7 +637,11 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   }
 
   async function markAllNotificationsRead() {
-    await markNotificationsRead(notifications.map((notification) => notification.id));
+    const unreadNotificationIds = notifications
+      .filter((notification) => !notification.read)
+      .map((notification) => notification.id);
+
+    await markNotificationsRead(unreadNotificationIds);
     setNotifications((current) =>
       current.map((notification) => ({
         ...notification,
@@ -447,11 +650,29 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     );
   }
 
+  async function refreshAndMarkAllNotificationsRead() {
+    const nextNotifications = await refreshNotifications();
+    const unreadNotificationIds = nextNotifications
+      .filter((notification) => !notification.read)
+      .map((notification) => notification.id);
+
+    await markNotificationsRead(unreadNotificationIds);
+    setNotifications(nextNotifications.map((notification) => ({
+      ...notification,
+      read: true,
+    })));
+  }
+
   async function markNotificationRead(notificationId: string) {
     await persistNotificationRead(notificationId);
     setNotifications((current) =>
       current.map((item) => (item.id === notificationId ? { ...item, read: true } : item)),
     );
+  }
+
+  async function deleteAllNotifications() {
+    await deleteNotificationsForCurrentUser();
+    setNotifications([]);
   }
 
   async function submitPlayerRating(
@@ -537,14 +758,19 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     getVisibleLobby,
     getVisibleLobbyMessages,
     hasPrivateAccess,
+    hasLoadedNotifications,
     joinGame,
+    joinPrivateWaitlistWithPin,
     joinWaitlist,
     kickLobbyParticipant,
     leaveLobby,
     lobbies,
+    deleteAllNotifications,
     markAllNotificationsRead,
-    markLobbyChatRead,
+    markLobbyChatChannelRead,
     markNotificationRead,
+    refreshNotifications,
+    refreshAndMarkAllNotificationsRead,
     notifications,
     moveLobbyParticipantToWaitlist,
     rejectJoinRequest,
@@ -639,6 +865,35 @@ function transferHostLocal(lobby: Lobby, currentHostId: string, nextHostId: stri
   };
 }
 
+function getOptimisticLobbyAfterWaitlistRequest(lobby: Lobby, player: Player): Lobby {
+  const reasons = getOptimisticJoinRequestReasons(lobby, player);
+  const nextRequest = {
+    id: `local-pending-${lobby.id}-${player.id}`,
+    lobbyId: lobby.id,
+    message: 'Requesting host approval to join the waitlist.',
+    playerId: player.id,
+    reasons,
+    status: 'pending' as const,
+  };
+
+  return {
+    ...lobby,
+    joinRequests: lobby.joinRequests.some((request) => request.playerId === player.id)
+      ? lobby.joinRequests.map((request) => (request.playerId === player.id ? nextRequest : request))
+      : [...lobby.joinRequests, nextRequest],
+  };
+}
+
+function getOptimisticJoinRequestReasons(lobby: Lobby, player: Player): JoinRequestReason[] {
+  const reasons = getRuleExceptionReasons(player, lobby);
+
+  if (lobby.visibility === 'password') {
+    return ['private_access', ...reasons];
+  }
+
+  return reasons.length > 0 ? reasons : ['approval_required'];
+}
+
 function getOptimisticLobbyAfterLeave(lobby: Lobby, leavingPlayerId: string): Lobby | null {
   const remainingParticipants = lobby.participants.filter((participant) => participant.playerId !== leavingPlayerId);
 
@@ -671,4 +926,19 @@ function getNextHostParticipant(participants: LobbyParticipant[]) {
     participants.find((participant) => participant.role === 'joined') ??
     participants.find((participant) => participant.role === 'waitlist')
   );
+}
+
+function isDbLobbyMessage(row: Partial<DbLobbyMessage>): row is DbLobbyMessage {
+  return (
+    typeof row.id === 'string' &&
+    typeof row.lobby_id === 'string' &&
+    typeof row.sender_player_id === 'string' &&
+    (row.channel === 'all' || row.channel === 'admin_joined') &&
+    typeof row.body === 'string' &&
+    typeof row.created_at === 'string'
+  );
+}
+
+function sortChatMessages(left: ChatMessage, right: ChatMessage) {
+  return left.createdAt.localeCompare(right.createdAt);
 }

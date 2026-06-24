@@ -307,6 +307,17 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
       };
     }
 
+    const conflict = getJoinedCommitmentConflict(player.id, lobby, context.allLobbies ?? []);
+
+    if (conflict) {
+      return {
+        canJoin: false,
+        kind: 'commitment_conflict',
+        label: lobbyLabels.onWaitlist,
+        reasons: [`You already have a game near this time: ${conflict.title}. Choose another time or leave that game first.`],
+      };
+    }
+
     return {
       canJoin: true,
       kind: 'join_game',
@@ -341,7 +352,7 @@ export function getJoinGameDecision(player: Player, lobby: Lobby, context: Lobby
       canJoin: false,
       kind: 'commitment_conflict',
       label: lobbyLabels.joinWaitlist,
-      reasons: [`Player is already joined to ${conflict.title} within 90 minutes of this game.`],
+      reasons: [`You already have a game near this time: ${conflict.title}. Choose another time or leave that game first.`],
     };
   }
 
@@ -460,6 +471,12 @@ export function getCancellationStatus(lobby: Lobby, now = new Date()): Extract<L
 export function getJoinedCommitmentConflict(playerId: string, targetLobby: Lobby, allLobbies: Lobby[]) {
   return allLobbies.find((lobby) => {
     if (lobby.id === targetLobby.id) {
+      return false;
+    }
+
+    const status = getEffectiveLobbyStatus(lobby);
+
+    if (status === 'cancelled' || status === 'completed' || status === 'closed') {
       return false;
     }
 

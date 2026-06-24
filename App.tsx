@@ -15,6 +15,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from './src/components/AppText';
 import { BottomNav, type Tab } from './src/components/BottomNav';
+import { LiveNotificationBanner } from './src/components/LiveNotificationBanner';
 import { NotificationPanel } from './src/components/NotificationPanel';
 import { PlayerProfilePreview } from './src/components/PlayerProfilePreview';
 import {
@@ -47,8 +48,12 @@ import {
 } from './src/features/friends/friendRepository';
 import type { CreateLobbyDraft, LobbySettingsDraft } from './src/features/lobbies/lobbyCreateTypes';
 import { hasLobbyStarted } from './src/features/lobbies/lobbyDateTime';
+import { isLobbyHost } from './src/features/lobbies/lobbyLabels';
+import { sendLobbyInvites } from './src/features/lobbies/lobbyRepository';
+import { getPlayerLobbyRelationship } from './src/features/lobbies/lobbyRules';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
-import { createUniqueNotification } from './src/features/notifications/notificationRepository';
+import { canPlayerRateLobby } from './src/features/ratings/ratingRules';
+import type { AppRealtimeChange } from './src/features/realtime/realtimeSubscriptions';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -140,6 +145,7 @@ export default function App() {
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [confirmationModal, setConfirmationModal] = useState<{
+    badgeLabel?: string | null;
     body: string;
     title: string;
   } | null>(null);
@@ -149,7 +155,30 @@ export default function App() {
     toLevel: number;
   } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
-  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, { enabled: authFlow === 'app' });
+  const [isDeleteNotificationsConfirmOpen, setIsDeleteNotificationsConfirmOpen] = useState(false);
+  const [liveNotification, setLiveNotification] = useState<Notification | null>(null);
+  const socialRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleAppRealtimeChange = useCallback((change: AppRealtimeChange) => {
+    if (authFlow !== 'app' || (change.domain !== 'friends' && change.domain !== 'players' && change.domain !== 'ratings')) {
+      return;
+    }
+
+    if (socialRefreshTimeoutRef.current) {
+      clearTimeout(socialRefreshTimeoutRef.current);
+    }
+
+    socialRefreshTimeoutRef.current = setTimeout(() => {
+      socialRefreshTimeoutRef.current = null;
+
+      void refreshCurrentPlayer().catch((error) => {
+        console.warn('Could not refresh social data after realtime change.', error);
+      });
+    }, 450);
+  }, [authFlow, profilePlayer.id]);
+  const lobbyStore = useLobbyStore(profilePlayer, playersForInvite, {
+    enabled: authFlow === 'app',
+    onRealtimeChange: handleAppRealtimeChange,
+  });
   const [viewedProfilePlayer, setViewedProfilePlayer] = useState<Player | null>(null);
   const [previewProfilePlayer, setPreviewProfilePlayer] = useState<Player | null>(null);
   const [communityInitialFriendView, setCommunityInitialFriendView] = useState<'Friends' | 'Friend requests'>('Friends');
@@ -171,17 +200,45 @@ export default function App() {
   const [isLobbyChatOpen, setIsLobbyChatOpen] = useState(false);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
+  const [pendingCreatedLobby, setPendingCreatedLobby] = useState<Lobby | null>(null);
   const [isHostManagementOpen, setIsHostManagementOpen] = useState(false);
   const [pendingLobbyActionKey, setPendingLobbyActionKey] = useState<string | null>(null);
   const lastHomeTocaPlayerIdRef = useRef<string | null>(null);
   const lastHomeTocaPointsRef = useRef<number | null>(null);
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const hasSeededNotificationIdsRef = useRef(false);
+  const selectedLobbyPresenceRef = useRef<{
+    hadPresence: boolean;
+    lastRelationship: typeof selectedLobbyRelationship | null;
+    lobbyId: string | null;
+  }>({
+    hadPresence: false,
+    lastRelationship: null,
+    lobbyId: null,
+  });
+  const selfCanceledRequestLobbyIdRef = useRef<string | null>(null);
   const pendingLobbyActionRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const unreadNotifications = lobbyStore.unreadNotifications;
   const unreadNotificationCount = lobbyStore.unreadNotificationCount;
-  const selectedLobby = selectedLobbyId ? lobbyStore.getLobbyById(selectedLobbyId) : null;
+  const selectedLobby = selectedLobbyId
+    ? lobbyStore.getLobbyById(selectedLobbyId) ?? (pendingCreatedLobby?.id === selectedLobbyId ? pendingCreatedLobby : null)
+    : null;
   const visibleSelectedLobby = selectedLobby ? lobbyStore.getVisibleLobby(selectedLobby) : null;
   const selectedLobbyIndex = selectedLobby ? lobbyStore.getLobbyIndex(selectedLobby.id) : 0;
+  const selectedCurrentParticipant = selectedLobby?.participants.find((participant) =>
+    participant.playerId === profilePlayer.id &&
+    (participant.status === 'approved' || participant.status === 'attended')
+  );
+  const selectedLobbyRelationship = selectedLobby
+    ? getPlayerLobbyRelationship(profilePlayer.id, selectedLobby)
+    : 'none';
+  const selectedCurrentPlayerCanRateLobby = selectedLobby
+    ? canPlayerRateLobby(selectedLobby, profilePlayer.id)
+    : false;
+  const selectedCurrentUserIsHost = selectedLobby
+    ? isLobbyHost(selectedLobby, profilePlayer.id, selectedCurrentParticipant)
+    : false;
   const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
 
   useEffect(() => {
@@ -205,9 +262,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (socialRefreshTimeoutRef.current) {
+        clearTimeout(socialRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    seenNotificationIdsRef.current = new Set();
+    hasSeededNotificationIdsRef.current = false;
+    setLiveNotification(null);
+  }, [profilePlayer.id]);
+
+  useEffect(() => {
     if (authFlow !== 'app') {
+      if (socialRefreshTimeoutRef.current) {
+        clearTimeout(socialRefreshTimeoutRef.current);
+        socialRefreshTimeoutRef.current = null;
+      }
+
       lastHomeTocaPlayerIdRef.current = null;
       lastHomeTocaPointsRef.current = null;
+      seenNotificationIdsRef.current = new Set();
+      hasSeededNotificationIdsRef.current = false;
+      setLiveNotification(null);
       setHomeTocaPointGain(null);
       return;
     }
@@ -255,6 +334,44 @@ export default function App() {
   }, [activeTab, authFlow, profilePlayer.id, profilePlayer.tocaPoints]);
 
   useEffect(() => {
+    if (authFlow !== 'app' || !lobbyStore.hasLoadedNotifications) {
+      return;
+    }
+
+    const currentNotificationIds = new Set(lobbyStore.notifications.map((notification) => notification.id));
+
+    if (!hasSeededNotificationIdsRef.current) {
+      seenNotificationIdsRef.current = currentNotificationIds;
+      hasSeededNotificationIdsRef.current = true;
+      return;
+    }
+
+    const nextLiveNotification = lobbyStore.notifications.find(
+      (notification) => !notification.read && !seenNotificationIdsRef.current.has(notification.id),
+    );
+
+    seenNotificationIdsRef.current = currentNotificationIds;
+
+    if (nextLiveNotification && !isNotificationsOpen) {
+      setLiveNotification(nextLiveNotification);
+    }
+  }, [authFlow, isNotificationsOpen, lobbyStore.hasLoadedNotifications, lobbyStore.notifications]);
+
+  useEffect(() => {
+    if (!liveNotification) {
+      return undefined;
+    }
+
+    const clearTimer = setTimeout(() => {
+      setLiveNotification((currentNotification) => (
+        currentNotification?.id === liveNotification.id ? null : currentNotification
+      ));
+    }, 5200);
+
+    return () => clearTimeout(clearTimer);
+  }, [liveNotification?.id]);
+
+  useEffect(() => {
     if (!homeTocaPointGain) {
       return undefined;
     }
@@ -267,6 +384,103 @@ export default function App() {
 
     return () => clearTimeout(clearTimer);
   }, [homeTocaPointGain?.id]);
+
+  useEffect(() => {
+    if (pendingCreatedLobby && lobbyStore.getLobbyById(pendingCreatedLobby.id)) {
+      setPendingCreatedLobby(null);
+    }
+  }, [lobbyStore.lobbies, pendingCreatedLobby?.id]);
+
+  useEffect(() => {
+    if (!selectedLobbyId || selectedLobby || pendingCreatedLobby?.id === selectedLobbyId) {
+      return;
+    }
+
+    setIsHostManagementOpen(false);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setGamesInitialSection('Find Games');
+    setConfirmationModal({
+      body: 'This lobby is no longer available. It may have been closed, cancelled, or removed.',
+      title: 'Lobby updated',
+    });
+  }, [pendingCreatedLobby?.id, selectedLobby, selectedLobbyId]);
+
+  useEffect(() => {
+    if (!selectedLobbyId) {
+      selectedLobbyPresenceRef.current = {
+        hadPresence: false,
+        lastRelationship: null,
+        lobbyId: null,
+      };
+      return;
+    }
+
+    if (selectedLobbyPresenceRef.current.lobbyId !== selectedLobbyId) {
+      selectedLobbyPresenceRef.current = {
+        hadPresence: false,
+        lastRelationship: null,
+        lobbyId: selectedLobbyId,
+      };
+    }
+
+    const hasPresence =
+      selectedCurrentPlayerCanRateLobby ||
+      (selectedLobbyRelationship !== 'none' && selectedLobbyRelationship !== 'rejected');
+
+    if (hasPresence) {
+      selectedLobbyPresenceRef.current = {
+        hadPresence: true,
+        lastRelationship: selectedLobbyRelationship,
+        lobbyId: selectedLobbyId,
+      };
+      return;
+    }
+
+    if (!selectedLobby || !selectedLobbyPresenceRef.current.hadPresence) {
+      return;
+    }
+
+    const lastRelationship = selectedLobbyPresenceRef.current.lastRelationship;
+
+    selectedLobbyPresenceRef.current = {
+      hadPresence: false,
+      lastRelationship: null,
+      lobbyId: selectedLobbyId,
+    };
+    setIsHostManagementOpen(false);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setGamesInitialSection('Find Games');
+
+    if (selfCanceledRequestLobbyIdRef.current === selectedLobbyId) {
+      selfCanceledRequestLobbyIdRef.current = null;
+      setConfirmationModal({
+        badgeLabel: null,
+        body: '',
+        title: 'Requested access canceled',
+      });
+    } else if (lastRelationship === 'pending_approval') {
+      return;
+    } else {
+      setConfirmationModal({
+        body: `You have been kicked from ${selectedLobby.title}.`,
+        title: 'Lobby access changed',
+      });
+    }
+  }, [selectedCurrentPlayerCanRateLobby, selectedLobby, selectedLobbyId, selectedLobbyRelationship]);
+
+  useEffect(() => {
+    if (!isHostManagementOpen || !selectedLobby || selectedCurrentUserIsHost) {
+      return;
+    }
+
+    setIsHostManagementOpen(false);
+    setConfirmationModal({
+      body: 'Host tools were closed because host permission changed.',
+      title: 'Host changed',
+    });
+  }, [isHostManagementOpen, selectedCurrentUserIsHost, selectedLobby]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 0 });
@@ -596,20 +810,20 @@ export default function App() {
 
   async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
     try {
-      await Promise.all(
-        playerIds.map((playerId) =>
-          createUniqueNotification({
-            body: `${profilePlayer.name} invited you to ${lobby.title}.`,
-            lobbyId: lobby.id,
-            playerId: profilePlayer.id,
-            recipientPlayerId: playerId,
-            title: 'New invite request',
-            type: 'room_invite',
-          }),
-        ),
-      );
+      const result = await sendLobbyInvites(lobby, playerIds);
+      const sentCount = result.sentCount ?? 0;
+
+      if (!result.success || sentCount === 0) {
+        throw new Error(result.messages[0] ?? 'No invite notification was sent. Refresh players and try again.');
+      }
 
       await lobbyStore.refreshLobbyData();
+      Alert.alert(
+        sentCount === 1 ? 'Invite sent' : 'Invites sent',
+        sentCount === 1
+          ? `Your invite to ${lobby.title} was sent.`
+          : `${sentCount} invites to ${lobby.title} were sent.`,
+      );
     } catch (error) {
       showActionError(error);
       throw error;
@@ -853,13 +1067,12 @@ export default function App() {
     setIsSideMenuOpen(false);
     setIsLobbyChatOpen(false);
     setIsNotificationsOpen(true);
-    if (unreadNotificationCount > 0) {
-      markAllNotificationsRead();
-    }
+    void lobbyStore.refreshNotifications().catch(showActionError);
   }
 
   function showLobbyActionMessages(messages: string[]) {
     if (messages.length === 0) {
+      Alert.alert('Game update', 'Nothing changed. Refresh the lobby and try again.');
       return;
     }
 
@@ -974,14 +1187,20 @@ export default function App() {
 
   async function handleCancelJoinRequest(lobby: Lobby) {
     try {
+      selfCanceledRequestLobbyIdRef.current = lobby.id;
       const result = await runLobbyAction(`cancel-request:${lobby.id}`, () => lobbyStore.cancelJoinRequest(lobby));
 
       if (!result) {
+        selfCanceledRequestLobbyIdRef.current = null;
         return;
       }
 
-      showLobbyActionMessages(result.messages);
+      if (!result.success) {
+        selfCanceledRequestLobbyIdRef.current = null;
+        showLobbyActionMessages(result.messages);
+      }
     } catch (error) {
+      selfCanceledRequestLobbyIdRef.current = null;
       showActionError(error);
     }
   }
@@ -1012,17 +1231,34 @@ export default function App() {
     Alert.alert('Game update failed', message);
   }
 
-  function handleEnterPrivatePin(lobby: Lobby, pin: string) {
-    return lobbyStore.enterPrivatePin(lobby, pin);
+  async function handleSubmitPrivatePin(lobby: Lobby, pin: string) {
+    try {
+      const result = await runLobbyAction(`private-pin:${lobby.id}`, () => lobbyStore.joinPrivateWaitlistWithPin(lobby, pin));
+
+      return result ?? {
+        messages: ['Another lobby action is already running.'],
+        success: false,
+      };
+    } catch (error) {
+      showActionError(error);
+
+      return {
+        messages: ['Could not join the waitlist. Please try again.'],
+        success: false,
+      };
+    }
   }
 
   function openLobbyChat(lobby: Lobby) {
     setIsLobbyChatOpen(true);
-    lobbyStore.markLobbyChatRead(lobby);
   }
 
   function closeLobbyChat() {
     setIsLobbyChatOpen(false);
+  }
+
+  function markLobbyChatChannelRead(lobby: Lobby, channelId: string) {
+    lobbyStore.markLobbyChatChannelRead(lobby, channelId);
   }
 
   function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
@@ -1039,6 +1275,7 @@ export default function App() {
     try {
       const nextLobby = await lobbyStore.createLobby(draft);
 
+      setPendingCreatedLobby(nextLobby);
       setSelectedLobbyId(nextLobby.id);
       setIsLobbyChatOpen(false);
       setGamesInitialSection('My Games');
@@ -1145,10 +1382,27 @@ export default function App() {
   }
 
   function markAllNotificationsRead() {
-    void lobbyStore.markAllNotificationsRead().catch(showActionError);
+    void lobbyStore.refreshAndMarkAllNotificationsRead().catch(showActionError);
+  }
+
+  function deleteAllNotifications() {
+    setIsDeleteNotificationsConfirmOpen(true);
+  }
+
+  async function confirmDeleteAllNotifications() {
+    setIsDeleteNotificationsConfirmOpen(false);
+
+    try {
+      await lobbyStore.deleteAllNotifications();
+    } catch (error) {
+      showActionError(error);
+    }
   }
 
   function handleNotificationPress(notification: Notification) {
+    setLiveNotification((currentNotification) => (
+      currentNotification?.id === notification.id ? null : currentNotification
+    ));
     void lobbyStore.markNotificationRead(notification.id).catch(showActionError);
     setIsNotificationsOpen(false);
 
@@ -1179,6 +1433,13 @@ export default function App() {
         openLobbyDetails(lobby);
         return;
       }
+    }
+
+    if (notification.type === 'lobby_changed') {
+      setSelectedLobbyId(null);
+      setGamesInitialSection('Find Games');
+      setActiveTab('games');
+      return;
     }
 
     Alert.alert(notification.title, 'This notification context will be connected in a later pass.');
@@ -1607,7 +1868,6 @@ export default function App() {
                             setIsHostManagementOpen(false);
                             setSelectedLobbyId(null);
                           }}
-                          onEnterPrivatePin={(pin) => handleEnterPrivatePin(selectedLobby, pin)}
                           onCancelJoinRequest={() => handleCancelJoinRequest(selectedLobby)}
                           onInvite={() =>
                             openInviteComposer({
@@ -1628,6 +1888,7 @@ export default function App() {
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
                           onSendFriendRequest={handleSendFriendRequest}
+                          onSubmitPrivatePin={(pin) => handleSubmitPrivatePin(selectedLobby, pin)}
                           onSubmitPlayerRating={async ({ behaviorRating, rank, skillVoteType, targetPlayerId }) => {
                             const result = await lobbyStore.submitPlayerRating(selectedLobby, targetPlayerId, { behaviorRating, rank, skillVoteType });
 
@@ -1726,6 +1987,7 @@ export default function App() {
                       lobby={visibleSelectedLobby}
                       messages={lobbyStore.getVisibleLobbyMessages(selectedLobby)}
                       onClose={closeLobbyChat}
+                      onReadChannel={(channelId) => markLobbyChatChannelRead(selectedLobby, channelId)}
                       onSendMessage={(channelId, body) => sendLobbyChatMessage(selectedLobby, channelId, body)}
                       players={playersForInvite}
                       visible={isLobbyChatOpen}
@@ -1760,9 +2022,17 @@ export default function App() {
             <NotificationPanel
               lobbies={lobbyStore.lobbies}
               notifications={lobbyStore.notifications}
+              onClearAll={deleteAllNotifications}
               onClose={closeNotifications}
+              onMarkAllRead={markAllNotificationsRead}
               onNotificationPress={handleNotificationPress}
               visible={isNotificationsOpen}
+            />
+            <LiveNotificationBanner
+              notification={liveNotification}
+              onClose={() => setLiveNotification(null)}
+              onPress={(notification) => handleNotificationPress(notification)}
+              visible={Boolean(liveNotification) && !isNotificationsOpen}
             />
             <PlayerProfilePreview
               context={previewProfilePlayer ? `${previewProfilePlayer.area} regular` : undefined}
@@ -1791,6 +2061,7 @@ export default function App() {
               visible={Boolean(previewProfilePlayer)}
             />
             <SimpleConfirmationModal
+              badgeLabel={confirmationModal?.badgeLabel}
               body={confirmationModal?.body ?? ''}
               onClose={() => setConfirmationModal(null)}
               title={confirmationModal?.title ?? ''}
@@ -1803,6 +2074,14 @@ export default function App() {
               onConfirm={confirmRemoveFriend}
               title="Remove friend?"
               visible={Boolean(pendingFriendRemovalId)}
+            />
+            <ActionConfirmationModal
+              body="This will remove all notifications from your notification bell."
+              confirmLabel="Delete all"
+              onCancel={() => setIsDeleteNotificationsConfirmOpen(false)}
+              onConfirm={confirmDeleteAllNotifications}
+              title="Delete notifications?"
+              visible={isDeleteNotificationsConfirmOpen}
             />
             <LevelUpModal
               fromLevel={levelUpModal?.fromLevel ?? 1}
@@ -1883,11 +2162,13 @@ function getOnboardingFallbackPlayer(user: User): Player {
 }
 
 function SimpleConfirmationModal({
+  badgeLabel = '!',
   body,
   onClose,
   title,
   visible,
 }: {
+  badgeLabel?: string | null;
   body: string;
   onClose: () => void;
   title: string;
@@ -1898,17 +2179,21 @@ function SimpleConfirmationModal({
       <View style={styles.confirmationRoot}>
         <Pressable accessibilityLabel="Close confirmation" accessibilityRole="button" onPress={onClose} style={styles.confirmationBackdrop} />
         <View style={styles.confirmationCard}>
-          <View style={styles.confirmationIcon}>
-            <AppText align="center" tone="accent" variant="titleSmall" weight="900">
-              Sent
-            </AppText>
-          </View>
+          {badgeLabel ? (
+            <View style={styles.confirmationIcon}>
+              <AppText align="center" tone="accent" variant="titleSmall" weight="900">
+                {badgeLabel}
+              </AppText>
+            </View>
+          ) : null}
           <AppText align="center" variant="cardTitle" weight="900">
             {title}
           </AppText>
-          <AppText align="center" tone="muted" variant="bodySmall" weight="700">
-            {body}
-          </AppText>
+          {body ? (
+            <AppText align="center" tone="muted" variant="bodySmall" weight="700">
+              {body}
+            </AppText>
+          ) : null}
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.confirmationButton}>
             <AppText align="center" tone="inverse" variant="button" weight="900">
               Close

@@ -7,7 +7,6 @@ import {
   ratingWindowMinutes,
 } from './lobbyLifecycle';
 
-export const israelTimeZone = 'Asia/Jerusalem';
 export const matchCompletionDelayMinutes = ratingOpenAfterStartMinutes;
 
 export type DateOption = {
@@ -29,10 +28,10 @@ export function formatLobbyStart(startsAt: string, now = new Date()) {
     return startsAt;
   }
 
-  const dateValue = getIsraelDateValue(date);
-  const todayValue = getIsraelDateValue(now);
-  const tomorrowValue = getIsraelDateValue(addDays(now, 1));
-  const timeValue = getIsraelTimeValue(date);
+  const dateValue = getLocalDateValue(date);
+  const todayValue = getLocalDateValue(now);
+  const tomorrowValue = getLocalDateValue(addDays(now, 1));
+  const timeValue = getLocalTimeValue(date);
 
   if (dateValue === todayValue) {
     return `Today, ${timeValue}`;
@@ -42,7 +41,7 @@ export function formatLobbyStart(startsAt: string, now = new Date()) {
     return `Tomorrow, ${timeValue}`;
   }
 
-  return `${formatIsraelMonthDay(date)}, ${timeValue}`;
+  return `${formatLocalMonthDay(date)}, ${timeValue}`;
 }
 
 export function getLobbyLocalDateValue(startsAt: string) {
@@ -52,7 +51,7 @@ export function getLobbyLocalDateValue(startsAt: string) {
     return startsAt.slice(0, 10);
   }
 
-  return getIsraelDateValue(date);
+  return getLocalDateValue(date);
 }
 
 export function getLobbyLocalTimeValue(startsAt: string) {
@@ -62,11 +61,13 @@ export function getLobbyLocalTimeValue(startsAt: string) {
     return startsAt.slice(11, 16);
   }
 
-  return getIsraelTimeValue(date);
+  return getLocalTimeValue(date);
 }
 
 export function buildLobbyStartsAt(matchDate: string, startTime: string) {
-  return `${matchDate}T${startTime}:00${getIsraelOffsetForDate(matchDate)}`;
+  const date = parseLocalDateTimeValue(matchDate, startTime);
+
+  return Number.isNaN(date.getTime()) ? `${matchDate}T${startTime}:00` : date.toISOString();
 }
 
 export function buildFutureDateOptions({
@@ -78,24 +79,24 @@ export function buildFutureDateOptions({
   includeDate?: string | null;
   now?: Date;
 } = {}): DateOption[] {
-  const today = getIsraelDateValue(now);
+  const today = getLocalDateValue(now);
   const options = Array.from({ length: days }, (_item, index) => {
-    const date = addDays(parseIsraelDateValue(today), index);
-    const value = getIsraelDateValue(date);
+    const date = addDays(parseLocalDateValue(today), index);
+    const value = getLocalDateValue(date);
 
     return {
       description: getRelativeDateDescription(value, now),
-      label: formatIsraelDateOptionLabel(date),
+      label: formatLocalDateOptionLabel(date),
       value,
     };
   });
 
   if (includeDate && !options.some((option) => option.value === includeDate) && includeDate >= today) {
-    const includedDate = parseIsraelDateValue(includeDate);
+    const includedDate = parseLocalDateValue(includeDate);
 
     options.push({
       description: getRelativeDateDescription(includeDate, now),
-      label: formatIsraelDateOptionLabel(includedDate),
+      label: formatLocalDateOptionLabel(includedDate),
       value: includeDate,
     });
   }
@@ -192,66 +193,39 @@ export function isEveningLobbyStart(startsAt: string) {
     return startsAt.includes('19:');
   }
 
-  return Number(getIsraelTimeValue(date).slice(0, 2)) >= 18;
+  return Number(getLocalTimeValue(date).slice(0, 2)) >= 18;
 }
 
 function padTime(value: number) {
   return value.toString().padStart(2, '0');
 }
 
-function getIsraelDateValue(date: Date) {
-  const parts = getIsraelDateParts(date);
-
-  return `${parts.year}-${padTime(parts.month)}-${padTime(parts.day)}`;
+function getLocalDateValue(date: Date) {
+  return `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}`;
 }
 
-function getIsraelTimeValue(date: Date) {
-  const parts = getIsraelDateParts(date);
-
-  return `${padTime(parts.hour)}:${padTime(parts.minute)}`;
+function getLocalTimeValue(date: Date) {
+  return `${padTime(date.getHours())}:${padTime(date.getMinutes())}`;
 }
 
-function getIsraelDateParts(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    day: '2-digit',
-    hour: '2-digit',
-    hour12: false,
-    minute: '2-digit',
-    month: '2-digit',
-    timeZone: israelTimeZone,
-    year: 'numeric',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-
-  return {
-    day: Number(values.day),
-    hour: Number(values.hour),
-    minute: Number(values.minute),
-    month: Number(values.month),
-    year: Number(values.year),
-  };
-}
-
-function formatIsraelMonthDay(date: Date) {
+function formatLocalMonthDay(date: Date) {
   return new Intl.DateTimeFormat('en', {
     day: 'numeric',
     month: 'short',
-    timeZone: israelTimeZone,
   }).format(date);
 }
 
-function formatIsraelDateOptionLabel(date: Date) {
+function formatLocalDateOptionLabel(date: Date) {
   return new Intl.DateTimeFormat('en', {
     day: 'numeric',
     month: 'short',
-    timeZone: israelTimeZone,
     weekday: 'short',
   }).format(date);
 }
 
 function getRelativeDateDescription(dateValue: string, now: Date) {
-  const todayValue = getIsraelDateValue(now);
-  const tomorrowValue = getIsraelDateValue(addDays(now, 1));
+  const todayValue = getLocalDateValue(now);
+  const tomorrowValue = getLocalDateValue(addDays(now, 1));
 
   if (dateValue === todayValue) {
     return 'Today';
@@ -264,8 +238,17 @@ function getRelativeDateDescription(dateValue: string, now: Date) {
   return undefined;
 }
 
-function parseIsraelDateValue(dateValue: string) {
-  return new Date(`${dateValue}T12:00:00${getIsraelOffsetForDate(dateValue)}`);
+function parseLocalDateValue(dateValue: string) {
+  const [year, month, day] = parseDateParts(dateValue);
+
+  return new Date(year, month - 1, day, 12);
+}
+
+function parseLocalDateTimeValue(dateValue: string, timeValue: string) {
+  const [year, month, day] = parseDateParts(dateValue);
+  const [hour, minute] = parseTimeParts(timeValue);
+
+  return new Date(year, month - 1, day, hour, minute);
 }
 
 function addDays(date: Date, days: number) {
@@ -300,23 +283,10 @@ function getTimeDescription(time: string) {
   return 'Evening';
 }
 
-function getIsraelOffsetForDate(dateValue: string) {
-  const probeDate = new Date(`${dateValue}T12:00:00+03:00`);
-  const timeZoneName = new Intl.DateTimeFormat('en', {
-    timeZone: israelTimeZone,
-    timeZoneName: 'shortOffset',
-  })
-    .formatToParts(probeDate)
-    .find((part) => part.type === 'timeZoneName')?.value;
-  const match = timeZoneName?.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+function parseDateParts(dateValue: string) {
+  return dateValue.split('-').map(Number) as [number, number, number];
+}
 
-  if (!match) {
-    return '+03:00';
-  }
-
-  const sign = match[1];
-  const hours = padTime(Number(match[2]));
-  const minutes = match[3] ?? '00';
-
-  return `${sign}${hours}:${minutes}`;
+function parseTimeParts(timeValue: string) {
+  return timeValue.split(':').map(Number) as [number, number];
 }
