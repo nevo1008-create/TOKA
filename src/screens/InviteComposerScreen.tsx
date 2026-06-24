@@ -34,6 +34,12 @@ type InviteComposerScreenProps = {
 };
 
 type InviteMode = 'both-known' | 'lobby-known' | 'neutral' | 'player-known';
+type LobbyInviteAvailability = {
+  disabled: boolean;
+  label: string;
+  reason: string;
+  status: 'Approval' | 'Closed' | 'Full';
+};
 
 export function InviteComposerScreen({
   currentPlayer,
@@ -69,6 +75,12 @@ export function InviteComposerScreen({
   const title = getScreenTitle(mode, targetPlayer);
   const subtitle = getScreenSubtitle(mode, targetPlayer, targetLobby);
   const ctaLabel = getCtaLabel(mode, selectedLobby, selectedPlayers, targetPlayer);
+  const ctaHelperText = getCtaHelperText({
+    isSendingInvites,
+    selectedLobby,
+    selectedPlayerCount: selectedPlayerIds.length,
+    targetPlayer,
+  });
 
   function togglePlayer(playerId: string) {
     if (!selectedLobby || targetPlayer?.id === playerId) {
@@ -83,7 +95,7 @@ export function InviteComposerScreen({
   }
 
   function selectLobby(lobby: Lobby) {
-    if (targetLobby || isLobbyDisabled(lobby)) {
+    if (targetLobby || getLobbyInviteAvailability(lobby).disabled) {
       return;
     }
 
@@ -198,7 +210,6 @@ export function InviteComposerScreen({
               <View style={styles.optionStack}>
                 {userLobbies.map((lobby, index) => (
                   <InviteGameOption
-                    disabled={isLobbyDisabled(lobby)}
                     key={lobby.id}
                     lobby={lobby}
                     onPress={() => selectLobby(lobby)}
@@ -270,11 +281,7 @@ export function InviteComposerScreen({
 
       <StickyInviteCTA
         disabled={!canSend}
-        helperText={
-          targetPlayer
-            ? `${targetPlayer.name} will get a room invite notification`
-            : 'Players will get a room invite notification'
-        }
+        helperText={ctaHelperText}
         label={isSendingInvites ? 'Sending...' : ctaLabel}
         onPress={sendInvites}
       />
@@ -339,13 +346,11 @@ function InviteGameContextCard({ locked = false, lobby }: { locked?: boolean; lo
 }
 
 function InviteGameOption({
-  disabled,
   lobby,
   onPress,
   selected,
   variant,
 }: {
-  disabled: boolean;
   lobby: Lobby;
   onPress: () => void;
   selected: boolean;
@@ -353,21 +358,22 @@ function InviteGameOption({
 }) {
   const activePlayers = lobby.participants.filter(isActiveParticipant).length;
   const spotsLeft = Math.max(lobby.maxPlayers - activePlayers, 0);
+  const availability = getLobbyInviteAvailability(lobby);
 
   return (
     <NearbyGameCard
-      actionLabel={selected ? 'Selected' : disabled ? 'Full' : 'Choose'}
+      actionLabel={selected ? 'Selected' : availability.label}
       actionTone={selected ? 'accent' : 'warning'}
       audience={getGenderLabel(lobby)}
-      disabled={disabled}
+      disabled={availability.disabled}
       distance={lobby.location.distanceKm ? `${lobby.location.distanceKm} km` : lobby.location.city}
       level={getRankLabel(lobby)}
       location={`${lobby.location.name}, ${lobby.location.city}`}
       onPress={onPress}
       players={`${activePlayers}/${lobby.maxPlayers}`}
       selected={selected}
-      spotsLeft={`${spotsLeft} spots left`}
-      status={disabled ? 'Full' : 'Approval'}
+      spotsLeft={availability.disabled ? availability.reason : `${spotsLeft} spots left`}
+      status={availability.status}
       time={formatLobbyStart(lobby.startsAt)}
       title={lobby.title}
       variant={variant === 1 ? 'sunset' : 'morning'}
@@ -609,9 +615,39 @@ function getSuccessMessage(lobby: Lobby, selectedPlayers: Player[]) {
   return `${selectedPlayers.length} invites sent to ${lobby.location.name}`;
 }
 
+function getCtaHelperText({
+  isSendingInvites,
+  selectedLobby,
+  selectedPlayerCount,
+  targetPlayer,
+}: {
+  isSendingInvites: boolean;
+  selectedLobby?: Lobby;
+  selectedPlayerCount: number;
+  targetPlayer?: Player;
+}) {
+  if (isSendingInvites) {
+    return 'Sending invite notifications...';
+  }
+
+  if (!selectedLobby) {
+    return 'Choose one of your upcoming games first.';
+  }
+
+  if (selectedPlayerCount === 0) {
+    return targetPlayer
+      ? `${targetPlayer.name} is already handled for this game.`
+      : 'Select at least one player to invite.';
+  }
+
+  return targetPlayer
+    ? `${targetPlayer.name} will get a room invite notification.`
+    : 'Selected players will get room invite notifications.';
+}
+
 function getUserInviteLobbies(lobbies: Lobby[], currentPlayerId: string) {
   return lobbies.filter((lobby) =>
-    !isLobbyDisabled(lobby) &&
+    !getLobbyInviteAvailability(lobby).disabled &&
       lobby.participants.some(
         (participant) =>
           participant.playerId === currentPlayerId &&
@@ -672,10 +708,51 @@ function getInvitePlayerAction(
   };
 }
 
-function isLobbyDisabled(lobby: Lobby) {
+function getLobbyInviteAvailability(lobby: Lobby): LobbyInviteAvailability {
   const status = getEffectiveLobbyStatus(lobby);
 
-  return status === 'cancelled' || status === 'completed' || status === 'in_progress' || status === 'rating_open';
+  if (status === 'cancelled') {
+    return {
+      disabled: true,
+      label: 'Cancelled',
+      reason: 'Game cancelled',
+      status: 'Closed',
+    };
+  }
+
+  if (status === 'completed') {
+    return {
+      disabled: true,
+      label: 'Finished',
+      reason: 'Game finished',
+      status: 'Closed',
+    };
+  }
+
+  if (status === 'in_progress') {
+    return {
+      disabled: true,
+      label: 'Started',
+      reason: 'Already started',
+      status: 'Closed',
+    };
+  }
+
+  if (status === 'rating_open') {
+    return {
+      disabled: true,
+      label: 'Ratings open',
+      reason: 'Ratings open',
+      status: 'Closed',
+    };
+  }
+
+  return {
+    disabled: false,
+    label: 'Choose',
+    reason: 'Available',
+    status: 'Approval',
+  };
 }
 
 function isActiveParticipant(participant: LobbyParticipant) {

@@ -344,7 +344,7 @@ export function LobbyDetailsScreen({
           onOpenProfile={openProfile}
           onRatePlayer={(player) => setRatingWizardPlayer(player)}
           onAction={playerSectionAction?.onPress}
-          emptyLabel="No players yet."
+          emptyLabel="Approved players will appear here."
           currentPlayerId={currentPlayer.id}
           lobby={lobby}
           participants={activeParticipants}
@@ -361,7 +361,7 @@ export function LobbyDetailsScreen({
           onAction={waitlistSectionAction?.onPress}
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
-          emptyLabel="Waitlist is empty."
+          emptyLabel="Players waiting for a spot will appear here."
           currentPlayerId={currentPlayer.id}
           lobby={lobby}
           participants={waitlistedParticipants}
@@ -1848,6 +1848,26 @@ function formatJoinBlockedReason(reason: string) {
 
   if (reason === 'private_access') {
     return 'This is a private game. Enter the PIN first.';
+  }
+
+  if (reason === 'This game has no open joined-player slots.') {
+    return 'The players list is full. Stay on the waitlist until a spot opens.';
+  }
+
+  if (reason === 'Player must join the waitlist before moving into players.') {
+    return 'Join the waitlist first. The host or an open spot can move you into players.';
+  }
+
+  if (reason === 'This game is not open for new commitments.') {
+    return 'This game has already started, closed, or moved to ratings.';
+  }
+
+  if (reason === 'This game is not open for waitlist joins.') {
+    return 'The waitlist is closed for this game.';
+  }
+
+  if (reason === 'This game does not have a waitlist.') {
+    return 'This game does not use a waitlist.';
   }
 
   return reason;
