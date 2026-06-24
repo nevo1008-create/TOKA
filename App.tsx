@@ -52,6 +52,7 @@ import { isLobbyHost } from './src/features/lobbies/lobbyLabels';
 import { sendLobbyInvites } from './src/features/lobbies/lobbyRepository';
 import { getPlayerLobbyRelationship } from './src/features/lobbies/lobbyRules';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
+import { canPlayerRateLobby } from './src/features/ratings/ratingRules';
 import type { AppRealtimeChange } from './src/features/realtime/realtimeSubscriptions';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
@@ -232,6 +233,9 @@ export default function App() {
   const selectedLobbyRelationship = selectedLobby
     ? getPlayerLobbyRelationship(profilePlayer.id, selectedLobby)
     : 'none';
+  const selectedCurrentPlayerCanRateLobby = selectedLobby
+    ? canPlayerRateLobby(selectedLobby, profilePlayer.id)
+    : false;
   const selectedCurrentUserIsHost = selectedLobby
     ? isLobbyHost(selectedLobby, profilePlayer.id, selectedCurrentParticipant)
     : false;
@@ -420,7 +424,9 @@ export default function App() {
       };
     }
 
-    const hasPresence = selectedLobbyRelationship !== 'none' && selectedLobbyRelationship !== 'rejected';
+    const hasPresence =
+      selectedCurrentPlayerCanRateLobby ||
+      (selectedLobbyRelationship !== 'none' && selectedLobbyRelationship !== 'rejected');
 
     if (hasPresence) {
       selectedLobbyPresenceRef.current = {
@@ -462,7 +468,7 @@ export default function App() {
         title: 'Lobby access changed',
       });
     }
-  }, [selectedLobby, selectedLobbyId, selectedLobbyRelationship]);
+  }, [selectedCurrentPlayerCanRateLobby, selectedLobby, selectedLobbyId, selectedLobbyRelationship]);
 
   useEffect(() => {
     if (!isHostManagementOpen || !selectedLobby || selectedCurrentUserIsHost) {
