@@ -84,6 +84,8 @@ type LobbySectionAction = {
   onPress: () => void;
 };
 
+type RoomMembershipWaitlistAction = Pick<LobbyPrimaryAction, 'disabled' | 'icon' | 'iconColor' | 'label' | 'onPress' | 'textTone' | 'tone'>;
+
 const pendingApprovalReason = 'Host approval is still pending.';
 
 export function LobbyDetailsScreen({
@@ -285,10 +287,17 @@ export function LobbyDetailsScreen({
             participant={currentParticipant}
             onLeave={onLeaveLobby}
             waitlistAction={
-              currentParticipant.role === 'waitlist' && arePreStartActionsOpen && primaryAction.label === lobbyLabels.moveToPlayers
+              currentParticipant.role === 'waitlist' &&
+              arePreStartActionsOpen &&
+              (primaryAction.label === lobbyLabels.moveToPlayers || primaryAction.label === 'Players full')
                 ? {
                     disabled: isActionPending || primaryAction.disabled,
+                    icon: primaryAction.icon,
+                    iconColor: primaryAction.iconColor,
+                    label: primaryAction.label,
                     onPress: primaryAction.onPress,
+                    textTone: primaryAction.textTone,
+                    tone: primaryAction.tone,
                   }
                 : undefined
             }
@@ -736,10 +745,7 @@ function RoomMembershipPanel({
   isLobbyCancelled: boolean;
   onLeave: () => void;
   participant: LobbyParticipant;
-  waitlistAction?: {
-    disabled: boolean;
-    onPress?: () => void;
-  };
+  waitlistAction?: RoomMembershipWaitlistAction;
 }) {
   const statusLabel = isHost
     ? participant.role === 'waitlist'
@@ -774,11 +780,15 @@ function RoomMembershipPanel({
             accessibilityRole="button"
             disabled={waitlistAction.disabled}
             onPress={waitlistAction.onPress}
-            style={[styles.moveToPlayersButton, waitlistAction.disabled && styles.actionButtonDisabled]}
+            style={[
+              styles.moveToPlayersButton,
+              waitlistAction.tone === 'muted' && styles.moveToPlayersButtonMuted,
+              waitlistAction.disabled && styles.actionButtonDisabled,
+            ]}
           >
-            <Ionicons color={colors.textOnGreen} name="log-in-outline" size={16} />
-            <AppText tone="inverse" variant="button" weight="800">
-              {lobbyLabels.moveToPlayers}
+            <Ionicons color={waitlistAction.iconColor} name={waitlistAction.icon} size={16} />
+            <AppText tone={waitlistAction.textTone} variant="button" weight="800">
+              {waitlistAction.label}
             </AppText>
           </Pressable>
         ) : null}
@@ -1769,6 +1779,8 @@ function getLobbyPrimaryAction({
   const joinDecision = getJoinGameDecision(currentPlayer, lobby, accessContext);
 
   if (relationship === 'waitlist') {
+    const isFullWaitlistMove = joinDecision.kind === 'full_join_waitlist';
+
     return joinDecision.canJoin
       ? {
           disabled: false,
@@ -1780,11 +1792,11 @@ function getLobbyPrimaryAction({
           tone: 'green',
         }
       : {
-          disabled: false,
-          icon: 'alert-circle-outline',
+          disabled: isFullWaitlistMove,
+          icon: isFullWaitlistMove ? 'people-outline' : 'alert-circle-outline',
           iconColor: colors.muted,
-          label: lobbyLabels.moveToPlayers,
-          onPress: () => onShowJoinBlockedReasons(joinDecision.reasons),
+          label: isFullWaitlistMove ? 'Players full' : lobbyLabels.moveToPlayers,
+          onPress: isFullWaitlistMove ? undefined : () => onShowJoinBlockedReasons(joinDecision.reasons),
           textTone: 'muted',
           tone: 'muted',
         };
@@ -2699,6 +2711,10 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     minHeight: 34,
     paddingHorizontal: spacing.sm,
+  },
+  moveToPlayersButtonMuted: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
   },
   lobbyTitle: {
     maxWidth: 278,

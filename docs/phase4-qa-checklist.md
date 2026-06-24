@@ -739,7 +739,7 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
 
 ## TC-26: Submit Player Rating
@@ -764,8 +764,8 @@ Expected:
 
 Result:
 
-- Status: Not run
-- Notes:
+- Status: Failed
+- Notes: After rating the first player, a popup saying the user was kicked out of the room returned the user to the Games page. Later, entering the same game again did not allow rating the other players.
 
 ## TC-27: Duplicate Rating Submit Protection
 
@@ -811,7 +811,7 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
 
 ## TC-29: Manual Refresh Fallback
@@ -832,7 +832,7 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Passed
 - Notes:
 
 ## TC-30: Query And Duplicate Smoke After QA Session
@@ -856,7 +856,7 @@ Expected:
 
 Result:
 
-- Status: Not run
+- Status: Nevo needs to confirm; most tests passed.
 - Notes:
 
 ## Failure Report Template
