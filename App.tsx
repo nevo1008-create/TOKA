@@ -225,9 +225,6 @@ export default function App() {
     : null;
   const visibleSelectedLobby = selectedLobby ? lobbyStore.getVisibleLobby(selectedLobby) : null;
   const selectedLobbyIndex = selectedLobby ? lobbyStore.getLobbyIndex(selectedLobby.id) : 0;
-  const selectedVisibleLobbyMessageCount = selectedLobby
-    ? lobbyStore.getVisibleLobbyMessages(selectedLobby).length
-    : 0;
   const selectedCurrentParticipant = selectedLobby?.participants.find((participant) =>
     participant.playerId === profilePlayer.id &&
     (participant.status === 'approved' || participant.status === 'attended')
@@ -369,14 +366,6 @@ export default function App() {
 
     return () => clearTimeout(clearTimer);
   }, [liveNotification?.id]);
-
-  useEffect(() => {
-    if (!isLobbyChatOpen || !selectedLobby) {
-      return;
-    }
-
-    lobbyStore.markLobbyChatRead(selectedLobby);
-  }, [isLobbyChatOpen, selectedLobby?.id, selectedVisibleLobbyMessageCount]);
 
   useEffect(() => {
     if (!homeTocaPointGain) {
@@ -1256,11 +1245,14 @@ export default function App() {
 
   function openLobbyChat(lobby: Lobby) {
     setIsLobbyChatOpen(true);
-    lobbyStore.markLobbyChatRead(lobby);
   }
 
   function closeLobbyChat() {
     setIsLobbyChatOpen(false);
+  }
+
+  function markLobbyChatChannelRead(lobby: Lobby, channelId: string) {
+    lobbyStore.markLobbyChatChannelRead(lobby, channelId);
   }
 
   function sendLobbyChatMessage(lobby: Lobby, channelId: string, body: string) {
@@ -1989,6 +1981,7 @@ export default function App() {
                       lobby={visibleSelectedLobby}
                       messages={lobbyStore.getVisibleLobbyMessages(selectedLobby)}
                       onClose={closeLobbyChat}
+                      onReadChannel={(channelId) => markLobbyChatChannelRead(selectedLobby, channelId)}
                       onSendMessage={(channelId, body) => sendLobbyChatMessage(selectedLobby, channelId, body)}
                       players={playersForInvite}
                       visible={isLobbyChatOpen}

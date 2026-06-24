@@ -13,6 +13,7 @@ import {
   markNotificationRead as persistNotificationRead,
   markNotificationsRead,
 } from '../notifications/notificationRepository';
+import type { DbLobbyMessage } from '../../lib/database.types';
 import type { ChatMessage, JoinRequestReason, Lobby, LobbyParticipant, Notification, Player, RatingTask, SkillRankVoteType } from '../../types';
 import {
   listSubmittedRatingTasks,
@@ -24,6 +25,7 @@ import type { CreateLobbyDraft, LobbySettingsDraft } from './lobbyCreateTypes';
 import { applyLobbyLifecycle } from './lobbyDateTime';
 import { getUniqueLobbies } from './lobbyListUtils';
 import { shouldApplyLateLeavePenalty } from './lobbyLifecycle';
+import { mapDbMessageToChatMessage } from './lobbyMappers';
 import {
   approveWaitlistRequest as persistApproveWaitlistRequest,
   cancelJoinRequest as persistCancelJoinRequest,
@@ -84,6 +86,32 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
   const readChatMessageIdsRef = useRef<Set<string>>(new Set());
   const hasSeededReadChatMessagesRef = useRef(false);
 
+  const syncChatMessages = useCallback((nextMessages: ChatMessage[]) => {
+    chatMessagesRef.current = nextMessages;
+    setChatMessages(nextMessages);
+    setLobbies((current) => applyChatUnreadCounts(current, nextMessages, readChatMessageIdsRef.current, currentPlayer.id));
+  }, [currentPlayer.id]);
+
+  const applyRealtimeChatInsert = useCallback((change: AppRealtimeChange) => {
+    if (change.table !== 'lobby_messages' || change.payload.eventType !== 'INSERT') {
+      return;
+    }
+
+    const row = change.payload.new as Partial<DbLobbyMessage>;
+
+    if (!isDbLobbyMessage(row) || row.deleted_at) {
+      return;
+    }
+
+    const nextMessage = mapDbMessageToChatMessage(row);
+
+    if (chatMessagesRef.current.some((message) => message.id === nextMessage.id)) {
+      return;
+    }
+
+    syncChatMessages([...chatMessagesRef.current, nextMessage].sort(sortChatMessages));
+  }, [syncChatMessages]);
+
   const refreshNotifications = useCallback(async () => {
     const nextNotifications = await listNotifications(currentPlayer.id);
 
@@ -100,12 +128,10 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       hasSeededReadChatMessagesRef.current = true;
     }
 
-    chatMessagesRef.current = nextMessages;
-    setChatMessages(nextMessages);
-    setLobbies((current) => applyChatUnreadCounts(current, nextMessages, readChatMessageIdsRef.current, currentPlayer.id));
+    syncChatMessages(nextMessages);
 
     return nextMessages;
-  }, [currentPlayer.id]);
+  }, [syncChatMessages]);
 
   const refreshLobbies = useCallback(async () => {
     if (!isEnabled) {
@@ -222,6 +248,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
       currentPlayerId: currentPlayer.id,
       onChange: (change) => {
         onRealtimeChange?.(change);
+        applyRealtimeChatInsert(change);
         scheduleRefresh(change.domain);
       },
       onStatusChange: (status) => {
@@ -238,7 +265,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
 
       unsubscribe();
     };
-  }, [currentPlayer.id, isEnabled, onRealtimeChange, refreshChatMessages, refreshLobbies, refreshNotifications]);
+  }, [applyRealtimeChatInsert, currentPlayer.id, isEnabled, onRealtimeChange, refreshChatMessages, refreshLobbies, refreshNotifications]);
 
   const unreadNotifications = useMemo(
     () => notifications.filter((notification) => !notification.read),
@@ -536,10 +563,15 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     return result;
   }
 
-  function markLobbyChatRead(lobby: Lobby) {
-    const visibleChannelIds = new Set(getVisibleChatChannels(lobby, currentPlayer.id).map((channel) => channel.id));
+  function markLobbyChatChannelRead(lobby: Lobby, channelId: string) {
+    const canReadChannel = getVisibleChatChannels(lobby, currentPlayer.id).some((channel) => channel.id === channelId);
+
+    if (!canReadChannel) {
+      return;
+    }
+
     const visibleMessageIds = chatMessages
-      .filter((message) => message.lobbyId === lobby.id && visibleChannelIds.has(message.channelId))
+      .filter((message) => message.lobbyId === lobby.id && message.channelId === channelId)
       .map((message) => message.id);
 
     readChatMessageIdsRef.current = new Set([
@@ -554,7 +586,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
               ...candidate,
               chatChannels: candidate.chatChannels.map((channel) => ({
                 ...channel,
-                unreadCount: 0,
+                unreadCount: channel.id === channelId ? 0 : channel.unreadCount,
               })),
             }
           : candidate,
@@ -735,7 +767,7 @@ export function useLobbyStore(currentPlayer: Player, players: Player[], options:
     lobbies,
     deleteAllNotifications,
     markAllNotificationsRead,
-    markLobbyChatRead,
+    markLobbyChatChannelRead,
     markNotificationRead,
     refreshNotifications,
     refreshAndMarkAllNotificationsRead,
@@ -894,4 +926,19 @@ function getNextHostParticipant(participants: LobbyParticipant[]) {
     participants.find((participant) => participant.role === 'joined') ??
     participants.find((participant) => participant.role === 'waitlist')
   );
+}
+
+function isDbLobbyMessage(row: Partial<DbLobbyMessage>): row is DbLobbyMessage {
+  return (
+    typeof row.id === 'string' &&
+    typeof row.lobby_id === 'string' &&
+    typeof row.sender_player_id === 'string' &&
+    (row.channel === 'all' || row.channel === 'admin_joined') &&
+    typeof row.body === 'string' &&
+    typeof row.created_at === 'string'
+  );
+}
+
+function sortChatMessages(left: ChatMessage, right: ChatMessage) {
+  return left.createdAt.localeCompare(right.createdAt);
 }

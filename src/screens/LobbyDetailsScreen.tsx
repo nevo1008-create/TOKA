@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Avatar } from '../components/Avatar';
@@ -1105,6 +1105,7 @@ export function LobbyChatSheet({
   lobby,
   messages,
   onClose,
+  onReadChannel,
   onSendMessage,
   players,
   visible,
@@ -1113,26 +1114,70 @@ export function LobbyChatSheet({
   lobby: Lobby;
   messages: ChatMessage[];
   onClose: () => void;
+  onReadChannel: (channelId: string) => void;
   onSendMessage: (channelId: string, body: string) => void;
   players: Player[];
   visible: boolean;
 }) {
   const [activeChannelId, setActiveChannelId] = useState(lobby.chatChannels[0]?.id ?? '');
   const [draft, setDraft] = useState('');
+  const [firstUnreadMessageByChannelId, setFirstUnreadMessageByChannelId] = useState<Record<string, string | null>>({});
   const [isExpanded, setIsExpanded] = useState(false);
+  const openLobbyIdRef = useRef<string | null>(null);
+  const messageYByIdRef = useRef<Record<string, number>>({});
+  const skipNextActiveReadRef = useRef(false);
+  const chatScrollRef = useRef<ScrollView>(null);
   const activeChannel = lobby.chatChannels.find((channel) => channel.id === activeChannelId) ?? lobby.chatChannels[0];
   const channelMessages = activeChannel
     ? messages.filter((message) => message.channelId === activeChannel.id)
     : [];
+  const firstUnreadMessageId = activeChannel ? firstUnreadMessageByChannelId[activeChannel.id] : null;
 
-  useEffect(() => {
-    if (!visible) {
+  function readChannel(channelId: string) {
+    const channel = lobby.chatChannels.find((candidate) => candidate.id === channelId);
+
+    if (!channel) {
       return;
     }
 
-    setActiveChannelId(lobby.chatChannels[0]?.id ?? '');
+    const firstUnreadMessageIdForChannel = getFirstUnreadMessageId(
+      messages.filter((message) => message.channelId === channel.id),
+      currentPlayer.id,
+      channel.unreadCount,
+    );
+
+    if (firstUnreadMessageIdForChannel) {
+      setFirstUnreadMessageByChannelId((current) => ({
+        ...current,
+        [channel.id]: firstUnreadMessageIdForChannel,
+      }));
+    }
+
+    onReadChannel(channel.id);
+  }
+
+  useEffect(() => {
+    if (!visible) {
+      openLobbyIdRef.current = null;
+      return;
+    }
+
+    if (openLobbyIdRef.current === lobby.id) {
+      return;
+    }
+
+    const nextChannelId = lobby.chatChannels[0]?.id ?? '';
+
+    openLobbyIdRef.current = lobby.id;
+    skipNextActiveReadRef.current = true;
+    setActiveChannelId(nextChannelId);
     setDraft('');
+    setFirstUnreadMessageByChannelId({});
     setIsExpanded(false);
+
+    if (nextChannelId) {
+      readChannel(nextChannelId);
+    }
   }, [lobby.id, visible]);
 
   useEffect(() => {
@@ -1144,6 +1189,35 @@ export function LobbyChatSheet({
     }
   }, [activeChannelId, lobby.chatChannels]);
 
+  useEffect(() => {
+    if (!visible || !activeChannel) {
+      return;
+    }
+
+    if (skipNextActiveReadRef.current) {
+      skipNextActiveReadRef.current = false;
+      return;
+    }
+
+    readChannel(activeChannel.id);
+  }, [visible, activeChannel?.id, channelMessages.length]);
+
+  useEffect(() => {
+    if (!visible || !firstUnreadMessageId) {
+      return;
+    }
+
+    const scrollTimeout = setTimeout(() => {
+      const messageY = messageYByIdRef.current[firstUnreadMessageId];
+
+      if (typeof messageY === 'number') {
+        chatScrollRef.current?.scrollTo({ animated: false, y: Math.max(messageY - 8, 0) });
+      }
+    }, 50);
+
+    return () => clearTimeout(scrollTimeout);
+  }, [visible, activeChannel?.id, firstUnreadMessageId, channelMessages.length]);
+
   function sendMessage() {
     if (!activeChannel || !draft.trim()) {
       return;
@@ -1151,6 +1225,15 @@ export function LobbyChatSheet({
 
     onSendMessage(activeChannel.id, draft);
     setDraft('');
+  }
+
+  function switchChannel(channelId: string) {
+    setActiveChannelId(channelId);
+    readChannel(channelId);
+  }
+
+  function recordMessageLayout(messageId: string, event: LayoutChangeEvent) {
+    messageYByIdRef.current[messageId] = event.nativeEvent.layout.y;
   }
 
   return (
@@ -1194,17 +1277,25 @@ export function LobbyChatSheet({
           <View style={styles.chatTabs}>
             {lobby.chatChannels.map((channel) => {
               const isActive = channel.id === activeChannel?.id;
+              const unreadCount = channel.unreadCount;
 
               return (
                 <Pressable
                   accessibilityRole="button"
                   key={channel.id}
-                  onPress={() => setActiveChannelId(channel.id)}
+                  onPress={() => switchChannel(channel.id)}
                   style={[styles.chatTab, isActive && styles.chatTabActive]}
                 >
                   <AppText align="center" tone={isActive ? 'accent' : 'muted'} variant="caption" weight="900">
                     {getChatChannelLabel(channel)}
                   </AppText>
+                  {unreadCount > 0 ? (
+                    <View style={styles.chatTabBadge}>
+                      <AppText align="center" tone="inverse" variant="caption" weight="900">
+                        {unreadCount}
+                      </AppText>
+                    </View>
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -1212,12 +1303,16 @@ export function LobbyChatSheet({
 
           <ScrollView
             contentContainerStyle={[styles.chatMessageList, isExpanded && styles.chatMessageListExpanded]}
+            ref={chatScrollRef}
             showsVerticalScrollIndicator={false}
             style={[styles.chatMessageScroller, isExpanded && styles.chatMessageScrollerExpanded]}
           >
             {channelMessages.length > 0 ? (
               channelMessages.map((message) => (
-                <ChatMessageBubble currentPlayer={currentPlayer} key={message.id} message={message} players={players} />
+                <View key={message.id} onLayout={(event) => recordMessageLayout(message.id, event)}>
+                  {message.id === firstUnreadMessageId ? <NewMessagesDivider /> : null}
+                  <ChatMessageBubble currentPlayer={currentPlayer} message={message} players={players} />
+                </View>
               ))
             ) : (
               <View style={styles.chatEmptyState}>
@@ -1285,8 +1380,32 @@ function ChatMessageBubble({
   );
 }
 
+function NewMessagesDivider() {
+  return (
+    <View style={styles.chatNewMessagesDivider}>
+      <View style={styles.chatNewMessagesLine} />
+      <AppText align="center" tone="warning" variant="caption" weight="900">
+        New messages
+      </AppText>
+      <View style={styles.chatNewMessagesLine} />
+    </View>
+  );
+}
+
 function getChatChannelLabel(channel: ChatChannel) {
   return channel.type === 'admin_joined' ? 'Players only' : 'All lobby';
+}
+
+function getFirstUnreadMessageId(messages: ChatMessage[], currentPlayerId: string, unreadCount: number) {
+  if (unreadCount <= 0) {
+    return null;
+  }
+
+  const unreadMessages = messages
+    .filter((message) => message.playerId !== currentPlayerId)
+    .slice(-unreadCount);
+
+  return unreadMessages[0]?.id ?? null;
 }
 
 function formatChatTime(createdAt: string) {
@@ -2248,6 +2367,17 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: spacing.md,
   },
+  chatNewMessagesDivider: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginVertical: spacing.xs,
+  },
+  chatNewMessagesLine: {
+    backgroundColor: colors.accentGold,
+    flex: 1,
+    height: 1,
+  },
   chatMessageScroller: {
     flexShrink: 1,
     minHeight: 0,
@@ -2309,10 +2439,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 34,
     paddingHorizontal: spacing.sm,
+    position: 'relative',
   },
   chatTabActive: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
+  },
+  chatTabBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.accentGoldDark,
+    borderColor: colors.surfaceRaised,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: 'center',
+    minWidth: 18,
+    paddingHorizontal: 4,
+    position: 'absolute',
+    right: -4,
+    top: -6,
   },
   chatTabs: {
     alignItems: 'center',
