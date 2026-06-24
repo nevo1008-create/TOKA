@@ -294,10 +294,10 @@ Expected:
 
 Result:
 
-- Status: Failed
-- Notes
-	1. User B can still see move to players button and its pressable. but a pop message says "cannot join player"
-	2. when game become with status full, joined players dont receive a notification saying that their game is full
+- Status: Passed
+- Notes:
+	1. Passed in second test after Phase 4 QA stale rating and waitlist state fixes.
+	2. Full-lobby waitlist state no longer exposes a misleading active move-to-players action.
 
 ## TC-10: Approval-Required Lobby Request
 
@@ -764,8 +764,8 @@ Expected:
 
 Result:
 
-- Status: Failed
-- Notes: After rating the first player, a popup saying the user was kicked out of the room returned the user to the Games page. Later, entering the same game again did not allow rating the other players.
+- Status: Passed
+- Notes: Passed in second test after Phase 4 QA stale rating and waitlist state fixes.
 
 ## TC-27: Duplicate Rating Submit Protection
 
@@ -787,8 +787,8 @@ Expected:
 
 Result:
 
-- Status: Not run
-- Notes:
+- Status: Passed
+- Notes: Passed in second test after Phase 4 QA stale rating and waitlist state fixes.
 
 ## TC-28: Navigation Stale-State Regression
 
@@ -856,8 +856,8 @@ Expected:
 
 Result:
 
-- Status: Nevo needs to confirm; most tests passed.
-- Notes:
+- Status: Passed
+- Notes: Confirmed in second test after Phase 4 QA stale rating and waitlist state fixes.
 
 ## Failure Report Template
 

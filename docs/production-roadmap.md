@@ -126,6 +126,7 @@ Goal: clean and harden everything that can be confidently tested in preview befo
 
 Mission 1 - Multi-device realtime QA gate:
 
+- Status: Passed on June 24, 2026 after second-test confirmation of TC-09, TC-26, TC-27, and TC-30 on `v1-prep`
 - Working checklist: `docs/phase4-qa-checklist.md`
 - Use two real logged-in users on two browser sessions or devices
 - Test the main realtime flows end to end without manual refresh as the normal success path
