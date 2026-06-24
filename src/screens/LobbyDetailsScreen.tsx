@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Avatar } from '../components/Avatar';
@@ -41,7 +41,6 @@ type LobbyDetailsScreenProps = {
   onApproveWaitlistRequest: (playerId: string) => void;
   onBack: () => void;
   onCancelJoinRequest: () => void;
-  onEnterPrivatePin: (pin: string) => boolean;
   onInvite: () => void;
   onJoinGame: () => void;
   onJoinWaitlist: () => void;
@@ -55,6 +54,7 @@ type LobbyDetailsScreenProps = {
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   onSendFriendRequest: (playerId: string) => void;
+  onSubmitPrivatePin: (pin: string) => Promise<{ messages: string[]; success: boolean }>;
   onSubmitPlayerRating: (rating: { behaviorRating: number; rank: Player['level']; skillVoteType: SkillRankVoteType; targetPlayerId: string }) => boolean | Promise<boolean>;
   onTransferHost: (playerId: string) => Promise<void> | void;
   onViewPlayerProfile: (player: Player) => void;
@@ -84,6 +84,8 @@ type LobbySectionAction = {
   onPress: () => void;
 };
 
+const pendingApprovalReason = 'Host approval is still pending.';
+
 export function LobbyDetailsScreen({
   allLobbies,
   currentPlayer,
@@ -94,7 +96,6 @@ export function LobbyDetailsScreen({
   onApproveWaitlistRequest,
   onBack,
   onCancelJoinRequest,
-  onEnterPrivatePin,
   onInvite,
   onJoinGame,
   onJoinWaitlist,
@@ -108,6 +109,7 @@ export function LobbyDetailsScreen({
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
   onSendFriendRequest,
+  onSubmitPrivatePin,
   onSubmitPlayerRating,
   onTransferHost,
   onViewPlayerProfile,
@@ -198,12 +200,10 @@ export function LobbyDetailsScreen({
     });
     setActionSheetActions(
       getLobbyPlayerActions({
-        canInvite: arePreStartActionsOpen,
         canManageLobby: canManageLobbyPlayers,
         currentPlayer,
         isCurrentUserAdmin,
         isFriend,
-        onInvite,
         onKickPlayer,
         onRemoveFriend: (targetPlayer) => onRemoveFriend(targetPlayer.id),
         onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
@@ -216,15 +216,17 @@ export function LobbyDetailsScreen({
     );
   }
 
-  function submitPin() {
-    if (onEnterPrivatePin(pinCode)) {
+  async function submitPin() {
+    const result = await onSubmitPrivatePin(pinCode);
+
+    if (result.success) {
       setPinCode('');
       setPinError(null);
       setIsPinEntryOpen(false);
       return;
     }
 
-    setPinError('That PIN does not match this private game.');
+    setPinError(result.messages[0] ?? 'That PIN does not match this private game.');
   }
 
   return (
@@ -314,6 +316,7 @@ export function LobbyDetailsScreen({
 
         {isPinEntryOpen ? (
           <PrivatePinPanel
+            disabled={isActionPending}
             error={pinError}
             onChangePin={(value) => {
               setPinCode(value.replace(/\D/g, '').slice(0, 4));
@@ -544,14 +547,16 @@ function RoomHeroCard({
 }
 
 function PrivatePinPanel({
+  disabled,
   error,
   onChangePin,
   onSubmit,
   pin,
 }: {
+  disabled: boolean;
   error: string | null;
   onChangePin: (value: string) => void;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
   pin: string;
 }) {
   return (
@@ -582,12 +587,12 @@ function PrivatePinPanel({
         />
         <Pressable
           accessibilityRole="button"
-          disabled={pin.length !== 4}
+          disabled={disabled || pin.length !== 4}
           onPress={onSubmit}
-          style={[styles.pinSubmit, pin.length !== 4 && styles.pinSubmitDisabled]}
+          style={[styles.pinSubmit, (disabled || pin.length !== 4) && styles.pinSubmitDisabled]}
         >
           <AppText align="center" tone="inverse" variant="button" weight="800">
-            Unlock
+            {disabled ? 'Joining' : 'Unlock'}
           </AppText>
         </Pressable>
       </View>
@@ -664,6 +669,7 @@ function JoinBlockedModal({
   const formattedReasons = reasons.length > 0
     ? reasons.map(formatJoinBlockedReason)
     : ['This game is not available for joining right now.'];
+  const isPendingApprovalMessage = formattedReasons.length === 1 && formattedReasons[0] === pendingApprovalReason;
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
@@ -671,10 +677,10 @@ function JoinBlockedModal({
         <Pressable accessibilityLabel="Close join blocked message" accessibilityRole="button" onPress={onClose} style={styles.joinBlockedBackdrop} />
         <View style={styles.joinBlockedCard}>
           <View style={styles.joinBlockedIcon}>
-            <Ionicons color={colors.danger} name="alert-circle-outline" size={22} />
+            <Ionicons color={isPendingApprovalMessage ? colors.primaryDark : colors.danger} name={isPendingApprovalMessage ? 'time-outline' : 'alert-circle-outline'} size={22} />
           </View>
           <AppText align="center" variant="titleSmall" weight="900">
-            Cannot join players
+            {isPendingApprovalMessage ? lobbyLabels.accessRequested : 'Cannot join players'}
           </AppText>
           <View style={styles.joinBlockedReasonList}>
             {formattedReasons.map((reason) => (
@@ -1021,9 +1027,7 @@ function HostRequestRow({
     <View style={styles.hostRequestRow}>
       <View style={styles.hostRequestInfo}>
         <View style={styles.hostRequestAvatar}>
-          <AppText align="center" variant="titleSmall" weight="800">
-            {player.initials}
-          </AppText>
+          <Avatar player={player} size={38} />
           <View style={styles.hostRequestStatusBadge}>
             <Ionicons color={colors.ink} name="hourglass" size={9} />
           </View>
@@ -1101,6 +1105,7 @@ export function LobbyChatSheet({
   lobby,
   messages,
   onClose,
+  onReadChannel,
   onSendMessage,
   players,
   visible,
@@ -1109,26 +1114,70 @@ export function LobbyChatSheet({
   lobby: Lobby;
   messages: ChatMessage[];
   onClose: () => void;
+  onReadChannel: (channelId: string) => void;
   onSendMessage: (channelId: string, body: string) => void;
   players: Player[];
   visible: boolean;
 }) {
   const [activeChannelId, setActiveChannelId] = useState(lobby.chatChannels[0]?.id ?? '');
   const [draft, setDraft] = useState('');
+  const [firstUnreadMessageByChannelId, setFirstUnreadMessageByChannelId] = useState<Record<string, string | null>>({});
   const [isExpanded, setIsExpanded] = useState(false);
+  const openLobbyIdRef = useRef<string | null>(null);
+  const messageYByIdRef = useRef<Record<string, number>>({});
+  const skipNextActiveReadRef = useRef(false);
+  const chatScrollRef = useRef<ScrollView>(null);
   const activeChannel = lobby.chatChannels.find((channel) => channel.id === activeChannelId) ?? lobby.chatChannels[0];
   const channelMessages = activeChannel
     ? messages.filter((message) => message.channelId === activeChannel.id)
     : [];
+  const firstUnreadMessageId = activeChannel ? firstUnreadMessageByChannelId[activeChannel.id] : null;
 
-  useEffect(() => {
-    if (!visible) {
+  function readChannel(channelId: string) {
+    const channel = lobby.chatChannels.find((candidate) => candidate.id === channelId);
+
+    if (!channel) {
       return;
     }
 
-    setActiveChannelId(lobby.chatChannels[0]?.id ?? '');
+    const firstUnreadMessageIdForChannel = getFirstUnreadMessageId(
+      messages.filter((message) => message.channelId === channel.id),
+      currentPlayer.id,
+      channel.unreadCount,
+    );
+
+    if (firstUnreadMessageIdForChannel) {
+      setFirstUnreadMessageByChannelId((current) => ({
+        ...current,
+        [channel.id]: firstUnreadMessageIdForChannel,
+      }));
+    }
+
+    onReadChannel(channel.id);
+  }
+
+  useEffect(() => {
+    if (!visible) {
+      openLobbyIdRef.current = null;
+      return;
+    }
+
+    if (openLobbyIdRef.current === lobby.id) {
+      return;
+    }
+
+    const nextChannelId = lobby.chatChannels[0]?.id ?? '';
+
+    openLobbyIdRef.current = lobby.id;
+    skipNextActiveReadRef.current = true;
+    setActiveChannelId(nextChannelId);
     setDraft('');
+    setFirstUnreadMessageByChannelId({});
     setIsExpanded(false);
+
+    if (nextChannelId) {
+      readChannel(nextChannelId);
+    }
   }, [lobby.id, visible]);
 
   useEffect(() => {
@@ -1140,6 +1189,35 @@ export function LobbyChatSheet({
     }
   }, [activeChannelId, lobby.chatChannels]);
 
+  useEffect(() => {
+    if (!visible || !activeChannel) {
+      return;
+    }
+
+    if (skipNextActiveReadRef.current) {
+      skipNextActiveReadRef.current = false;
+      return;
+    }
+
+    readChannel(activeChannel.id);
+  }, [visible, activeChannel?.id, channelMessages.length]);
+
+  useEffect(() => {
+    if (!visible || !firstUnreadMessageId) {
+      return;
+    }
+
+    const scrollTimeout = setTimeout(() => {
+      const messageY = messageYByIdRef.current[firstUnreadMessageId];
+
+      if (typeof messageY === 'number') {
+        chatScrollRef.current?.scrollTo({ animated: false, y: Math.max(messageY - 8, 0) });
+      }
+    }, 50);
+
+    return () => clearTimeout(scrollTimeout);
+  }, [visible, activeChannel?.id, firstUnreadMessageId, channelMessages.length]);
+
   function sendMessage() {
     if (!activeChannel || !draft.trim()) {
       return;
@@ -1147,6 +1225,15 @@ export function LobbyChatSheet({
 
     onSendMessage(activeChannel.id, draft);
     setDraft('');
+  }
+
+  function switchChannel(channelId: string) {
+    setActiveChannelId(channelId);
+    readChannel(channelId);
+  }
+
+  function recordMessageLayout(messageId: string, event: LayoutChangeEvent) {
+    messageYByIdRef.current[messageId] = event.nativeEvent.layout.y;
   }
 
   return (
@@ -1190,17 +1277,25 @@ export function LobbyChatSheet({
           <View style={styles.chatTabs}>
             {lobby.chatChannels.map((channel) => {
               const isActive = channel.id === activeChannel?.id;
+              const unreadCount = channel.unreadCount;
 
               return (
                 <Pressable
                   accessibilityRole="button"
                   key={channel.id}
-                  onPress={() => setActiveChannelId(channel.id)}
+                  onPress={() => switchChannel(channel.id)}
                   style={[styles.chatTab, isActive && styles.chatTabActive]}
                 >
                   <AppText align="center" tone={isActive ? 'accent' : 'muted'} variant="caption" weight="900">
                     {getChatChannelLabel(channel)}
                   </AppText>
+                  {unreadCount > 0 ? (
+                    <View style={styles.chatTabBadge}>
+                      <AppText align="center" tone="inverse" variant="caption" weight="900">
+                        {unreadCount}
+                      </AppText>
+                    </View>
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -1208,12 +1303,16 @@ export function LobbyChatSheet({
 
           <ScrollView
             contentContainerStyle={[styles.chatMessageList, isExpanded && styles.chatMessageListExpanded]}
+            ref={chatScrollRef}
             showsVerticalScrollIndicator={false}
             style={[styles.chatMessageScroller, isExpanded && styles.chatMessageScrollerExpanded]}
           >
             {channelMessages.length > 0 ? (
               channelMessages.map((message) => (
-                <ChatMessageBubble currentPlayer={currentPlayer} key={message.id} message={message} players={players} />
+                <View key={message.id} onLayout={(event) => recordMessageLayout(message.id, event)}>
+                  {message.id === firstUnreadMessageId ? <NewMessagesDivider /> : null}
+                  <ChatMessageBubble currentPlayer={currentPlayer} message={message} players={players} />
+                </View>
               ))
             ) : (
               <View style={styles.chatEmptyState}>
@@ -1281,8 +1380,32 @@ function ChatMessageBubble({
   );
 }
 
+function NewMessagesDivider() {
+  return (
+    <View style={styles.chatNewMessagesDivider}>
+      <View style={styles.chatNewMessagesLine} />
+      <AppText align="center" tone="warning" variant="caption" weight="900">
+        New messages
+      </AppText>
+      <View style={styles.chatNewMessagesLine} />
+    </View>
+  );
+}
+
 function getChatChannelLabel(channel: ChatChannel) {
   return channel.type === 'admin_joined' ? 'Players only' : 'All lobby';
+}
+
+function getFirstUnreadMessageId(messages: ChatMessage[], currentPlayerId: string, unreadCount: number) {
+  if (unreadCount <= 0) {
+    return null;
+  }
+
+  const unreadMessages = messages
+    .filter((message) => message.playerId !== currentPlayerId)
+    .slice(-unreadCount);
+
+  return unreadMessages[0]?.id ?? null;
 }
 
 function formatChatTime(createdAt: string) {
@@ -1601,7 +1724,7 @@ function getLobbyPrimaryAction({
       icon: 'time-outline',
       iconColor: colors.muted,
       label: lobbyLabels.accessRequested,
-      onPress: () => onShowJoinBlockedReasons(['Host approval is still pending.']),
+      onPress: () => onShowJoinBlockedReasons([pendingApprovalReason]),
       textTone: 'muted',
       tone: 'muted',
     };
@@ -1833,12 +1956,10 @@ function formatRequestReasons(reasons: Lobby['joinRequests'][number]['reasons'])
 }
 
 function getLobbyPlayerActions({
-  canInvite = true,
   canManageLobby = true,
   currentPlayer,
   isCurrentUserAdmin,
   isFriend,
-  onInvite,
   onKickPlayer,
   onRemoveFriend,
   onSendFriendRequest,
@@ -1848,12 +1969,10 @@ function getLobbyPlayerActions({
   participant,
   player,
 }: {
-  canInvite?: boolean;
   canManageLobby?: boolean;
   currentPlayer: Player;
   isCurrentUserAdmin: boolean;
   isFriend: boolean;
-  onInvite: () => void;
   onKickPlayer: (playerId: string) => Promise<void> | void;
   onRemoveFriend?: (player: Player) => void;
   onSendFriendRequest?: (player: Player) => void;
@@ -1911,15 +2030,10 @@ function getLobbyPlayerActions({
       label: isFriend ? 'Show full profile' : 'View full profile',
       onPress: onViewProfile,
     },
-    ...(isFriend && canInvite
-      ? [{ icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInvite }]
-      : isFriend
-        ? []
-        : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
+    ...hostActions,
     ...(isFriend
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
-      : []),
-    ...hostActions,
+      : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
     { destructive: true, icon: 'ban-outline', label: 'Report & block' },
   ];
 }
@@ -2253,6 +2367,17 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: spacing.md,
   },
+  chatNewMessagesDivider: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginVertical: spacing.xs,
+  },
+  chatNewMessagesLine: {
+    backgroundColor: colors.accentGold,
+    flex: 1,
+    height: 1,
+  },
   chatMessageScroller: {
     flexShrink: 1,
     minHeight: 0,
@@ -2314,10 +2439,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 34,
     paddingHorizontal: spacing.sm,
+    position: 'relative',
   },
   chatTabActive: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
+  },
+  chatTabBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.accentGoldDark,
+    borderColor: colors.surfaceRaised,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: 'center',
+    minWidth: 18,
+    paddingHorizontal: 4,
+    position: 'absolute',
+    right: -4,
+    top: -6,
   },
   chatTabs: {
     alignItems: 'center',

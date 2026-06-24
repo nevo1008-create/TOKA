@@ -611,11 +611,12 @@ function getSuccessMessage(lobby: Lobby, selectedPlayers: Player[]) {
 
 function getUserInviteLobbies(lobbies: Lobby[], currentPlayerId: string) {
   return lobbies.filter((lobby) =>
-    lobby.participants.some(
-      (participant) =>
-        participant.playerId === currentPlayerId &&
-        isJoinedParticipant(participant),
-    ),
+    !isLobbyDisabled(lobby) &&
+      lobby.participants.some(
+        (participant) =>
+          participant.playerId === currentPlayerId &&
+          isJoinedParticipant(participant),
+      ),
   );
 }
 
