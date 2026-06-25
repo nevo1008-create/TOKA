@@ -33,6 +33,7 @@ import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, Lob
 
 type LobbyDetailsScreenProps = {
   allLobbies: Lobby[];
+  blockedPlayerIds?: string[];
   currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
@@ -92,6 +93,7 @@ const pendingApprovalReason = 'Host approval is still pending.';
 
 export function LobbyDetailsScreen({
   allLobbies,
+  blockedPlayerIds = [],
   currentPlayer,
   hasPrivateAccess,
   lobby,
@@ -352,6 +354,7 @@ export function LobbyDetailsScreen({
           onAction={playerSectionAction?.onPress}
           emptyLabel="Approved players will appear here."
           currentPlayerId={currentPlayer.id}
+          blockedPlayerIds={blockedPlayerIds}
           lobby={lobby}
           participants={activeParticipants}
           players={players}
@@ -369,6 +372,7 @@ export function LobbyDetailsScreen({
           onOpenProfile={openProfile}
           emptyLabel="Players waiting for a spot will appear here."
           currentPlayerId={currentPlayer.id}
+          blockedPlayerIds={blockedPlayerIds}
           lobby={lobby}
           participants={waitlistedParticipants}
           players={players}
@@ -819,6 +823,7 @@ function ParticipantsSection({
   actionLabel,
   count,
   currentPlayerId,
+  blockedPlayerIds,
   emptyLabel,
   onAction,
   onOpenActions,
@@ -835,6 +840,7 @@ function ParticipantsSection({
   actionLabel?: string;
   count: number;
   currentPlayerId: string;
+  blockedPlayerIds: string[];
   emptyLabel: string;
   onAction?: () => void;
   onOpenActions: (player: Player) => void;
@@ -880,6 +886,7 @@ function ParticipantsSection({
                 onPressProfile={() => onOpenProfile(player, participant)}
                 onRatePlayer={() => onRatePlayer?.(player)}
                 currentPlayerId={currentPlayerId}
+                isBlockedByCurrentPlayer={blockedPlayerIds.includes(player.id)}
                 lobby={lobby}
                 participant={participant}
                 player={player}
@@ -907,6 +914,7 @@ function ParticipantRow({
   onPressProfile,
   onRatePlayer,
   currentPlayerId,
+  isBlockedByCurrentPlayer,
   lobby,
   participant,
   player,
@@ -918,6 +926,7 @@ function ParticipantRow({
   onPressProfile: () => void;
   onRatePlayer?: () => void;
   currentPlayerId: string;
+  isBlockedByCurrentPlayer: boolean;
   lobby: Lobby;
   participant: LobbyParticipant;
   player: Player;
@@ -931,6 +940,11 @@ function ParticipantRow({
   return (
     <PlayerRow
       context={participant.role}
+      extraChips={
+        isBlockedByCurrentPlayer
+          ? [{ icon: 'ban-outline', label: 'Blocked', tone: 'danger' }]
+          : undefined
+      }
       initials={player.initials}
       level={player.level}
       meta={`${player.tocaPoints} pts`}

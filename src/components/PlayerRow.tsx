@@ -17,8 +17,15 @@ export type PlayerRowAction = {
   variant?: 'muted' | 'primary' | 'warning';
 };
 
+export type PlayerRowChip = {
+  icon?: IconName;
+  label: string;
+  tone?: 'danger' | 'muted' | 'warning';
+};
+
 type PlayerRowProps = {
   context?: string;
+  extraChips?: PlayerRowChip[];
   initials: string;
   level: string;
   location?: string;
@@ -35,6 +42,7 @@ type PlayerRowProps = {
 };
 
 export function PlayerRow({
+  extraChips = [],
   initials,
   level,
   location,
@@ -101,6 +109,33 @@ export function PlayerRow({
                 </AppText>
               </View>
             ) : null}
+            {extraChips.map((chip) => (
+              <View
+                key={chip.label}
+                style={[
+                  styles.extraChip,
+                  chip.tone === 'danger' && styles.extraChipDanger,
+                  chip.tone === 'warning' && styles.extraChipWarning,
+                ]}
+              >
+                {chip.icon ? (
+                  <Ionicons
+                    color={chip.tone === 'danger' ? colors.danger : chip.tone === 'warning' ? colors.accentGoldDark : colors.muted}
+                    name={chip.icon}
+                    size={10}
+                  />
+                ) : null}
+                <AppText
+                  numberOfLines={1}
+                  style={chip.tone === 'danger' ? styles.extraChipDangerText : undefined}
+                  tone={chip.tone === 'warning' ? 'warning' : 'muted'}
+                  variant="chip"
+                  weight="800"
+                >
+                  {chip.label}
+                </AppText>
+              </View>
+            ))}
           </View>
         </View>
       </Pressable>
@@ -233,6 +268,28 @@ const styles = StyleSheet.create({
     minWidth: 32,
     paddingHorizontal: 0,
     width: 32,
+  },
+  extraChip: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+  },
+  extraChipDanger: {
+    backgroundColor: 'rgba(217, 74, 58, 0.10)',
+    borderColor: 'rgba(217, 74, 58, 0.22)',
+  },
+  extraChipDangerText: {
+    color: colors.danger,
+  },
+  extraChipWarning: {
+    backgroundColor: 'rgba(255, 200, 61, 0.14)',
+    borderColor: 'rgba(246, 201, 69, 0.34)',
   },
   levelChip: {
     backgroundColor: colors.surfaceMuted,
