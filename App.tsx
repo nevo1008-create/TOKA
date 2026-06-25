@@ -58,6 +58,7 @@ import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { BlockedPlayersScreen } from './src/screens/BlockedPlayersScreen';
 import { CommunityScreen } from './src/screens/CommunityScreen';
 import { CommunityGuidelinesScreen } from './src/screens/CommunityGuidelinesScreen';
 import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
@@ -185,6 +186,7 @@ export default function App() {
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isAddFriendsOpen, setIsAddFriendsOpen] = useState(false);
   const [isAboutUsOpen, setIsAboutUsOpen] = useState(false);
+  const [isBlockedPlayersOpen, setIsBlockedPlayersOpen] = useState(false);
   const [isCommunityGuidelinesOpen, setIsCommunityGuidelinesOpen] = useState(false);
   const [isHelpSupportOpen, setIsHelpSupportOpen] = useState(false);
   const [isReportProblemOpen, setIsReportProblemOpen] = useState(false);
@@ -930,6 +932,7 @@ export default function App() {
     setIsEditProfileOpen(false);
     setIsAddFriendsOpen(false);
     setIsAboutUsOpen(false);
+    setIsBlockedPlayersOpen(false);
     setIsCommunityGuidelinesOpen(false);
     setIsHelpSupportOpen(false);
     setInviteParams(null);
@@ -941,6 +944,27 @@ export default function App() {
 
   function closeReportProblem() {
     setIsReportProblemOpen(false);
+  }
+
+  function openBlockedPlayers() {
+    setIsSideMenuOpen(false);
+    setIsNotificationsOpen(false);
+    setViewedProfilePlayer(null);
+    setIsEditProfileOpen(false);
+    setIsAddFriendsOpen(false);
+    setIsAboutUsOpen(false);
+    setIsCommunityGuidelinesOpen(false);
+    setIsHelpSupportOpen(false);
+    setIsReportProblemOpen(false);
+    setInviteParams(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setIsBlockedPlayersOpen(true);
+    setLegalScreen(null);
+  }
+
+  function closeBlockedPlayers() {
+    setIsBlockedPlayersOpen(false);
   }
 
   function openDeleteAccount() {
@@ -1445,11 +1469,6 @@ export default function App() {
     Alert.alert(notification.title, 'Open the related screen to check the latest details.');
   }
 
-  function showDrawerPlaceholder(_action: string, label: string) {
-    setIsSideMenuOpen(false);
-    Alert.alert('Coming soon', `${label} is planned for a future TOCA update.`);
-  }
-
   function resetAppNavigationState() {
     setActiveTab('home');
     setViewedProfilePlayer(null);
@@ -1789,6 +1808,8 @@ export default function App() {
               />
             ) : isAboutUsOpen ? (
               <AboutUsScreen onBack={closeAboutUs} />
+            ) : isBlockedPlayersOpen ? (
+              <BlockedPlayersScreen onBack={closeBlockedPlayers} onReportProblem={openReportProblem} />
             ) : isCommunityGuidelinesOpen ? (
               <CommunityGuidelinesScreen onBack={closeCommunityGuidelines} onReportProblem={openReportProblem} />
             ) : isHelpSupportOpen ? (
@@ -2003,6 +2024,7 @@ export default function App() {
             <SideMenuDrawer
               onClose={closeSideMenu}
               onAbout={openAboutUs}
+              onBlockedPlayers={openBlockedPlayers}
               onCommunityGuidelines={openCommunityGuidelines}
               onDeleteAccount={openDeleteAccount}
               onEditProfile={openEditProfile}
@@ -2012,7 +2034,6 @@ export default function App() {
               onMyGames={openMyGamesFromMenu}
               onNotifications={openNotifications}
               onPrivacyPolicy={openPrivacyPolicy}
-              onPlaceholderAction={showDrawerPlaceholder}
               onReportProblem={openReportProblem}
               onTermsOfService={openTermsOfService}
               onViewProfile={openProfileFromMenu}
