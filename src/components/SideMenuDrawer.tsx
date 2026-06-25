@@ -9,11 +9,10 @@ import { colors, radius, shadows, spacing } from '../theme';
 import type { Player } from '../types';
 import { AppText } from './AppText';
 
-type DrawerRowAction = 'blockedPlayers';
-
 type SideMenuDrawerProps = {
   onClose: () => void;
   onAbout: () => void;
+  onBlockedPlayers: () => void;
   onCommunityGuidelines: () => void;
   onEditProfile: () => void;
   onHelpSupport: () => void;
@@ -25,7 +24,6 @@ type SideMenuDrawerProps = {
   onLogOut: () => void;
   onReportProblem: () => void;
   onTermsOfService: () => void;
-  onPlaceholderAction: (action: DrawerRowAction, label: string) => void;
   onViewProfile: () => void;
   player: Player;
   rating?: string;
@@ -33,7 +31,6 @@ type SideMenuDrawerProps = {
 };
 
 type DrawerRowConfig = {
-  action?: DrawerRowAction;
   destructive?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -44,6 +41,7 @@ type DrawerRowConfig = {
 export function SideMenuDrawer({
   onClose,
   onAbout,
+  onBlockedPlayers,
   onCommunityGuidelines,
   onEditProfile,
   onHelpSupport,
@@ -55,7 +53,6 @@ export function SideMenuDrawer({
   onPrivacyPolicy,
   onReportProblem,
   onTermsOfService,
-  onPlaceholderAction,
   onViewProfile,
   player,
   rating,
@@ -78,11 +75,6 @@ export function SideMenuDrawer({
   function handleRowPress(row: DrawerRowConfig) {
     if (row.onPress) {
       row.onPress();
-      return;
-    }
-
-    if (row.action) {
-      onPlaceholderAction(row.action, row.label);
     }
   }
 
@@ -94,7 +86,7 @@ export function SideMenuDrawer({
 
   const safetyRows: DrawerRowConfig[] = [
     { icon: 'person-add-outline', label: 'Invite friends', onPress: onInviteFriends, tone: 'green' },
-    { action: 'blockedPlayers', icon: 'ban-outline', label: 'Blocked players' },
+    { icon: 'ban-outline', label: 'Blocked players', onPress: onBlockedPlayers },
     { icon: 'flag-outline', label: 'Report a problem', onPress: onReportProblem, tone: 'gold' },
     { icon: 'help-buoy-outline', label: 'Help & support', onPress: onHelpSupport, tone: 'aqua' },
   ];

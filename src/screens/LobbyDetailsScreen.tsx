@@ -40,6 +40,7 @@ type LobbyDetailsScreenProps = {
   notificationCount: number;
   onApproveWaitlistRequest: (playerId: string) => void;
   onBack: () => void;
+  onBlockPlayer: (playerId: string) => Promise<void> | void;
   onCancelJoinRequest: () => void;
   onInvite: () => void;
   onJoinGame: () => void;
@@ -51,6 +52,7 @@ type LobbyDetailsScreenProps = {
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
+  onReportPlayer: () => void;
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   onSendFriendRequest: (playerId: string) => void;
@@ -97,6 +99,7 @@ export function LobbyDetailsScreen({
   notificationCount,
   onApproveWaitlistRequest,
   onBack,
+  onBlockPlayer,
   onCancelJoinRequest,
   onInvite,
   onJoinGame,
@@ -108,6 +111,7 @@ export function LobbyDetailsScreen({
   onOpenMenu,
   onOpenNotifications,
   onRemoveFriend,
+  onReportPlayer,
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
   onSendFriendRequest,
@@ -208,7 +212,9 @@ export function LobbyDetailsScreen({
         isFriend,
         onKickPlayer,
         onRemoveFriend: (targetPlayer) => onRemoveFriend(targetPlayer.id),
+        onReportPlayer,
         onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
+        onBlockPlayer: (targetPlayer) => onBlockPlayer(targetPlayer.id),
         onTransferHost: (targetPlayer) => onTransferHost(targetPlayer.id),
         onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
         onViewProfile: () => openProfile(player, participant),
@@ -1993,7 +1999,9 @@ function getLobbyPlayerActions({
   isCurrentUserAdmin,
   isFriend,
   onKickPlayer,
+  onBlockPlayer,
   onRemoveFriend,
+  onReportPlayer,
   onSendFriendRequest,
   onMovePlayerToWaitlist,
   onTransferHost,
@@ -2006,7 +2014,9 @@ function getLobbyPlayerActions({
   isCurrentUserAdmin: boolean;
   isFriend: boolean;
   onKickPlayer: (playerId: string) => Promise<void> | void;
+  onBlockPlayer?: (player: Player) => Promise<void> | void;
   onRemoveFriend?: (player: Player) => void;
+  onReportPlayer?: () => void;
   onSendFriendRequest?: (player: Player) => void;
   onMovePlayerToWaitlist: (player: Player) => Promise<void> | void;
   onTransferHost?: (player: Player) => Promise<void> | void;
@@ -2066,7 +2076,18 @@ function getLobbyPlayerActions({
     ...(isFriend
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
       : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
-    { destructive: true, icon: 'ban-outline', label: 'Report & block' },
+    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: onReportPlayer },
+    {
+      confirmation: {
+        body: `${player.name} will be hidden from your discovery surfaces and kept out of games you host.`,
+        confirmLabel: 'Block',
+        title: 'Block player?',
+      },
+      destructive: true,
+      icon: 'ban-outline',
+      label: 'Block player',
+      onPress: () => onBlockPlayer?.(player),
+    },
   ];
 }
 
