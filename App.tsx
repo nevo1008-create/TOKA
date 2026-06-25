@@ -38,6 +38,7 @@ import {
 } from './src/features/auth/authRepository';
 import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
+import { blockPlayer, listPlayerBlocks, unblockPlayer } from './src/features/blocks/blockRepository';
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -78,7 +79,7 @@ import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
 import { colors, radius, shadows, spacing } from './src/theme';
-import type { FriendRequest, Lobby, Notification, Player } from './src/types';
+import type { FriendRequest, Lobby, Notification, Player, PlayerBlock } from './src/types';
 
 type HomeTocaPointGain = {
   amount: number;
@@ -145,6 +146,7 @@ export default function App() {
   const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [playerBlocks, setPlayerBlocks] = useState<PlayerBlock[]>([]);
   const [confirmationModal, setConfirmationModal] = useState<{
     badgeLabel?: string | null;
     body: string;
@@ -156,6 +158,7 @@ export default function App() {
     toLevel: number;
   } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
+  const [pendingBlockActionId, setPendingBlockActionId] = useState<string | null>(null);
   const [isDeleteNotificationsConfirmOpen, setIsDeleteNotificationsConfirmOpen] = useState(false);
   const [liveNotification, setLiveNotification] = useState<Notification | null>(null);
   const socialRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -242,6 +245,12 @@ export default function App() {
     ? isLobbyHost(selectedLobby, profilePlayer.id, selectedCurrentParticipant)
     : false;
   const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
+  const blockedPlayerIds = new Set(playerBlocks.map((block) => block.blockedPlayerId));
+  const discoverablePlayers = playersForInvite.filter((player) => player.id === profilePlayer.id || !blockedPlayerIds.has(player.id));
+  const blockedPlayers = playerBlocks
+    .map((block) => playersForInvite.find((player) => player.id === block.blockedPlayerId))
+    .filter((player): player is Player => Boolean(player));
+  const filteredVisibleLobbies = filteredLobbies.filter((lobby) => !blockedPlayerIds.has(lobby.adminId));
 
   useEffect(() => {
     async function bootstrapSession() {
@@ -530,10 +539,22 @@ export default function App() {
     }
   }
 
+  async function refreshPlayerBlocks(currentPlayerOverride?: Player) {
+    const current = currentPlayerOverride ?? profilePlayer;
+
+    try {
+      setPlayerBlocks(await listPlayerBlocks(current.id));
+    } catch (error) {
+      console.warn('Could not load blocked players.', error);
+      setPlayerBlocks([]);
+    }
+  }
+
   async function refreshSocialData(currentPlayerOverride?: Player) {
     await Promise.all([
       refreshPlayersDirectory(currentPlayerOverride),
       refreshFriendRequests(currentPlayerOverride),
+      refreshPlayerBlocks(currentPlayerOverride),
     ]);
   }
 
@@ -656,6 +677,14 @@ export default function App() {
   }
 
   function openViewedProfile(player: Player) {
+    if (blockedPlayerIds.has(player.id)) {
+      setConfirmationModal({
+        body: 'This player is in your blocked list. Unblock them before viewing their profile.',
+        title: 'Player blocked',
+      });
+      return;
+    }
+
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
     setInviteParams(null);
@@ -810,6 +839,68 @@ export default function App() {
     }
   }
 
+  async function handleBlockPlayer(playerId: string) {
+    const targetPlayer = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    if (playerId === profilePlayer.id) {
+      return;
+    }
+
+    setPendingBlockActionId(playerId);
+
+    try {
+      const block = await blockPlayer(playerId);
+
+      setPlayerBlocks((current) => (
+        current.some((candidate) => candidate.id === block.id || candidate.blockedPlayerId === block.blockedPlayerId)
+          ? current.map((candidate) => (candidate.blockedPlayerId === block.blockedPlayerId ? block : candidate))
+          : [block, ...current]
+      ));
+
+      if (viewedProfilePlayer?.id === playerId) {
+        setViewedProfilePlayer(null);
+      }
+
+      if (previewProfilePlayer?.id === playerId) {
+        setPreviewProfilePlayer(null);
+      }
+
+      await Promise.all([
+        refreshPlayerBlocks(),
+        lobbyStore.refreshLobbyData(),
+      ]);
+
+      setConfirmationModal({
+        body: `${targetPlayer?.name ?? 'This player'} is now hidden from discovery and cannot join games you host.`,
+        title: 'Player blocked',
+      });
+    } catch (error) {
+      showActionError(error);
+    } finally {
+      setPendingBlockActionId(null);
+    }
+  }
+
+  async function handleUnblockPlayer(playerId: string) {
+    const targetPlayer = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    setPendingBlockActionId(playerId);
+
+    try {
+      await unblockPlayer(playerId);
+      setPlayerBlocks((current) => current.filter((block) => block.blockedPlayerId !== playerId));
+      await refreshPlayerBlocks();
+      setConfirmationModal({
+        body: `${targetPlayer?.name ?? 'This player'} can now appear in discovery and join games you host again.`,
+        title: 'Player unblocked',
+      });
+    } catch (error) {
+      showActionError(error);
+    } finally {
+      setPendingBlockActionId(null);
+    }
+  }
+
   async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
     try {
       const result = await sendLobbyInvites(lobby, playerIds);
@@ -820,11 +911,14 @@ export default function App() {
       }
 
       await lobbyStore.refreshLobbyData();
+      const resultMessage = result.messages[0];
+      const fallbackMessage = sentCount === 1
+        ? `Your invite to ${lobby.title} was sent.`
+        : `${sentCount} invites to ${lobby.title} were sent.`;
+
       Alert.alert(
         sentCount === 1 ? 'Invite sent' : 'Invites sent',
-        sentCount === 1
-          ? `Your invite to ${lobby.title} was sent.`
-          : `${sentCount} invites to ${lobby.title} were sent.`,
+        resultMessage && resultMessage !== 'Invite sent.' ? resultMessage : fallbackMessage,
       );
     } catch (error) {
       showActionError(error);
@@ -1502,6 +1596,7 @@ export default function App() {
       setAuthNotice(null);
       setProfilePlayer(mockCurrentPlayer);
       setPlayersForInvite(mockPlayers);
+      setPlayerBlocks([]);
       setAuthFlow('auth');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not log out.';
@@ -1776,14 +1871,16 @@ export default function App() {
                     lobbies={lobbyStore.lobbies}
                     notificationCount={unreadNotificationCount}
                     onBack={closeViewedProfile}
+                    onBlockPlayer={handleBlockPlayer}
                     onCancelFriendRequest={handleCancelFriendRequest}
                     onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
                     onOpenMenu={openSideMenu}
                     onOpenNotifications={openNotifications}
                     onRemoveFriend={handleRemoveFriend}
+                    onReportPlayer={openReportProblem}
                     onSendFriendRequest={handleSendFriendRequest}
                     onViewPlayerProfile={openViewedProfile}
-                    players={playersForInvite}
+                    players={discoverablePlayers}
                     player={viewedProfilePlayer}
                   />
                 </ScrollView>
@@ -1801,15 +1898,23 @@ export default function App() {
                 currentPlayer={profilePlayer}
                 friendRequests={friendRequests}
                 lobbies={lobbyStore.lobbies}
+                onBlockPlayer={handleBlockPlayer}
                 onBack={closeAddFriends}
+                onReportPlayer={openReportProblem}
                 onSendFriendRequest={handleSendFriendRequest}
                 onViewPlayerProfile={openViewedProfile}
-                players={playersForInvite}
+                players={discoverablePlayers}
               />
             ) : isAboutUsOpen ? (
               <AboutUsScreen onBack={closeAboutUs} />
             ) : isBlockedPlayersOpen ? (
-              <BlockedPlayersScreen onBack={closeBlockedPlayers} onReportProblem={openReportProblem} />
+              <BlockedPlayersScreen
+                blockedPlayers={blockedPlayers}
+                isUnblockingPlayerId={pendingBlockActionId}
+                onBack={closeBlockedPlayers}
+                onReportProblem={openReportProblem}
+                onUnblockPlayer={handleUnblockPlayer}
+              />
             ) : isCommunityGuidelinesOpen ? (
               <CommunityGuidelinesScreen onBack={closeCommunityGuidelines} onReportProblem={openReportProblem} />
             ) : isHelpSupportOpen ? (
@@ -1836,7 +1941,7 @@ export default function App() {
                 onInvitesSent={openLobbyDetails}
                 onSendInvites={handleSendLobbyInvites}
                 params={inviteParams}
-                players={playersForInvite}
+                players={discoverablePlayers}
               />
             ) : (
               <>
@@ -1848,7 +1953,7 @@ export default function App() {
                   {activeTab === 'home' && (
                     <HomeScreen
                       currentPlayer={profilePlayer}
-                      lobbies={filteredLobbies}
+                      lobbies={filteredVisibleLobbies}
                       notifications={unreadNotifications}
                       onCreateGame={openCreateGame}
                       onInviteFriends={openCommunityFriends}
@@ -1856,7 +1961,7 @@ export default function App() {
                       onOpenGames={openGamesSearch}
                       onOpenLobby={openLobbyDetails}
                       onOpenNotifications={openNotifications}
-                      players={playersForInvite}
+                      players={discoverablePlayers}
                       ratingTasks={lobbyStore.ratingTasks}
                       tocaPointGain={homeTocaPointGain}
                     />
@@ -1884,6 +1989,7 @@ export default function App() {
                           allLobbies={lobbyStore.lobbies}
                           hasPrivateAccess={lobbyStore.hasPrivateAccess(selectedLobby.id)}
                           isActionPending={Boolean(pendingLobbyActionKey)}
+                          onBlockPlayer={handleBlockPlayer}
                           onBack={() => {
                             setIsLobbyChatOpen(false);
                             setIsHostManagementOpen(false);
@@ -1905,6 +2011,7 @@ export default function App() {
                           onOpenMenu={openSideMenu}
                           onOpenNotifications={openNotifications}
                           onRemoveFriend={handleRemoveFriend}
+                          onReportPlayer={openReportProblem}
                           onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
@@ -1934,14 +2041,14 @@ export default function App() {
                         currentPlayer={profilePlayer}
                         hasPrivateAccess={lobbyStore.hasPrivateAccess}
                         initialSection={gamesInitialSection}
-                        lobbies={filteredLobbies}
+                        lobbies={filteredVisibleLobbies}
                         notificationCount={unreadNotificationCount}
                         onBack={() => setActiveTab('home')}
                         onOpenMenu={openSideMenu}
                         onOpenNotifications={openNotifications}
                         onOpenLobby={openLobbyDetails}
                         onSectionChange={setGamesInitialSection}
-                        players={playersForInvite}
+                        players={discoverablePlayers}
                         ratingTasks={lobbyStore.ratingTasks}
                         selectedFilter={selectedFilter}
                         setSelectedFilter={setSelectedFilter}
@@ -1968,15 +2075,17 @@ export default function App() {
                       notificationCount={unreadNotificationCount}
                       onAddFriend={openAddFriends}
                       onAcceptFriendRequest={handleAcceptFriendRequest}
+                      onBlockPlayer={handleBlockPlayer}
                       onCancelFriendRequest={handleCancelFriendRequest}
                       onDeclineFriendRequest={handleDeclineFriendRequest}
                       onInvitePlayer={(playerId, source) => openInviteComposer({ inviteTargetPlayerId: playerId, source })}
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
                       onRemoveFriend={handleRemoveFriend}
+                      onReportPlayer={openReportProblem}
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
-                      players={playersForInvite}
+                      players={discoverablePlayers}
                       ratingTasks={lobbyStore.ratingTasks}
                     />
                   )}
@@ -1986,15 +2095,17 @@ export default function App() {
                       friendRequests={friendRequests}
                       lobbies={lobbyStore.lobbies}
                       notificationCount={unreadNotificationCount}
+                      onBlockPlayer={handleBlockPlayer}
                       onEditProfile={openEditProfile}
                       onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
                       onCancelFriendRequest={handleCancelFriendRequest}
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
                       onRemoveFriend={handleRemoveFriend}
+                      onReportPlayer={openReportProblem}
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
-                      players={playersForInvite}
+                      players={discoverablePlayers}
                       player={profilePlayer}
                     />
                   )}

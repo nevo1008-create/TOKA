@@ -1,16 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { colors, radius, shadows, spacing } from '../theme';
+import type { Player } from '../types';
 
 type BlockedPlayersScreenProps = {
+  blockedPlayers: Player[];
+  isUnblockingPlayerId?: string | null;
   onBack: () => void;
   onReportProblem: () => void;
+  onUnblockPlayer: (playerId: string) => void;
 };
 
-export function BlockedPlayersScreen({ onBack, onReportProblem }: BlockedPlayersScreenProps) {
+export function BlockedPlayersScreen({
+  blockedPlayers,
+  isUnblockingPlayerId = null,
+  onBack,
+  onReportProblem,
+  onUnblockPlayer,
+}: BlockedPlayersScreenProps) {
   return (
     <View style={styles.screen}>
       <LinearGradient
@@ -35,37 +45,105 @@ export function BlockedPlayersScreen({ onBack, onReportProblem }: BlockedPlayers
         </View>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <Ionicons color={colors.danger} name="ban-outline" size={28} />
-          </View>
-          <AppText align="center" variant="cardTitle" weight="900">
-            No blocked players
-          </AppText>
-          <AppText align="center" tone="muted" variant="uiBody" weight="600">
-            If someone makes games feel unsafe or uncomfortable, report the issue and TOCA can help review it.
-          </AppText>
-          <Pressable accessibilityRole="button" onPress={onReportProblem} style={styles.primaryButton}>
-            <Ionicons color={colors.textOnGreen} name="flag-outline" size={17} />
-            <AppText align="center" tone="inverse" variant="button" weight="900">
-              Report a problem
+      <ScrollView contentContainerStyle={[styles.content, blockedPlayers.length === 0 && styles.contentEmpty]} showsVerticalScrollIndicator={false}>
+        {blockedPlayers.length > 0 ? (
+          <>
+            <View style={styles.summaryPanel}>
+              <View style={styles.summaryIcon}>
+                <Ionicons color={colors.danger} name="ban-outline" size={20} />
+              </View>
+              <View style={styles.summaryCopy}>
+                <AppText variant="cardTitle" weight="900">
+                  {blockedPlayers.length} blocked {blockedPlayers.length === 1 ? 'player' : 'players'}
+                </AppText>
+                <AppText tone="muted" variant="metadata" weight="600">
+                  They are hidden from your discovery surfaces and kept out of games you host.
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.playerStack}>
+              {blockedPlayers.map((player) => {
+                const isUnblocking = isUnblockingPlayerId === player.id;
+
+                return (
+                  <View key={player.id} style={styles.playerRow}>
+                    <View style={styles.avatar}>
+                      <AppText align="center" variant="cardTitle" weight="900">
+                        {player.initials}
+                      </AppText>
+                    </View>
+                    <View style={styles.playerCopy}>
+                      <AppText numberOfLines={1} variant="uiBody" weight="900">
+                        {player.name}
+                      </AppText>
+                      <AppText numberOfLines={1} tone="muted" variant="metadata" weight="700">
+                        {player.area} - {player.level}
+                      </AppText>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isUnblocking}
+                      onPress={() => onUnblockPlayer(player.id)}
+                      style={[styles.unblockButton, isUnblocking && styles.buttonDisabled]}
+                    >
+                      <AppText align="center" tone="accent" variant="button" weight="900">
+                        {isUnblocking ? 'Unblocking' : 'Unblock'}
+                      </AppText>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIcon}>
+              <Ionicons color={colors.danger} name="ban-outline" size={28} />
+            </View>
+            <AppText align="center" variant="cardTitle" weight="900">
+              No blocked players
             </AppText>
-          </Pressable>
-        </View>
-      </View>
+            <AppText align="center" tone="muted" variant="uiBody" weight="600">
+              If someone makes games feel unsafe or uncomfortable, report the issue and TOCA can help review it.
+            </AppText>
+            <Pressable accessibilityRole="button" onPress={onReportProblem} style={styles.primaryButton}>
+              <Ionicons color={colors.textOnGreen} name="flag-outline" size={17} />
+              <AppText align="center" tone="inverse" variant="button" weight="900">
+                Report a problem
+              </AppText>
+            </Pressable>
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  avatar: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
   backgroundGlow: {
     ...StyleSheet.absoluteFill,
   },
+  buttonDisabled: {
+    opacity: 0.58,
+  },
   content: {
-    flex: 1,
-    justifyContent: 'center',
+    gap: spacing.md,
     padding: spacing.lg,
+  },
+  contentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   emptyIcon: {
     alignItems: 'center',
@@ -107,6 +185,25 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  playerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  playerRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 72,
+    padding: spacing.sm,
+    ...shadows.soft,
+  },
+  playerStack: {
+    gap: spacing.sm,
+  },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: colors.primary,
@@ -120,5 +217,42 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
     flex: 1,
+  },
+  summaryCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  summaryIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(217, 74, 58, 0.10)',
+    borderColor: 'rgba(217, 74, 58, 0.18)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  summaryPanel: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+    ...shadows.soft,
+  },
+  unblockButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 86,
+    paddingHorizontal: spacing.md,
   },
 });

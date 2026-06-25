@@ -79,12 +79,14 @@ type CommunityScreenProps = {
   notificationCount: number;
   onAddFriend: () => void;
   onAcceptFriendRequest: (requestId: string) => void;
+  onBlockPlayer: (playerId: string) => Promise<void> | void;
   onCancelFriendRequest: (requestId: string) => void;
   onDeclineFriendRequest: (requestId: string) => void;
   onInvitePlayer: (playerId: string, source: 'community' | 'leaderboard') => void;
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
+  onReportPlayer: () => void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
@@ -99,12 +101,14 @@ export function CommunityScreen({
   notificationCount,
   onAddFriend,
   onAcceptFriendRequest,
+  onBlockPlayer,
   onCancelFriendRequest,
   onDeclineFriendRequest,
   onInvitePlayer,
   onOpenMenu,
   onOpenNotifications,
   onRemoveFriend,
+  onReportPlayer,
   onSendFriendRequest,
   onViewPlayerProfile,
   players,
@@ -206,6 +210,9 @@ export function CommunityScreen({
         player.friendRequestId ? () => onAcceptFriendRequest(player.friendRequestId as string) : undefined,
         player.friendRequestId ? () => onDeclineFriendRequest(player.friendRequestId as string) : undefined,
         () => onRemoveFriend(playerId),
+        onReportPlayer,
+        () => onBlockPlayer(playerId),
+        player.name,
       ),
     );
   }
@@ -521,6 +528,9 @@ export function CommunityScreen({
                 profilePreviewPlayer.friendRequestId ? () => onAcceptFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
                 profilePreviewPlayer.friendRequestId ? () => onDeclineFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
                 profilePreviewPlayer.sourcePlayerId ? () => onRemoveFriend(profilePreviewPlayer.sourcePlayerId as string) : undefined,
+                onReportPlayer,
+                () => onBlockPlayer(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
+                profilePreviewPlayer.name,
               )
             : undefined
         }
@@ -919,18 +929,34 @@ function getPlayerActions(
   onAcceptRequest?: () => void,
   onDeclineRequest?: () => void,
   onRemoveFriend?: () => void,
+  onReportPlayer?: () => void,
+  onBlockPlayer?: () => Promise<void> | void,
+  playerName = 'this player',
 ): PlayerAction[] {
   const profileLabel = isFriend ? 'Show full profile' : 'View full profile';
   const viewProfileAction = { icon: 'person-circle-outline' as const, label: profileLabel, onPress: onViewProfile };
   const inviteAction = { icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInviteToGame };
-  const reportAction = { destructive: true, icon: 'ban-outline' as const, label: 'Report & block' };
+  const safetyActions: PlayerAction[] = [
+    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: onReportPlayer },
+    {
+      confirmation: {
+        body: `${playerName} will be hidden from your discovery surfaces and kept out of games you host.`,
+        confirmLabel: 'Block',
+        title: 'Block player?',
+      },
+      destructive: true,
+      icon: 'ban-outline',
+      label: 'Block player',
+      onPress: onBlockPlayer,
+    },
+  ];
 
   if (isRequested || context === 'requested') {
     return [
       viewProfileAction,
       inviteAction,
       { icon: 'person-remove-outline' as const, label: 'Remove friend request', onPress: onRemoveRequest },
-      reportAction,
+      ...safetyActions,
     ];
   }
 
@@ -939,7 +965,7 @@ function getPlayerActions(
       viewProfileAction,
       inviteAction,
       { destructive: true, icon: 'person-remove-outline', label: 'Remove friend', onPress: onRemoveFriend },
-      reportAction,
+      ...safetyActions,
     ];
   }
 
@@ -948,7 +974,7 @@ function getPlayerActions(
       viewProfileAction,
       { icon: 'checkmark' as const, label: 'Accept', onPress: onAcceptRequest },
       { icon: 'close' as const, label: 'Decline', onPress: onDeclineRequest },
-      reportAction,
+      ...safetyActions,
     ];
   }
 
@@ -956,7 +982,7 @@ function getPlayerActions(
     viewProfileAction,
     { icon: 'person-add-outline', label: 'Add friend', onPress: onAddFriend },
     inviteAction,
-    reportAction,
+    ...safetyActions,
   ];
 }
 
