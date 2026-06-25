@@ -430,6 +430,10 @@ export type Database = {
         };
         Returns: DbPlayerBlock;
       };
+      list_my_player_blocks: {
+        Args: Record<string, never>;
+        Returns: DbPlayerBlock[];
+      };
       unblock_player: {
         Args: {
           target_player_id: string;

@@ -2,16 +2,8 @@ import { supabase } from '../../lib/supabase';
 import type { DbPlayerBlock } from '../../lib/database.types';
 import type { PlayerBlock } from '../../types';
 
-export async function listPlayerBlocks(playerId: string): Promise<PlayerBlock[]> {
-  if (!isUuid(playerId)) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from('player_blocks')
-    .select('*')
-    .eq('blocker_player_id', playerId)
-    .order('created_at', { ascending: false });
+export async function listPlayerBlocks(_playerId?: string): Promise<PlayerBlock[]> {
+  const { data, error } = await supabase.rpc('list_my_player_blocks');
 
   if (error) {
     throw error;
@@ -45,8 +37,4 @@ function mapDbPlayerBlockToPlayerBlock(row: DbPlayerBlock): PlayerBlock {
     createdAt: row.created_at,
     id: row.id,
   };
-}
-
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
 }

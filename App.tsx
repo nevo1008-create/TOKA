@@ -515,6 +515,20 @@ export default function App() {
     previewProfilePlayer?.id,
   ]);
 
+  useEffect(() => {
+    if (authFlow !== 'app') {
+      return;
+    }
+
+    if (activeTab !== 'community' && !isAddFriendsOpen && !isBlockedPlayersOpen && !inviteParams) {
+      return;
+    }
+
+    void refreshPlayerBlocks(profilePlayer).catch((error) => {
+      console.warn('Could not refresh blocked players for current surface.', error);
+    });
+  }, [activeTab, authFlow, inviteParams, isAddFriendsOpen, isBlockedPlayersOpen, profilePlayer.id]);
+
   async function refreshPlayersDirectory(currentPlayerOverride?: Player) {
     try {
       const nextPlayers = await listPlayers();
@@ -539,14 +553,26 @@ export default function App() {
     }
   }
 
-  async function refreshPlayerBlocks(currentPlayerOverride?: Player) {
+  async function refreshPlayerBlocks(currentPlayerOverride?: Player, options: { preserveExisting?: boolean } = {}) {
     const current = currentPlayerOverride ?? profilePlayer;
 
     try {
-      setPlayerBlocks(await listPlayerBlocks(current.id));
+      const nextBlocks = await listPlayerBlocks(current.id);
+
+      setPlayerBlocks((currentBlocks) => (
+        options.preserveExisting
+          ? mergePlayerBlocks(currentBlocks, nextBlocks)
+          : nextBlocks
+      ));
+      return nextBlocks;
     } catch (error) {
       console.warn('Could not load blocked players.', error);
-      setPlayerBlocks([]);
+
+      if (!options.preserveExisting) {
+        setPlayerBlocks([]);
+      }
+
+      return [];
     }
   }
 
@@ -851,11 +877,7 @@ export default function App() {
     try {
       const block = await blockPlayer(playerId);
 
-      setPlayerBlocks((current) => (
-        current.some((candidate) => candidate.id === block.id || candidate.blockedPlayerId === block.blockedPlayerId)
-          ? current.map((candidate) => (candidate.blockedPlayerId === block.blockedPlayerId ? block : candidate))
-          : [block, ...current]
-      ));
+      setPlayerBlocks((current) => mergePlayerBlocks(current, [block]));
 
       if (viewedProfilePlayer?.id === playerId) {
         setViewedProfilePlayer(null);
@@ -866,7 +888,7 @@ export default function App() {
       }
 
       await Promise.all([
-        refreshPlayerBlocks(),
+        refreshPlayerBlocks(profilePlayer, { preserveExisting: true }),
         lobbyStore.refreshLobbyData(),
       ]);
 
@@ -2624,6 +2646,23 @@ function upsertFriendRequest(requests: FriendRequest[], request: FriendRequest) 
   return requests.some((candidate) => candidate.id === request.id)
     ? requests.map((candidate) => (candidate.id === request.id ? request : candidate))
     : [request, ...requests];
+}
+
+function mergePlayerBlocks(currentBlocks: PlayerBlock[], nextBlocks: PlayerBlock[]) {
+  const merged = [...currentBlocks];
+
+  nextBlocks.forEach((block) => {
+    const existingIndex = merged.findIndex((candidate) => candidate.blockedPlayerId === block.blockedPlayerId);
+
+    if (existingIndex >= 0) {
+      merged[existingIndex] = block;
+      return;
+    }
+
+    merged.unshift(block);
+  });
+
+  return merged;
 }
 
 const styles = StyleSheet.create({
