@@ -814,7 +814,7 @@ export default function App() {
       const sentCount = result.sentCount ?? 0;
 
       if (!result.success || sentCount === 0) {
-        throw new Error(result.messages[0] ?? 'No invite notification was sent. Refresh players and try again.');
+        throw new Error(result.messages[0] ?? 'Invite was not sent. Check that this player can receive room invites and try again.');
       }
 
       await lobbyStore.refreshLobbyData();
@@ -1072,7 +1072,7 @@ export default function App() {
 
   function showLobbyActionMessages(messages: string[]) {
     if (messages.length === 0) {
-      Alert.alert('Game update', 'Nothing changed. Refresh the lobby and try again.');
+      Alert.alert('No update received', 'The game did not change. Check the latest room state and try again.');
       return;
     }
 
@@ -1228,7 +1228,7 @@ export default function App() {
   function showActionError(error: unknown) {
     const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 
-    Alert.alert('Game update failed', message);
+    Alert.alert('Action not completed', message);
   }
 
   async function handleSubmitPrivatePin(lobby: Lobby, pin: string) {
@@ -1442,12 +1442,12 @@ export default function App() {
       return;
     }
 
-    Alert.alert(notification.title, 'This notification context will be connected in a later pass.');
+    Alert.alert(notification.title, 'Open the related screen to check the latest details.');
   }
 
   function showDrawerPlaceholder(_action: string, label: string) {
     setIsSideMenuOpen(false);
-    Alert.alert(label, `${label} will be connected in a later pass.`);
+    Alert.alert('Coming soon', `${label} is planned for a future TOCA update.`);
   }
 
   function resetAppNavigationState() {
