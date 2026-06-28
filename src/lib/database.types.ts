@@ -440,6 +440,12 @@ export type Database = {
         };
         Returns: void;
       };
+      can_current_user_read_lobby: {
+        Args: {
+          target_lobby_id: string;
+        };
+        Returns: boolean;
+      };
       send_lobby_invites: {
         Args: {
           target_lobby_id: string;
