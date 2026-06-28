@@ -158,6 +158,7 @@ export default function App() {
     toLevel: number;
   } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
+  const [pendingBlockedLobbyOpen, setPendingBlockedLobbyOpen] = useState<Lobby | null>(null);
   const [pendingBlockActionId, setPendingBlockActionId] = useState<string | null>(null);
   const [isDeleteNotificationsConfirmOpen, setIsDeleteNotificationsConfirmOpen] = useState(false);
   const [liveNotification, setLiveNotification] = useState<Notification | null>(null);
@@ -965,6 +966,15 @@ export default function App() {
   }
 
   function openLobbyDetails(lobby: Lobby) {
+    if (hasBlockedPlayerInLobby(lobby, blockedPlayerIds, profilePlayer.id)) {
+      setPendingBlockedLobbyOpen(lobby);
+      return;
+    }
+
+    openLobbyDetailsConfirmed(lobby);
+  }
+
+  function openLobbyDetailsConfirmed(lobby: Lobby) {
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
     if (activeTab !== 'games') {
@@ -981,6 +991,16 @@ export default function App() {
     setSelectedLobbyId(lobby.id);
     setActiveTab('games');
     setLegalScreen(null);
+  }
+
+  function confirmOpenBlockedPlayerLobby() {
+    const lobby = pendingBlockedLobbyOpen;
+
+    setPendingBlockedLobbyOpen(null);
+
+    if (lobby) {
+      openLobbyDetailsConfirmed(lobby);
+    }
   }
 
   function openHostManagement() {
@@ -1603,6 +1623,7 @@ export default function App() {
     setSelectedFilter('All Games');
     setInviteParams(null);
     setIsLobbyChatOpen(false);
+    setPendingBlockedLobbyOpen(null);
     setSelectedLobbyId(null);
   }
 
@@ -2004,6 +2025,7 @@ export default function App() {
                         />
                       ) : (
                         <LobbyDetailsScreen
+                          blockedPlayerIds={[...blockedPlayerIds]}
                           currentPlayer={profilePlayer}
                           lobby={selectedLobby}
                           lobbyIndex={selectedLobbyIndex}
@@ -2220,6 +2242,15 @@ export default function App() {
               onClose={() => setConfirmationModal(null)}
               title={confirmationModal?.title ?? ''}
               visible={Boolean(confirmationModal)}
+            />
+            <ActionConfirmationModal
+              body="A player you blocked is in this lobby. You can still view it, but joining may place you in the same game."
+              confirmTone="primary"
+              confirmLabel="View lobby"
+              onCancel={() => setPendingBlockedLobbyOpen(null)}
+              onConfirm={confirmOpenBlockedPlayerLobby}
+              title="Blocked player in lobby"
+              visible={Boolean(pendingBlockedLobbyOpen)}
             />
             <ActionConfirmationModal
               body={`Remove ${playersForInvite.find((player) => player.id === pendingFriendRemovalId)?.name ?? 'this player'} from your friends list?`}
@@ -2596,6 +2627,7 @@ function LevelUpModal({
 function ActionConfirmationModal({
   body,
   confirmLabel,
+  confirmTone = 'danger',
   onCancel,
   onConfirm,
   title,
@@ -2603,6 +2635,7 @@ function ActionConfirmationModal({
 }: {
   body: string;
   confirmLabel: string;
+  confirmTone?: 'danger' | 'primary';
   onCancel: () => void;
   onConfirm: () => void;
   title: string;
@@ -2630,7 +2663,14 @@ function ActionConfirmationModal({
                 Cancel
               </AppText>
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={onConfirm} style={styles.confirmationDangerButton}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onConfirm}
+              style={[
+                styles.confirmationDangerButton,
+                confirmTone === 'primary' && styles.confirmationPrimaryActionButton,
+              ]}
+            >
               <AppText align="center" tone="inverse" variant="button" weight="900">
                 {confirmLabel}
               </AppText>
@@ -2663,6 +2703,15 @@ function mergePlayerBlocks(currentBlocks: PlayerBlock[], nextBlocks: PlayerBlock
   });
 
   return merged;
+}
+
+function hasBlockedPlayerInLobby(lobby: Lobby, blockedPlayerIds: Set<string>, currentPlayerId: string) {
+  return lobby.participants.some((participant) =>
+    participant.playerId !== currentPlayerId &&
+    blockedPlayerIds.has(participant.playerId) &&
+    participant.status !== 'removed' &&
+    participant.status !== 'rejected',
+  );
 }
 
 const styles = StyleSheet.create({
@@ -2801,6 +2850,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     minHeight: 48,
+  },
+  confirmationPrimaryActionButton: {
+    backgroundColor: colors.primary,
   },
   confirmationRoot: {
     alignItems: 'center',
