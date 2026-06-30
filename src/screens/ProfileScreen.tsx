@@ -29,6 +29,7 @@ type ProfileScreenProps = {
   lobbies: Lobby[];
   notificationCount: number;
   onBack?: () => void;
+  onBlockPlayer: (playerId: string) => Promise<void> | void;
   onCancelFriendRequest: (requestId: string) => void;
   onEditProfile?: () => void;
   onInvitePlayer: (playerId: string) => void;
@@ -48,6 +49,7 @@ export function ProfileScreen({
   lobbies,
   notificationCount,
   onBack,
+  onBlockPlayer,
   onCancelFriendRequest,
   onEditProfile,
   onInvitePlayer,
@@ -91,6 +93,8 @@ export function ProfileScreen({
         pendingRequest ? () => onCancelFriendRequest(pendingRequest.id) : undefined,
         () => onRemoveFriend(person.id),
         () => onReportPlayer?.(person),
+        () => onBlockPlayer(person.id),
+        person.name,
       ),
     );
   }
@@ -302,6 +306,8 @@ export function ProfileScreen({
                   : undefined,
                 () => onRemoveFriend(profilePreviewPlayer.player.id),
                 () => onReportPlayer?.(profilePreviewPlayer.player),
+                () => onBlockPlayer(profilePreviewPlayer.player.id),
+                profilePreviewPlayer.player.name,
               )
             : undefined
         }
@@ -778,6 +784,8 @@ function getProfilePlayerActions(
   onRemoveRequest?: () => void,
   onRemoveFriend?: () => void,
   onReportPlayer?: () => void,
+  onBlockPlayer?: () => Promise<void> | void,
+  playerName = 'this player',
 ): PlayerAction[] {
   const viewProfileAction = {
     icon: 'person-circle-outline' as const,
@@ -785,19 +793,27 @@ function getProfilePlayerActions(
     onPress: onViewProfile,
   };
   const inviteAction = { icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInviteToGame };
-  const reportAction = {
-    destructive: true,
-    icon: 'flag-outline' as const,
-    label: 'Report player',
-    onPress: onReportPlayer,
-  };
+  const safetyActions: PlayerAction[] = [
+    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: onReportPlayer },
+    {
+      confirmation: {
+        body: `${playerName} will be hidden from your discovery surfaces and kept out of games you host.`,
+        confirmLabel: 'Block',
+        title: 'Block player?',
+      },
+      destructive: true,
+      icon: 'ban-outline',
+      label: 'Block player',
+      onPress: onBlockPlayer,
+    },
+  ];
 
   if (isRequested) {
     return [
       viewProfileAction,
       inviteAction,
       { icon: 'person-remove-outline' as const, label: 'Remove friend request', onPress: onRemoveRequest },
-      reportAction,
+      ...safetyActions,
     ];
   }
 
@@ -806,7 +822,7 @@ function getProfilePlayerActions(
       viewProfileAction,
       inviteAction,
       { destructive: true, icon: 'person-remove-outline', label: 'Remove friend', onPress: onRemoveFriend },
-      reportAction,
+      ...safetyActions,
     ];
   }
 
@@ -814,7 +830,7 @@ function getProfilePlayerActions(
     viewProfileAction,
     { icon: 'person-add-outline' as const, label: 'Add friend', onPress: onAddFriend },
     inviteAction,
-    reportAction,
+    ...safetyActions,
   ];
 }
 

@@ -38,6 +38,7 @@ import {
 } from './src/features/auth/authRepository';
 import { uploadProfilePhoto } from './src/features/auth/profilePhotoRepository';
 import { getPlayerByAuthUserId, listPlayers, upsertPlayerForUser } from './src/features/auth/playerRepository';
+import { blockPlayer, listPlayerBlocks, unblockPlayer } from './src/features/blocks/blockRepository';
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -59,6 +60,7 @@ import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { BlockedPlayersScreen } from './src/screens/BlockedPlayersScreen';
 import { CommunityScreen } from './src/screens/CommunityScreen';
 import { CommunityGuidelinesScreen } from './src/screens/CommunityGuidelinesScreen';
 import { CreateLobbyScreen } from './src/screens/CreateLobbyScreen';
@@ -78,7 +80,7 @@ import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
 import { colors, radius, shadows, spacing } from './src/theme';
-import type { FriendRequest, Lobby, Notification, Player } from './src/types';
+import type { FriendRequest, Lobby, Notification, Player, PlayerBlock } from './src/types';
 
 type HomeTocaPointGain = {
   amount: number;
@@ -152,6 +154,7 @@ export default function App() {
   const [profilePlayer, setProfilePlayer] = useState<Player>(mockCurrentPlayer);
   const [playersForInvite, setPlayersForInvite] = useState<Player[]>(mockPlayers);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [playerBlocks, setPlayerBlocks] = useState<PlayerBlock[]>([]);
   const [confirmationModal, setConfirmationModal] = useState<{
     badgeLabel?: string | null;
     body: string;
@@ -163,6 +166,8 @@ export default function App() {
     toLevel: number;
   } | null>(null);
   const [pendingFriendRemovalId, setPendingFriendRemovalId] = useState<string | null>(null);
+  const [pendingBlockedLobbyOpen, setPendingBlockedLobbyOpen] = useState<Lobby | null>(null);
+  const [pendingBlockActionId, setPendingBlockActionId] = useState<string | null>(null);
   const [isDeleteNotificationsConfirmOpen, setIsDeleteNotificationsConfirmOpen] = useState(false);
   const [liveNotification, setLiveNotification] = useState<Notification | null>(null);
   const socialRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,6 +198,7 @@ export default function App() {
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isAddFriendsOpen, setIsAddFriendsOpen] = useState(false);
   const [isAboutUsOpen, setIsAboutUsOpen] = useState(false);
+  const [isBlockedPlayersOpen, setIsBlockedPlayersOpen] = useState(false);
   const [isCommunityGuidelinesOpen, setIsCommunityGuidelinesOpen] = useState(false);
   const [isHelpSupportOpen, setIsHelpSupportOpen] = useState(false);
   const [isReportProblemOpen, setIsReportProblemOpen] = useState(false);
@@ -249,6 +255,12 @@ export default function App() {
     ? isLobbyHost(selectedLobby, profilePlayer.id, selectedCurrentParticipant)
     : false;
   const filteredLobbies = lobbyStore.getFilteredLobbies(selectedFilter);
+  const blockedPlayerIds = new Set(playerBlocks.map((block) => block.blockedPlayerId));
+  const discoverablePlayers = playersForInvite.filter((player) => player.id === profilePlayer.id || !blockedPlayerIds.has(player.id));
+  const blockedPlayers = playerBlocks
+    .map((block) => playersForInvite.find((player) => player.id === block.blockedPlayerId))
+    .filter((player): player is Player => Boolean(player));
+  const filteredVisibleLobbies = filteredLobbies.filter((lobby) => !blockedPlayerIds.has(lobby.adminId));
 
   useEffect(() => {
     async function bootstrapSession() {
@@ -513,6 +525,20 @@ export default function App() {
     previewProfilePlayer?.id,
   ]);
 
+  useEffect(() => {
+    if (authFlow !== 'app') {
+      return;
+    }
+
+    if (activeTab !== 'community' && !isAddFriendsOpen && !isBlockedPlayersOpen && !inviteParams) {
+      return;
+    }
+
+    void refreshPlayerBlocks(profilePlayer).catch((error) => {
+      console.warn('Could not refresh blocked players for current surface.', error);
+    });
+  }, [activeTab, authFlow, inviteParams, isAddFriendsOpen, isBlockedPlayersOpen, profilePlayer.id]);
+
   async function refreshPlayersDirectory(currentPlayerOverride?: Player): Promise<Player[]> {
     try {
       const nextPlayers = await listPlayers();
@@ -540,10 +566,34 @@ export default function App() {
     }
   }
 
+  async function refreshPlayerBlocks(currentPlayerOverride?: Player, options: { preserveExisting?: boolean } = {}) {
+    const current = currentPlayerOverride ?? profilePlayer;
+
+    try {
+      const nextBlocks = await listPlayerBlocks(current.id);
+
+      setPlayerBlocks((currentBlocks) => (
+        options.preserveExisting
+          ? mergePlayerBlocks(currentBlocks, nextBlocks)
+          : nextBlocks
+      ));
+      return nextBlocks;
+    } catch (error) {
+      console.warn('Could not load blocked players.', error);
+
+      if (!options.preserveExisting) {
+        setPlayerBlocks([]);
+      }
+
+      return [];
+    }
+  }
+
   async function refreshSocialData(currentPlayerOverride?: Player) {
     await Promise.all([
       refreshPlayersDirectory(currentPlayerOverride),
       refreshFriendRequests(currentPlayerOverride),
+      refreshPlayerBlocks(currentPlayerOverride),
     ]);
   }
 
@@ -666,6 +716,14 @@ export default function App() {
   }
 
   function openViewedProfile(player: Player) {
+    if (blockedPlayerIds.has(player.id)) {
+      setConfirmationModal({
+        body: 'This player is in your blocked list. Unblock them before viewing their profile.',
+        title: 'Player blocked',
+      });
+      return;
+    }
+
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
     setInviteParams(null);
@@ -820,21 +878,82 @@ export default function App() {
     }
   }
 
+  async function handleBlockPlayer(playerId: string) {
+    const targetPlayer = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    if (playerId === profilePlayer.id) {
+      return;
+    }
+
+    setPendingBlockActionId(playerId);
+
+    try {
+      const block = await blockPlayer(playerId);
+
+      setPlayerBlocks((current) => mergePlayerBlocks(current, [block]));
+
+      if (viewedProfilePlayer?.id === playerId) {
+        setViewedProfilePlayer(null);
+      }
+
+      if (previewProfilePlayer?.id === playerId) {
+        setPreviewProfilePlayer(null);
+      }
+
+      await Promise.all([
+        refreshPlayerBlocks(profilePlayer, { preserveExisting: true }),
+        lobbyStore.refreshLobbyData(),
+      ]);
+
+      setConfirmationModal({
+        body: `${targetPlayer?.name ?? 'This player'} is now hidden from discovery and cannot join games you host.`,
+        title: 'Player blocked',
+      });
+    } catch (error) {
+      showActionError(error);
+    } finally {
+      setPendingBlockActionId(null);
+    }
+  }
+
+  async function handleUnblockPlayer(playerId: string) {
+    const targetPlayer = playersForInvite.find((candidate) => candidate.id === playerId);
+
+    setPendingBlockActionId(playerId);
+
+    try {
+      await unblockPlayer(playerId);
+      setPlayerBlocks((current) => current.filter((block) => block.blockedPlayerId !== playerId));
+      await refreshPlayerBlocks();
+      setConfirmationModal({
+        body: `${targetPlayer?.name ?? 'This player'} can now appear in discovery and join games you host again.`,
+        title: 'Player unblocked',
+      });
+    } catch (error) {
+      showActionError(error);
+    } finally {
+      setPendingBlockActionId(null);
+    }
+  }
+
   async function handleSendLobbyInvites(lobby: Lobby, playerIds: string[]) {
     try {
       const result = await sendLobbyInvites(lobby, playerIds);
       const sentCount = result.sentCount ?? 0;
 
       if (!result.success || sentCount === 0) {
-        throw new Error(result.messages[0] ?? 'No invite notification was sent. Refresh players and try again.');
+        throw new Error(result.messages[0] ?? 'Invite was not sent. Check that this player can receive room invites and try again.');
       }
 
       await lobbyStore.refreshLobbyData();
+      const resultMessage = result.messages[0];
+      const fallbackMessage = sentCount === 1
+        ? `Your invite to ${lobby.title} was sent.`
+        : `${sentCount} invites to ${lobby.title} were sent.`;
+
       Alert.alert(
         sentCount === 1 ? 'Invite sent' : 'Invites sent',
-        sentCount === 1
-          ? `Your invite to ${lobby.title} was sent.`
-          : `${sentCount} invites to ${lobby.title} were sent.`,
+        resultMessage && resultMessage !== 'Invite sent.' ? resultMessage : fallbackMessage,
       );
     } catch (error) {
       showActionError(error);
@@ -859,6 +978,15 @@ export default function App() {
   }
 
   function openLobbyDetails(lobby: Lobby) {
+    if (hasBlockedPlayerInLobby(lobby, blockedPlayerIds, profilePlayer.id)) {
+      setPendingBlockedLobbyOpen(lobby);
+      return;
+    }
+
+    openLobbyDetailsConfirmed(lobby);
+  }
+
+  function openLobbyDetailsConfirmed(lobby: Lobby) {
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
     if (activeTab !== 'games') {
@@ -875,6 +1003,16 @@ export default function App() {
     setSelectedLobbyId(lobby.id);
     setActiveTab('games');
     setLegalScreen(null);
+  }
+
+  function confirmOpenBlockedPlayerLobby() {
+    const lobby = pendingBlockedLobbyOpen;
+
+    setPendingBlockedLobbyOpen(null);
+
+    if (lobby) {
+      openLobbyDetailsConfirmed(lobby);
+    }
   }
 
   function openHostManagement() {
@@ -948,6 +1086,7 @@ export default function App() {
     setIsEditProfileOpen(false);
     setIsAddFriendsOpen(false);
     setIsAboutUsOpen(false);
+    setIsBlockedPlayersOpen(false);
     setIsCommunityGuidelinesOpen(false);
     setIsHelpSupportOpen(false);
     setInviteParams(null);
@@ -1001,6 +1140,27 @@ export default function App() {
       reportContext: report.reportContext,
       reportType: report.reportType,
     });
+  }
+
+  function openBlockedPlayers() {
+    setIsSideMenuOpen(false);
+    setIsNotificationsOpen(false);
+    setViewedProfilePlayer(null);
+    setIsEditProfileOpen(false);
+    setIsAddFriendsOpen(false);
+    setIsAboutUsOpen(false);
+    setIsCommunityGuidelinesOpen(false);
+    setIsHelpSupportOpen(false);
+    setIsReportProblemOpen(false);
+    setInviteParams(null);
+    setIsLobbyChatOpen(false);
+    setSelectedLobbyId(null);
+    setIsBlockedPlayersOpen(true);
+    setLegalScreen(null);
+  }
+
+  function closeBlockedPlayers() {
+    setIsBlockedPlayersOpen(false);
   }
 
   function openDeleteAccount() {
@@ -1132,7 +1292,7 @@ export default function App() {
 
   function showLobbyActionMessages(messages: string[]) {
     if (messages.length === 0) {
-      Alert.alert('Game update', 'Nothing changed. Refresh the lobby and try again.');
+      Alert.alert('No update received', 'The game did not change. Check the latest room state and try again.');
       return;
     }
 
@@ -1288,7 +1448,7 @@ export default function App() {
   function showActionError(error: unknown) {
     const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 
-    Alert.alert('Game update failed', message);
+    Alert.alert('Action not completed', message);
   }
 
   async function handleSubmitPrivatePin(lobby: Lobby, pin: string) {
@@ -1502,12 +1662,7 @@ export default function App() {
       return;
     }
 
-    Alert.alert(notification.title, 'This notification context will be connected in a later pass.');
-  }
-
-  function showDrawerPlaceholder(_action: string, label: string) {
-    setIsSideMenuOpen(false);
-    Alert.alert(label, `${label} will be connected in a later pass.`);
+    Alert.alert(notification.title, 'Open the related screen to check the latest details.');
   }
 
   function resetAppNavigationState() {
@@ -1528,6 +1683,7 @@ export default function App() {
     setSelectedFilter('All Games');
     setInviteParams(null);
     setIsLobbyChatOpen(false);
+    setPendingBlockedLobbyOpen(null);
     setSelectedLobbyId(null);
   }
 
@@ -1543,6 +1699,7 @@ export default function App() {
       setAuthNotice(null);
       setProfilePlayer(mockCurrentPlayer);
       setPlayersForInvite(mockPlayers);
+      setPlayerBlocks([]);
       setAuthFlow('auth');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not log out.';
@@ -1817,6 +1974,7 @@ export default function App() {
                     lobbies={lobbyStore.lobbies}
                     notificationCount={unreadNotificationCount}
                     onBack={closeViewedProfile}
+                    onBlockPlayer={handleBlockPlayer}
                     onCancelFriendRequest={handleCancelFriendRequest}
                     onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
                     onOpenMenu={openSideMenu}
@@ -1825,7 +1983,7 @@ export default function App() {
                     onReportPlayer={openReportPlayer}
                     onSendFriendRequest={handleSendFriendRequest}
                     onViewPlayerProfile={openViewedProfile}
-                    players={playersForInvite}
+                    players={discoverablePlayers}
                     player={viewedProfilePlayer}
                   />
                 </ScrollView>
@@ -1843,14 +2001,23 @@ export default function App() {
                 currentPlayer={profilePlayer}
                 friendRequests={friendRequests}
                 lobbies={lobbyStore.lobbies}
+                onBlockPlayer={handleBlockPlayer}
                 onBack={closeAddFriends}
                 onReportPlayer={openReportPlayer}
                 onSendFriendRequest={handleSendFriendRequest}
                 onViewPlayerProfile={openViewedProfile}
-                players={playersForInvite}
+                players={discoverablePlayers}
               />
             ) : isAboutUsOpen ? (
               <AboutUsScreen onBack={closeAboutUs} />
+            ) : isBlockedPlayersOpen ? (
+              <BlockedPlayersScreen
+                blockedPlayers={blockedPlayers}
+                isUnblockingPlayerId={pendingBlockActionId}
+                onBack={closeBlockedPlayers}
+                onReportProblem={openReportProblem}
+                onUnblockPlayer={handleUnblockPlayer}
+              />
             ) : isCommunityGuidelinesOpen ? (
               <CommunityGuidelinesScreen onBack={closeCommunityGuidelines} onReportProblem={openReportProblem} />
             ) : isHelpSupportOpen ? (
@@ -1883,7 +2050,7 @@ export default function App() {
                 onInvitesSent={openLobbyDetails}
                 onSendInvites={handleSendLobbyInvites}
                 params={inviteParams}
-                players={playersForInvite}
+                players={discoverablePlayers}
               />
             ) : (
               <>
@@ -1895,7 +2062,7 @@ export default function App() {
                   {activeTab === 'home' && (
                     <HomeScreen
                       currentPlayer={profilePlayer}
-                      lobbies={filteredLobbies}
+                      lobbies={filteredVisibleLobbies}
                       notifications={unreadNotifications}
                       onCreateGame={openCreateGame}
                       onInviteFriends={openCommunityFriends}
@@ -1903,7 +2070,7 @@ export default function App() {
                       onOpenGames={openGamesSearch}
                       onOpenLobby={openLobbyDetails}
                       onOpenNotifications={openNotifications}
-                      players={playersForInvite}
+                      players={discoverablePlayers}
                       ratingTasks={lobbyStore.ratingTasks}
                       tocaPointGain={homeTocaPointGain}
                     />
@@ -1924,6 +2091,7 @@ export default function App() {
                         />
                       ) : (
                         <LobbyDetailsScreen
+                          blockedPlayerIds={[...blockedPlayerIds]}
                           currentPlayer={profilePlayer}
                           lobby={selectedLobby}
                           lobbyIndex={selectedLobbyIndex}
@@ -1931,6 +2099,7 @@ export default function App() {
                           allLobbies={lobbyStore.lobbies}
                           hasPrivateAccess={lobbyStore.hasPrivateAccess(selectedLobby.id)}
                           isActionPending={Boolean(pendingLobbyActionKey)}
+                          onBlockPlayer={handleBlockPlayer}
                           onBack={() => {
                             setIsLobbyChatOpen(false);
                             setIsHostManagementOpen(false);
@@ -1982,14 +2151,14 @@ export default function App() {
                         currentPlayer={profilePlayer}
                         hasPrivateAccess={lobbyStore.hasPrivateAccess}
                         initialSection={gamesInitialSection}
-                        lobbies={filteredLobbies}
+                        lobbies={filteredVisibleLobbies}
                         notificationCount={unreadNotificationCount}
                         onBack={() => setActiveTab('home')}
                         onOpenMenu={openSideMenu}
                         onOpenNotifications={openNotifications}
                         onOpenLobby={openLobbyDetails}
                         onSectionChange={setGamesInitialSection}
-                        players={playersForInvite}
+                        players={discoverablePlayers}
                         ratingTasks={lobbyStore.ratingTasks}
                         selectedFilter={selectedFilter}
                         setSelectedFilter={setSelectedFilter}
@@ -2016,6 +2185,7 @@ export default function App() {
                       notificationCount={unreadNotificationCount}
                       onAddFriend={openAddFriends}
                       onAcceptFriendRequest={handleAcceptFriendRequest}
+                      onBlockPlayer={handleBlockPlayer}
                       onCancelFriendRequest={handleCancelFriendRequest}
                       onDeclineFriendRequest={handleDeclineFriendRequest}
                       onInvitePlayer={(playerId, source) => openInviteComposer({ inviteTargetPlayerId: playerId, source })}
@@ -2025,7 +2195,7 @@ export default function App() {
                       onReportPlayer={openReportPlayer}
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
-                      players={playersForInvite}
+                      players={discoverablePlayers}
                       ratingTasks={lobbyStore.ratingTasks}
                     />
                   )}
@@ -2035,6 +2205,7 @@ export default function App() {
                       friendRequests={friendRequests}
                       lobbies={lobbyStore.lobbies}
                       notificationCount={unreadNotificationCount}
+                      onBlockPlayer={handleBlockPlayer}
                       onEditProfile={openEditProfile}
                       onInvitePlayer={(playerId) => openInviteComposer({ inviteTargetPlayerId: playerId, source: 'profile' })}
                       onCancelFriendRequest={handleCancelFriendRequest}
@@ -2044,7 +2215,7 @@ export default function App() {
                       onReportPlayer={openReportPlayer}
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
-                      players={playersForInvite}
+                      players={discoverablePlayers}
                       player={profilePlayer}
                     />
                   )}
@@ -2074,6 +2245,7 @@ export default function App() {
             <SideMenuDrawer
               onClose={closeSideMenu}
               onAbout={openAboutUs}
+              onBlockedPlayers={openBlockedPlayers}
               onCommunityGuidelines={openCommunityGuidelines}
               onDeleteAccount={openDeleteAccount}
               onEditProfile={openEditProfile}
@@ -2083,7 +2255,6 @@ export default function App() {
               onMyGames={openMyGamesFromMenu}
               onNotifications={openNotifications}
               onPrivacyPolicy={openPrivacyPolicy}
-              onPlaceholderAction={showDrawerPlaceholder}
               onReportProblem={openReportProblem}
               onTermsOfService={openTermsOfService}
               onViewProfile={openProfileFromMenu}
@@ -2147,6 +2318,15 @@ export default function App() {
               onClose={() => setConfirmationModal(null)}
               title={confirmationModal?.title ?? ''}
               visible={Boolean(confirmationModal)}
+            />
+            <ActionConfirmationModal
+              body="A player you blocked is in this lobby. You can still view it, but joining may place you in the same game."
+              confirmTone="primary"
+              confirmLabel="View lobby"
+              onCancel={() => setPendingBlockedLobbyOpen(null)}
+              onConfirm={confirmOpenBlockedPlayerLobby}
+              title="Blocked player in lobby"
+              visible={Boolean(pendingBlockedLobbyOpen)}
             />
             <ActionConfirmationModal
               body={`Remove ${playersForInvite.find((player) => player.id === pendingFriendRemovalId)?.name ?? 'this player'} from your friends list?`}
@@ -2523,6 +2703,7 @@ function LevelUpModal({
 function ActionConfirmationModal({
   body,
   confirmLabel,
+  confirmTone = 'danger',
   onCancel,
   onConfirm,
   title,
@@ -2530,6 +2711,7 @@ function ActionConfirmationModal({
 }: {
   body: string;
   confirmLabel: string;
+  confirmTone?: 'danger' | 'primary';
   onCancel: () => void;
   onConfirm: () => void;
   title: string;
@@ -2557,7 +2739,14 @@ function ActionConfirmationModal({
                 Cancel
               </AppText>
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={onConfirm} style={styles.confirmationDangerButton}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onConfirm}
+              style={[
+                styles.confirmationDangerButton,
+                confirmTone === 'primary' && styles.confirmationPrimaryActionButton,
+              ]}
+            >
               <AppText align="center" tone="inverse" variant="button" weight="900">
                 {confirmLabel}
               </AppText>
@@ -2605,6 +2794,32 @@ function normalizePlayerMatchValue(value: string) {
 
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function mergePlayerBlocks(currentBlocks: PlayerBlock[], nextBlocks: PlayerBlock[]) {
+  const merged = [...currentBlocks];
+
+  nextBlocks.forEach((block) => {
+    const existingIndex = merged.findIndex((candidate) => candidate.blockedPlayerId === block.blockedPlayerId);
+
+    if (existingIndex >= 0) {
+      merged[existingIndex] = block;
+      return;
+    }
+
+    merged.unshift(block);
+  });
+
+  return merged;
+}
+
+function hasBlockedPlayerInLobby(lobby: Lobby, blockedPlayerIds: Set<string>, currentPlayerId: string) {
+  return lobby.participants.some((participant) =>
+    participant.playerId !== currentPlayerId &&
+    blockedPlayerIds.has(participant.playerId) &&
+    participant.status !== 'removed' &&
+    participant.status !== 'rejected',
+  );
 }
 
 const styles = StyleSheet.create({
@@ -2743,6 +2958,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     minHeight: 48,
+  },
+  confirmationPrimaryActionButton: {
+    backgroundColor: colors.primary,
   },
   confirmationRoot: {
     alignItems: 'center',

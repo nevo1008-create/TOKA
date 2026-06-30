@@ -160,6 +160,13 @@ export type DbFriendRequest = {
   responded_at: string | null;
 };
 
+export type DbPlayerBlock = {
+  id: string;
+  blocker_player_id: string;
+  blocked_player_id: string;
+  created_at: string;
+};
+
 export type DbTocaPointEvent = {
   id: string;
   player_id: string;
@@ -313,6 +320,11 @@ export type Database = {
         Insert: Partial<DbFriendRequest> & Pick<DbFriendRequest, 'requester_player_id' | 'recipient_player_id'>;
         Update: Partial<DbFriendRequest>;
       };
+      player_blocks: {
+        Row: DbPlayerBlock;
+        Insert: Partial<DbPlayerBlock> & Pick<DbPlayerBlock, 'blocker_player_id' | 'blocked_player_id'>;
+        Update: Partial<DbPlayerBlock>;
+      };
       toca_point_events: {
         Row: DbTocaPointEvent;
         Insert: Partial<DbTocaPointEvent> & Pick<DbTocaPointEvent, 'player_id' | 'type' | 'points' | 'dedupe_key'>;
@@ -441,6 +453,28 @@ export type Database = {
           target_player_id: string;
         };
         Returns: void;
+      };
+      block_player: {
+        Args: {
+          target_player_id: string;
+        };
+        Returns: DbPlayerBlock;
+      };
+      list_my_player_blocks: {
+        Args: Record<string, never>;
+        Returns: DbPlayerBlock[];
+      };
+      unblock_player: {
+        Args: {
+          target_player_id: string;
+        };
+        Returns: void;
+      };
+      can_current_user_read_lobby: {
+        Args: {
+          target_lobby_id: string;
+        };
+        Returns: boolean;
       };
       send_lobby_invites: {
         Args: {

@@ -211,6 +211,13 @@ export type PlayerReport = {
   updatedAt: string;
 };
 
+export type PlayerBlock = {
+  id: string;
+  blockerPlayerId: string;
+  blockedPlayerId: string;
+  createdAt: string;
+};
+
 export type TocaPointEvent = {
   id: string;
   playerId: string;

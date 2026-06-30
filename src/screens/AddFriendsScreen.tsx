@@ -17,6 +17,7 @@ type AddFriendsScreenProps = {
   currentPlayer: Player;
   friendRequests: FriendRequest[];
   lobbies: Lobby[];
+  onBlockPlayer: (playerId: string) => Promise<void> | void;
   onBack: () => void;
   onReportPlayer: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
@@ -34,6 +35,7 @@ export function AddFriendsScreen({
   currentPlayer,
   friendRequests,
   lobbies,
+  onBlockPlayer,
   onBack,
   onReportPlayer,
   onSendFriendRequest,
@@ -90,6 +92,17 @@ export function AddFriendsScreen({
         icon: 'flag-outline',
         label: 'Report player',
         onPress: () => onReportPlayer(player),
+      },
+      {
+        destructive: true,
+        icon: 'ban-outline',
+        label: 'Block player',
+        confirmation: {
+          body: `${player.name} will be hidden from your discovery surfaces and kept out of games you host.`,
+          confirmLabel: 'Block',
+          title: 'Block player?',
+        },
+        onPress: () => onBlockPlayer(player.id),
       },
     ]);
   }
@@ -212,8 +225,10 @@ export function AddFriendsScreen({
         moreActions={
           profilePreviewPlayer
             ? getPreviewActions(
+                profilePreviewPlayer,
                 () => setProfilePreviewPlayer(profilePreviewPlayer),
                 () => onReportPlayer(profilePreviewPlayer),
+                onBlockPlayer,
               )
             : undefined
         }
@@ -375,10 +390,26 @@ function getPrimaryAction(
   };
 }
 
-function getPreviewActions(onViewProfile: () => void, onReportPlayer: () => void): PlayerAction[] {
+function getPreviewActions(
+  player: Player,
+  onViewProfile: () => void,
+  onReportPlayer: () => Promise<void> | void,
+  onBlockPlayer?: (playerId: string) => Promise<void> | void,
+): PlayerAction[] {
   return [
     { icon: 'person-circle-outline', label: 'View full profile', onPress: onViewProfile },
     { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: onReportPlayer },
+    {
+      confirmation: {
+        body: `${player.name} will be hidden from your discovery surfaces and kept out of games you host.`,
+        confirmLabel: 'Block',
+        title: 'Block player?',
+      },
+      destructive: true,
+      icon: 'ban-outline',
+      label: 'Block player',
+      onPress: () => onBlockPlayer?.(player.id),
+    },
   ];
 }
 

@@ -33,6 +33,7 @@ import type { ChatChannel, ChatMessage, GenderRule, Lobby, LobbyParticipant, Lob
 
 type LobbyDetailsScreenProps = {
   allLobbies: Lobby[];
+  blockedPlayerIds?: string[];
   currentPlayer: Player;
   hasPrivateAccess: boolean;
   lobby: Lobby;
@@ -40,6 +41,7 @@ type LobbyDetailsScreenProps = {
   notificationCount: number;
   onApproveWaitlistRequest: (playerId: string) => void;
   onBack: () => void;
+  onBlockPlayer: (playerId: string) => Promise<void> | void;
   onCancelJoinRequest: () => void;
   onInvite: () => void;
   onJoinGame: () => void;
@@ -91,6 +93,7 @@ const pendingApprovalReason = 'Host approval is still pending.';
 
 export function LobbyDetailsScreen({
   allLobbies,
+  blockedPlayerIds = [],
   currentPlayer,
   hasPrivateAccess,
   lobby,
@@ -98,6 +101,7 @@ export function LobbyDetailsScreen({
   notificationCount,
   onApproveWaitlistRequest,
   onBack,
+  onBlockPlayer,
   onCancelJoinRequest,
   onInvite,
   onJoinGame,
@@ -210,8 +214,9 @@ export function LobbyDetailsScreen({
         isFriend,
         onKickPlayer,
         onRemoveFriend: (targetPlayer) => onRemoveFriend(targetPlayer.id),
-        onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
         onReportPlayer,
+        onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
+        onBlockPlayer: (targetPlayer) => onBlockPlayer(targetPlayer.id),
         onTransferHost: (targetPlayer) => onTransferHost(targetPlayer.id),
         onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
         onViewProfile: () => openProfile(player, participant),
@@ -347,8 +352,9 @@ export function LobbyDetailsScreen({
           onOpenProfile={openProfile}
           onRatePlayer={(player) => setRatingWizardPlayer(player)}
           onAction={playerSectionAction?.onPress}
-          emptyLabel="No players yet."
+          emptyLabel="Approved players will appear here."
           currentPlayerId={currentPlayer.id}
+          blockedPlayerIds={blockedPlayerIds}
           lobby={lobby}
           participants={activeParticipants}
           players={players}
@@ -364,8 +370,9 @@ export function LobbyDetailsScreen({
           onAction={waitlistSectionAction?.onPress}
           onOpenActions={openPlayerActions}
           onOpenProfile={openProfile}
-          emptyLabel="Waitlist is empty."
+          emptyLabel="Players waiting for a spot will appear here."
           currentPlayerId={currentPlayer.id}
+          blockedPlayerIds={blockedPlayerIds}
           lobby={lobby}
           participants={waitlistedParticipants}
           players={players}
@@ -826,6 +833,7 @@ function ParticipantsSection({
   actionLabel,
   count,
   currentPlayerId,
+  blockedPlayerIds,
   emptyLabel,
   onAction,
   onOpenActions,
@@ -842,6 +850,7 @@ function ParticipantsSection({
   actionLabel?: string;
   count: number;
   currentPlayerId: string;
+  blockedPlayerIds: string[];
   emptyLabel: string;
   onAction?: () => void;
   onOpenActions: (player: Player) => void;
@@ -887,6 +896,7 @@ function ParticipantsSection({
                 onPressProfile={() => onOpenProfile(player, participant)}
                 onRatePlayer={() => onRatePlayer?.(player)}
                 currentPlayerId={currentPlayerId}
+                isBlockedByCurrentPlayer={blockedPlayerIds.includes(player.id)}
                 lobby={lobby}
                 participant={participant}
                 player={player}
@@ -914,6 +924,7 @@ function ParticipantRow({
   onPressProfile,
   onRatePlayer,
   currentPlayerId,
+  isBlockedByCurrentPlayer,
   lobby,
   participant,
   player,
@@ -925,6 +936,7 @@ function ParticipantRow({
   onPressProfile: () => void;
   onRatePlayer?: () => void;
   currentPlayerId: string;
+  isBlockedByCurrentPlayer: boolean;
   lobby: Lobby;
   participant: LobbyParticipant;
   player: Player;
@@ -938,6 +950,11 @@ function ParticipantRow({
   return (
     <PlayerRow
       context={participant.role}
+      extraChips={
+        isBlockedByCurrentPlayer
+          ? [{ icon: 'ban-outline', label: 'Blocked', tone: 'danger' }]
+          : undefined
+      }
       initials={player.initials}
       level={player.level}
       meta={`${player.tocaPoints} pts`}
@@ -1863,6 +1880,26 @@ function formatJoinBlockedReason(reason: string) {
     return 'This is a private game. Enter the PIN first.';
   }
 
+  if (reason === 'This game has no open joined-player slots.') {
+    return 'The players list is full. Stay on the waitlist until a spot opens.';
+  }
+
+  if (reason === 'Player must join the waitlist before moving into players.') {
+    return 'Join the waitlist first. The host or an open spot can move you into players.';
+  }
+
+  if (reason === 'This game is not open for new commitments.') {
+    return 'This game has already started, closed, or moved to ratings.';
+  }
+
+  if (reason === 'This game is not open for waitlist joins.') {
+    return 'The waitlist is closed for this game.';
+  }
+
+  if (reason === 'This game does not have a waitlist.') {
+    return 'This game does not use a waitlist.';
+  }
+
   return reason;
 }
 
@@ -1986,9 +2023,10 @@ function getLobbyPlayerActions({
   isCurrentUserAdmin,
   isFriend,
   onKickPlayer,
+  onBlockPlayer,
   onRemoveFriend,
-  onSendFriendRequest,
   onReportPlayer,
+  onSendFriendRequest,
   onMovePlayerToWaitlist,
   onTransferHost,
   onViewProfile,
@@ -2000,6 +2038,7 @@ function getLobbyPlayerActions({
   isCurrentUserAdmin: boolean;
   isFriend: boolean;
   onKickPlayer: (playerId: string) => Promise<void> | void;
+  onBlockPlayer?: (player: Player) => Promise<void> | void;
   onRemoveFriend?: (player: Player) => void;
   onSendFriendRequest?: (player: Player) => void;
   onReportPlayer: (player: Player) => Promise<void> | void;
@@ -2062,6 +2101,17 @@ function getLobbyPlayerActions({
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
       : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
     { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: () => onReportPlayer(player) },
+    {
+      confirmation: {
+        body: `${player.name} will be hidden from your discovery surfaces and kept out of games you host.`,
+        confirmLabel: 'Block',
+        title: 'Block player?',
+      },
+      destructive: true,
+      icon: 'ban-outline',
+      label: 'Block player',
+      onPress: () => onBlockPlayer?.(player),
+    },
   ];
 }
 
