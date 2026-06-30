@@ -51,6 +51,7 @@ type LobbyDetailsScreenProps = {
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   onSendFriendRequest: (playerId: string) => void;
@@ -108,6 +109,7 @@ export function LobbyDetailsScreen({
   onOpenMenu,
   onOpenNotifications,
   onRemoveFriend,
+  onReportPlayer,
   onRequestWaitlistApproval,
   onRejectWaitlistRequest,
   onSendFriendRequest,
@@ -209,6 +211,7 @@ export function LobbyDetailsScreen({
         onKickPlayer,
         onRemoveFriend: (targetPlayer) => onRemoveFriend(targetPlayer.id),
         onSendFriendRequest: (targetPlayer) => onSendFriendRequest(targetPlayer.id),
+        onReportPlayer,
         onTransferHost: (targetPlayer) => onTransferHost(targetPlayer.id),
         onMovePlayerToWaitlist: (targetPlayer) => onMovePlayerToWaitlist(targetPlayer.id),
         onViewProfile: () => openProfile(player, participant),
@@ -384,6 +387,16 @@ export function LobbyDetailsScreen({
         initials={profilePreviewPlayer?.initials ?? ''}
         level={profilePreviewPlayer?.level}
         meta={profilePreviewPlayer ? `${profilePreviewPlayer.tocaPoints} TOCA points` : undefined}
+        moreActions={
+          profilePreviewPlayer && profilePreviewPlayer.id !== currentPlayer.id
+            ? [{
+                destructive: true,
+                icon: 'flag-outline',
+                label: 'Report player',
+                onPress: () => onReportPlayer(profilePreviewPlayer),
+              }]
+            : undefined
+        }
         name={profilePreviewPlayer?.name ?? ''}
         onClose={() => setProfilePreviewSelection(null)}
         player={profilePreviewPlayer}
@@ -1975,6 +1988,7 @@ function getLobbyPlayerActions({
   onKickPlayer,
   onRemoveFriend,
   onSendFriendRequest,
+  onReportPlayer,
   onMovePlayerToWaitlist,
   onTransferHost,
   onViewProfile,
@@ -1988,6 +2002,7 @@ function getLobbyPlayerActions({
   onKickPlayer: (playerId: string) => Promise<void> | void;
   onRemoveFriend?: (player: Player) => void;
   onSendFriendRequest?: (player: Player) => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onMovePlayerToWaitlist: (player: Player) => Promise<void> | void;
   onTransferHost?: (player: Player) => Promise<void> | void;
   onViewProfile: () => void;
@@ -2046,7 +2061,7 @@ function getLobbyPlayerActions({
     ...(isFriend
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
       : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
-    { destructive: true, icon: 'ban-outline', label: 'Report & block' },
+    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: () => onReportPlayer(player) },
   ];
 }
 

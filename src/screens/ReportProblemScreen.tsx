@@ -1,25 +1,37 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { colors, fontFamilies, radius, shadows, spacing } from '../theme';
+import type { Player, ReportContext, ReportType } from '../types';
 
 type ReportProblemScreenProps = {
   onBack: () => void;
+  onSubmitReport: (report: ReportProblemFormSubmit) => Promise<void>;
+  relatedLobbyId?: string | null;
+  reportedPlayer?: Player | null;
+  supportEmail?: string;
 };
 
-type ReportCategory = 'app' | 'lobby' | 'player' | 'safety' | 'account' | 'other';
-type ReportContext = 'general' | 'game' | 'player' | 'profile';
+export type ReportProblemFormSubmit = {
+  contactOptIn: boolean;
+  diagnosticsOptIn: boolean;
+  message: string;
+  relatedLobbyId?: string | null;
+  reportedPlayerId?: string | null;
+  reportContext: ReportContext;
+  reportType: ReportType;
+};
 
 const categories: Array<{
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  value: ReportCategory;
+  value: ReportType;
 }> = [
-  { icon: 'phone-portrait-outline', label: 'App issue', value: 'app' },
+  { icon: 'phone-portrait-outline', label: 'App bug', value: 'app_bug' },
   { icon: 'football-outline', label: 'Game or lobby', value: 'lobby' },
   { icon: 'person-outline', label: 'Player behavior', value: 'player' },
   { icon: 'shield-checkmark-outline', label: 'Safety concern', value: 'safety' },
@@ -29,26 +41,65 @@ const categories: Array<{
 
 const contexts: Array<{ label: string; value: ReportContext }> = [
   { label: 'General app', value: 'general' },
-  { label: 'A game', value: 'game' },
+  { label: 'A game', value: 'lobby' },
   { label: 'A player', value: 'player' },
   { label: 'My profile', value: 'profile' },
 ];
 
-export function ReportProblemScreen({ onBack }: ReportProblemScreenProps) {
-  const [category, setCategory] = useState<ReportCategory>('app');
-  const [context, setContext] = useState<ReportContext>('general');
+export function ReportProblemScreen({
+  onBack,
+  onSubmitReport,
+  relatedLobbyId,
+  reportedPlayer,
+  supportEmail = 'support@toca-ftv.com',
+}: ReportProblemScreenProps) {
+  const isPlayerReport = Boolean(reportedPlayer);
+  const [category, setCategory] = useState<ReportType>(isPlayerReport ? 'player' : 'app_bug');
+  const [context, setContext] = useState<ReportContext>(isPlayerReport ? 'player' : 'general');
   const [message, setMessage] = useState('');
   const [includeDiagnostics, setIncludeDiagnostics] = useState(true);
   const [canContact, setCanContact] = useState(true);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const canSubmit = message.trim().length >= 8;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const canSubmit = !isSubmitting;
 
-  function submitReport() {
+  useEffect(() => {
+    setCategory(isPlayerReport ? 'player' : 'app_bug');
+    setContext(isPlayerReport ? 'player' : 'general');
+    setMessage('');
+    setCanContact(true);
+    setIncludeDiagnostics(true);
+    setIsSubmitted(false);
+    setIsSubmitting(false);
+    setSubmitError(null);
+  }, [isPlayerReport, reportedPlayer?.id]);
+
+  async function submitReport() {
     if (!canSubmit) {
       return;
     }
 
-    setIsSubmitted(true);
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+
+      await onSubmitReport({
+        contactOptIn: canContact,
+        diagnosticsOptIn: includeDiagnostics,
+        message,
+        relatedLobbyId,
+        reportedPlayerId: reportedPlayer?.id ?? null,
+        reportContext: context,
+        reportType: category,
+      });
+
+      setIsSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Could not send this report. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -67,16 +118,16 @@ export function ReportProblemScreen({ onBack }: ReportProblemScreenProps) {
         </Pressable>
         <View style={styles.headerCopy}>
           <AppText numberOfLines={1} variant="sectionHeading" weight="900">
-            Report a problem
+            {isPlayerReport ? 'Report player' : 'Report a problem'}
           </AppText>
           <AppText numberOfLines={2} tone="muted" variant="metadata" weight="600">
-            Send a quick note to TOCA support.
+            {isPlayerReport ? `Tell TOCA support what happened with ${reportedPlayer?.name}.` : 'Send a quick note to TOCA support.'}
           </AppText>
         </View>
       </View>
 
       {isSubmitted ? (
-        <ReportSentState onDone={onBack} />
+        <ReportSentState onDone={onBack} supportEmail={supportEmail} />
       ) : (
         <>
           <ScrollView
@@ -98,19 +149,39 @@ export function ReportProblemScreen({ onBack }: ReportProblemScreenProps) {
               </View>
             </View>
 
-            <FormBlock icon="flag-outline" title="What should we look at?">
-              <View style={styles.categoryGrid}>
-                {categories.map((item) => (
-                  <CategoryChip
-                    active={category === item.value}
-                    icon={item.icon}
-                    key={item.value}
-                    label={item.label}
-                    onPress={() => setCategory(item.value)}
-                  />
-                ))}
-              </View>
-            </FormBlock>
+            {reportedPlayer ? (
+              <FormBlock icon="person-outline" title="Related player">
+                <View style={styles.relatedPlayerCard}>
+                  <View style={styles.relatedPlayerAvatar}>
+                    <AppText align="center" tone="accent" variant="titleSmall" weight="900">
+                      {reportedPlayer.initials}
+                    </AppText>
+                  </View>
+                  <View style={styles.relatedPlayerCopy}>
+                    <AppText numberOfLines={1} variant="uiBody" weight="900">
+                      {reportedPlayer.name}
+                    </AppText>
+                    <AppText numberOfLines={1} tone="muted" variant="metadata" weight="600">
+                      Player behavior report
+                    </AppText>
+                  </View>
+                </View>
+              </FormBlock>
+            ) : (
+              <FormBlock icon="flag-outline" title="What should we look at?">
+                <View style={styles.categoryGrid}>
+                  {categories.map((item) => (
+                    <CategoryChip
+                      active={category === item.value}
+                      icon={item.icon}
+                      key={item.value}
+                      label={item.label}
+                      onPress={() => setCategory(item.value)}
+                    />
+                  ))}
+                </View>
+              </FormBlock>
+            )}
 
             <FormBlock icon="chatbubble-ellipses-outline" title="What happened?">
               <View style={styles.textAreaShell}>
@@ -124,32 +195,34 @@ export function ReportProblemScreen({ onBack }: ReportProblemScreenProps) {
                   value={message}
                 />
               </View>
-              <AppText tone={canSubmit ? 'muted' : 'warning'} variant="caption" weight="700">
-                {canSubmit ? 'Thanks, that is enough detail to send.' : 'Add at least a few words so support has context.'}
+              <AppText tone="muted" variant="caption" weight="700">
+                Optional, but details help TOCA review faster.
               </AppText>
             </FormBlock>
 
-            <FormBlock icon="link-outline" title="Related to">
-              <View style={styles.contextGrid}>
-                {contexts.map((item) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={item.value}
-                    onPress={() => setContext(item.value)}
-                    style={[styles.contextPill, context === item.value && styles.contextPillActive]}
-                  >
-                    <AppText
-                      align="center"
-                      tone={context === item.value ? 'accent' : 'muted'}
-                      variant="chip"
-                      weight="800"
+            {!reportedPlayer ? (
+              <FormBlock icon="link-outline" title="Related to">
+                <View style={styles.contextGrid}>
+                  {contexts.map((item) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={item.value}
+                      onPress={() => setContext(item.value)}
+                      style={[styles.contextPill, context === item.value && styles.contextPillActive]}
                     >
-                      {item.label}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-            </FormBlock>
+                      <AppText
+                        align="center"
+                        tone={context === item.value ? 'accent' : 'muted'}
+                        variant="chip"
+                        weight="800"
+                      >
+                        {item.label}
+                      </AppText>
+                    </Pressable>
+                  ))}
+                </View>
+              </FormBlock>
+            ) : null}
 
             <View style={styles.optionsCard}>
               <OptionToggle
@@ -168,6 +241,15 @@ export function ReportProblemScreen({ onBack }: ReportProblemScreenProps) {
                 onPress={() => setCanContact((current) => !current)}
               />
             </View>
+
+            {submitError ? (
+              <View style={styles.errorCard}>
+                <Ionicons color={colors.danger} name="alert-circle-outline" size={17} />
+                <AppText style={styles.errorText} tone="danger" variant="metadata" weight="700">
+                  {submitError}
+                </AppText>
+              </View>
+            ) : null}
           </ScrollView>
 
           <View style={styles.submitBar}>
@@ -178,7 +260,7 @@ export function ReportProblemScreen({ onBack }: ReportProblemScreenProps) {
               style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
             >
               <AppText align="center" tone="inverse" variant="button" weight="900">
-                Send report
+                {isSubmitting ? 'Sending...' : 'Send report'}
               </AppText>
             </Pressable>
           </View>
@@ -279,7 +361,7 @@ function OptionToggle({
   );
 }
 
-function ReportSentState({ onDone }: { onDone: () => void }) {
+function ReportSentState({ onDone, supportEmail }: { onDone: () => void; supportEmail: string }) {
   return (
     <View style={styles.sentWrap}>
       <View style={styles.sentCard}>
@@ -290,7 +372,7 @@ function ReportSentState({ onDone }: { onDone: () => void }) {
           Report sent
         </AppText>
         <AppText align="center" tone="muted" variant="uiBody" weight="600">
-          Thanks for helping keep TOCA safe and friendly. We will review it as soon as possible.
+          Thanks for helping keep TOCA safe and friendly. We saved your report for review. For urgent follow-up, contact {supportEmail}.
         </AppText>
         <Pressable accessibilityRole="button" onPress={onDone} style={styles.doneButton}>
           <AppText align="center" tone="inverse" variant="button" weight="900">
@@ -395,6 +477,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
   },
+  errorCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 235, 232, 0.86)',
+    borderColor: 'rgba(217, 74, 58, 0.24)',
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  errorText: {
+    flex: 1,
+  },
   doneButton: {
     alignItems: 'center',
     alignSelf: 'stretch',
@@ -490,6 +586,27 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
     flex: 1,
+  },
+  relatedPlayerAvatar: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAqua,
+    borderColor: colors.border,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  relatedPlayerCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 58,
+  },
+  relatedPlayerCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   sentCard: {
     alignItems: 'center',

@@ -63,6 +63,10 @@ export type JoinRequestReason =
 export type ChatChannelType = 'all' | 'admin_joined';
 export type RatingTaskStatus = 'open' | 'completed' | 'overdue';
 export type FriendRequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+export type ReportType = 'app_bug' | 'player' | 'lobby' | 'message' | 'safety' | 'account' | 'other';
+export type ReportContext = 'general' | 'lobby' | 'player' | 'profile';
+export type ReportStatus = 'open' | 'reviewing' | 'resolved' | 'dismissed';
+export type ReportEmailNotificationStatus = 'not_started' | 'pending' | 'sent' | 'failed';
 export type SkillRankVoteType = 'below' | 'above' | 'exact';
 export type SkillVote = 'much_below' | 'below' | 'matches' | 'above' | 'much_above';
 export type PunctualityVote = 'on_time' | 'around_on_time' | 'late';
@@ -184,6 +188,27 @@ export type FriendRequest = {
   status: FriendRequestStatus;
   createdAt: string;
   respondedAt?: string | null;
+};
+
+export type PlayerReport = {
+  id: string;
+  reporterPlayerId: string;
+  reportedPlayerId?: string | null;
+  relatedLobbyId?: string | null;
+  reportType: ReportType;
+  reportContext: ReportContext;
+  message: string;
+  diagnosticsOptIn: boolean;
+  contactOptIn: boolean;
+  status: ReportStatus;
+  emailNotificationAttemptedAt?: string | null;
+  emailNotificationError?: string | null;
+  emailNotificationStatus: ReportEmailNotificationStatus;
+  emailNotificationSentAt?: string | null;
+  supportEmailSnapshot: string;
+  clientContext: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TocaPointEvent = {

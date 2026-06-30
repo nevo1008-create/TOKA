@@ -35,6 +35,7 @@ type ProfileScreenProps = {
   onOpenMenu?: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
+  onReportPlayer?: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile?: (player: Player) => void;
   player: Player;
@@ -53,6 +54,7 @@ export function ProfileScreen({
   onOpenMenu,
   onOpenNotifications,
   onRemoveFriend,
+  onReportPlayer,
   onSendFriendRequest,
   onViewPlayerProfile,
   player,
@@ -88,6 +90,7 @@ export function ProfileScreen({
         () => requestFriend(person.id),
         pendingRequest ? () => onCancelFriendRequest(pendingRequest.id) : undefined,
         () => onRemoveFriend(person.id),
+        () => onReportPlayer?.(person),
       ),
     );
   }
@@ -151,6 +154,10 @@ export function ProfileScreen({
             {onEditProfile ? (
               <Pressable accessibilityRole="button" onPress={onEditProfile} style={styles.editButton}>
                 <Ionicons color={colors.accentLime} name="pencil-outline" size={16} />
+              </Pressable>
+            ) : onReportPlayer && player.id !== currentPlayer.id ? (
+              <Pressable accessibilityLabel="Report player" accessibilityRole="button" onPress={() => onReportPlayer(player)} style={styles.editButton}>
+                <Ionicons color={colors.danger} name="flag-outline" size={16} />
               </Pressable>
             ) : null}
           </View>
@@ -294,6 +301,7 @@ export function ProfileScreen({
                     )
                   : undefined,
                 () => onRemoveFriend(profilePreviewPlayer.player.id),
+                () => onReportPlayer?.(profilePreviewPlayer.player),
               )
             : undefined
         }
@@ -769,6 +777,7 @@ function getProfilePlayerActions(
   onAddFriend: () => void,
   onRemoveRequest?: () => void,
   onRemoveFriend?: () => void,
+  onReportPlayer?: () => void,
 ): PlayerAction[] {
   const viewProfileAction = {
     icon: 'person-circle-outline' as const,
@@ -776,7 +785,12 @@ function getProfilePlayerActions(
     onPress: onViewProfile,
   };
   const inviteAction = { icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInviteToGame };
-  const reportAction = { destructive: true, icon: 'ban-outline' as const, label: 'Report & block' };
+  const reportAction = {
+    destructive: true,
+    icon: 'flag-outline' as const,
+    label: 'Report player',
+    onPress: onReportPlayer,
+  };
 
   if (isRequested) {
     return [

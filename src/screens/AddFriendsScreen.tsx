@@ -18,6 +18,7 @@ type AddFriendsScreenProps = {
   friendRequests: FriendRequest[];
   lobbies: Lobby[];
   onBack: () => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
@@ -25,7 +26,7 @@ type AddFriendsScreenProps = {
 
 type AddFriendsTab = 'invite' | 'search';
 
-const inviteLink = 'https://toca.app/invite/nevo';
+const inviteLink = 'https://toca-ftv.com/invite/nevo';
 const inviteMessage =
   'Come join me on TOCA - find beach games, join rooms, and connect with local footvolley players.';
 
@@ -34,6 +35,7 @@ export function AddFriendsScreen({
   friendRequests,
   lobbies,
   onBack,
+  onReportPlayer,
   onSendFriendRequest,
   onViewPlayerProfile,
   players,
@@ -85,8 +87,9 @@ export function AddFriendsScreen({
       },
       {
         destructive: true,
-        icon: 'ban-outline',
-        label: 'Block',
+        icon: 'flag-outline',
+        label: 'Report player',
+        onPress: () => onReportPlayer(player),
       },
     ]);
   }
@@ -208,7 +211,10 @@ export function AddFriendsScreen({
         meta={profilePreviewPlayer ? `${profilePreviewPlayer.tocaPoints} TOCA points` : undefined}
         moreActions={
           profilePreviewPlayer
-            ? getPreviewActions(profilePreviewPlayer, () => setProfilePreviewPlayer(profilePreviewPlayer))
+            ? getPreviewActions(
+                () => setProfilePreviewPlayer(profilePreviewPlayer),
+                () => onReportPlayer(profilePreviewPlayer),
+              )
             : undefined
         }
         name={profilePreviewPlayer?.name ?? ''}
@@ -369,10 +375,10 @@ function getPrimaryAction(
   };
 }
 
-function getPreviewActions(player: Player, onViewProfile: () => void): PlayerAction[] {
+function getPreviewActions(onViewProfile: () => void, onReportPlayer: () => void): PlayerAction[] {
   return [
     { icon: 'person-circle-outline', label: 'View full profile', onPress: onViewProfile },
-    { destructive: true, icon: 'ban-outline', label: 'Report & block' },
+    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: onReportPlayer },
   ];
 }
 

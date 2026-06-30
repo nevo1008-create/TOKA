@@ -54,6 +54,7 @@ import { getPlayerLobbyRelationship } from './src/features/lobbies/lobbyRules';
 import { useLobbyStore } from './src/features/lobbies/useLobbyStore';
 import { canPlayerRateLobby } from './src/features/ratings/ratingRules';
 import type { AppRealtimeChange } from './src/features/realtime/realtimeSubscriptions';
+import { submitPlayerReport } from './src/features/reports/reportRepository';
 import { getTocaLevel } from './src/features/tocaPoints/tocaPointProgression';
 import { AddFriendsScreen } from './src/screens/AddFriendsScreen';
 import { AboutUsScreen } from './src/screens/AboutUsScreen';
@@ -72,7 +73,7 @@ import { InviteComposerScreen, type InviteComposerParams } from './src/screens/I
 import { LobbyChatSheet, LobbyDetailsScreen, LobbyFloatingChatButton } from './src/screens/LobbyDetailsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { PrivacyPolicyScreen } from './src/screens/PrivacyPolicyScreen';
-import { ReportProblemScreen } from './src/screens/ReportProblemScreen';
+import { ReportProblemScreen, type ReportProblemFormSubmit } from './src/screens/ReportProblemScreen';
 import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import { SignupWizardScreen } from './src/screens/SignupWizardScreen';
 import { TermsOfServiceScreen } from './src/screens/TermsOfServiceScreen';
@@ -85,6 +86,13 @@ type HomeTocaPointGain = {
   id: number;
   to: number;
 };
+
+type ReportDraft = {
+  relatedLobbyId?: string | null;
+  reportedPlayer?: Player | null;
+};
+
+const supportEmail = 'support@toca-ftv.com';
 
 const LEVEL_UP_BURST_CONFETTI = [
   { color: colors.accentGold, height: 16, rotate: '22deg', width: 7, x: -178, y: -318 },
@@ -188,6 +196,7 @@ export default function App() {
   const [isCommunityGuidelinesOpen, setIsCommunityGuidelinesOpen] = useState(false);
   const [isHelpSupportOpen, setIsHelpSupportOpen] = useState(false);
   const [isReportProblemOpen, setIsReportProblemOpen] = useState(false);
+  const [reportDraft, setReportDraft] = useState<ReportDraft | null>(null);
   const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
@@ -504,16 +513,19 @@ export default function App() {
     previewProfilePlayer?.id,
   ]);
 
-  async function refreshPlayersDirectory(currentPlayerOverride?: Player) {
+  async function refreshPlayersDirectory(currentPlayerOverride?: Player): Promise<Player[]> {
     try {
       const nextPlayers = await listPlayers();
       const current = currentPlayerOverride ?? profilePlayer;
       const hasCurrentPlayer = nextPlayers.some((player) => player.id === current.id);
+      const directory = hasCurrentPlayer ? nextPlayers : [current, ...nextPlayers];
 
-      setPlayersForInvite(hasCurrentPlayer ? nextPlayers : [current, ...nextPlayers]);
+      setPlayersForInvite(directory);
+      return directory;
     } catch (error) {
       console.warn('Could not load Supabase player directory.', error);
       setPlayersForInvite(mockPlayers);
+      return mockPlayers;
     }
   }
 
@@ -923,10 +935,16 @@ export default function App() {
     setLegalScreen(null);
   }
 
-  function openReportProblem() {
+  function openReportProblem(draft: ReportDraft = {}) {
+    const nextDraft =
+      draft && ('reportedPlayer' in draft || 'relatedLobbyId' in draft)
+        ? draft
+        : {};
+
     setIsSideMenuOpen(false);
     setIsNotificationsOpen(false);
     setViewedProfilePlayer(null);
+    setPreviewProfilePlayer(null);
     setIsEditProfileOpen(false);
     setIsAddFriendsOpen(false);
     setIsAboutUsOpen(false);
@@ -935,12 +953,54 @@ export default function App() {
     setInviteParams(null);
     setIsLobbyChatOpen(false);
     setSelectedLobbyId(null);
+    setReportDraft(nextDraft);
     setIsReportProblemOpen(true);
     setLegalScreen(null);
   }
 
+  async function openReportPlayer(player: Player) {
+    if (player.id === profilePlayer.id) {
+      Alert.alert('Report unavailable', 'You cannot report your own profile.');
+      return;
+    }
+
+    let reportTarget = resolveReportTargetPlayer(player, playersForInvite);
+
+    if (!reportTarget) {
+      const refreshedPlayers = await refreshPlayersDirectory(profilePlayer);
+      reportTarget = resolveReportTargetPlayer(player, refreshedPlayers);
+    }
+
+    if (!reportTarget) {
+      Alert.alert(
+        'Player still loading',
+        'TOCA could not load this player profile from the server yet. Please refresh and try again.',
+      );
+      return;
+    }
+
+    openReportProblem({ reportedPlayer: reportTarget });
+  }
+
   function closeReportProblem() {
     setIsReportProblemOpen(false);
+    setReportDraft(null);
+  }
+
+  async function handleSubmitReport(report: ReportProblemFormSubmit) {
+    await submitPlayerReport({
+      clientContext: {
+        activeTab,
+        appSurface: report.reportedPlayerId ? 'player_profile' : 'report_problem',
+      },
+      contactOptIn: report.contactOptIn,
+      diagnosticsOptIn: report.diagnosticsOptIn,
+      message: report.message,
+      relatedLobbyId: report.relatedLobbyId ?? null,
+      reportedPlayerId: report.reportedPlayerId ?? null,
+      reportContext: report.reportContext,
+      reportType: report.reportType,
+    });
   }
 
   function openDeleteAccount() {
@@ -1762,6 +1822,7 @@ export default function App() {
                     onOpenMenu={openSideMenu}
                     onOpenNotifications={openNotifications}
                     onRemoveFriend={handleRemoveFriend}
+                    onReportPlayer={openReportPlayer}
                     onSendFriendRequest={handleSendFriendRequest}
                     onViewPlayerProfile={openViewedProfile}
                     players={playersForInvite}
@@ -1783,6 +1844,7 @@ export default function App() {
                 friendRequests={friendRequests}
                 lobbies={lobbyStore.lobbies}
                 onBack={closeAddFriends}
+                onReportPlayer={openReportPlayer}
                 onSendFriendRequest={handleSendFriendRequest}
                 onViewPlayerProfile={openViewedProfile}
                 players={playersForInvite}
@@ -1794,7 +1856,13 @@ export default function App() {
             ) : isHelpSupportOpen ? (
               <HelpSupportScreen onBack={closeHelpSupport} onReportProblem={openReportProblem} />
             ) : isReportProblemOpen ? (
-              <ReportProblemScreen onBack={closeReportProblem} />
+              <ReportProblemScreen
+                onBack={closeReportProblem}
+                onSubmitReport={handleSubmitReport}
+                relatedLobbyId={reportDraft?.relatedLobbyId ?? null}
+                reportedPlayer={reportDraft?.reportedPlayer ?? null}
+                supportEmail={supportEmail}
+              />
             ) : isDeleteAccountOpen ? (
               <DeleteAccountScreen
                 errorMessage={deleteAccountError}
@@ -1884,6 +1952,7 @@ export default function App() {
                           onOpenMenu={openSideMenu}
                           onOpenNotifications={openNotifications}
                           onRemoveFriend={handleRemoveFriend}
+                          onReportPlayer={openReportPlayer}
                           onApproveWaitlistRequest={(playerId) => handleApproveWaitlistRequest(selectedLobby, playerId)}
                           onRequestWaitlistApproval={() => handleRequestWaitlistApproval(selectedLobby)}
                           onRejectWaitlistRequest={(playerId) => handleRejectJoinRequest(selectedLobby, playerId)}
@@ -1953,6 +2022,7 @@ export default function App() {
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
                       onRemoveFriend={handleRemoveFriend}
+                      onReportPlayer={openReportPlayer}
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
                       players={playersForInvite}
@@ -1971,6 +2041,7 @@ export default function App() {
                       onOpenMenu={openSideMenu}
                       onOpenNotifications={openNotifications}
                       onRemoveFriend={handleRemoveFriend}
+                      onReportPlayer={openReportPlayer}
                       onSendFriendRequest={handleSendFriendRequest}
                       onViewPlayerProfile={openViewedProfile}
                       players={playersForInvite}
@@ -2039,6 +2110,16 @@ export default function App() {
               initials={previewProfilePlayer?.initials ?? ''}
               level={previewProfilePlayer?.level}
               meta={previewProfilePlayer ? `${previewProfilePlayer.tocaPoints} TOCA points` : undefined}
+              moreActions={
+                previewProfilePlayer && previewProfilePlayer.id !== profilePlayer.id
+                  ? [{
+                      destructive: true,
+                      icon: 'flag-outline',
+                      label: 'Report player',
+                      onPress: () => openReportPlayer(previewProfilePlayer),
+                    }]
+                  : undefined
+              }
               name={previewProfilePlayer?.name ?? ''}
               onClose={() => setPreviewProfilePlayer(null)}
               player={previewProfilePlayer ?? undefined}
@@ -2492,6 +2573,38 @@ function upsertFriendRequest(requests: FriendRequest[], request: FriendRequest) 
   return requests.some((candidate) => candidate.id === request.id)
     ? requests.map((candidate) => (candidate.id === request.id ? request : candidate))
     : [request, ...requests];
+}
+
+function resolveReportTargetPlayer(player: Player, directory: Player[]) {
+  if (isUuid(player.id)) {
+    return player;
+  }
+
+  const normalizedName = normalizePlayerMatchValue(player.name);
+  const normalizedInitials = normalizePlayerMatchValue(player.initials);
+  const serverPlayers = directory.filter((candidate) => isUuid(candidate.id));
+  const nameAndInitialsMatches = serverPlayers.filter((candidate) =>
+    normalizePlayerMatchValue(candidate.name) === normalizedName &&
+    normalizePlayerMatchValue(candidate.initials) === normalizedInitials
+  );
+
+  if (nameAndInitialsMatches.length === 1) {
+    return nameAndInitialsMatches[0];
+  }
+
+  const nameMatches = serverPlayers.filter((candidate) =>
+    normalizePlayerMatchValue(candidate.name) === normalizedName
+  );
+
+  return nameMatches.length === 1 ? nameMatches[0] : null;
+}
+
+function normalizePlayerMatchValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 const styles = StyleSheet.create({

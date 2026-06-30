@@ -81,7 +81,7 @@ const termsSections: Array<{
     body: [
       'We may update these Terms as TOCA evolves. Material changes should be communicated in-app or through an appropriate notice.',
       'Continuing to use TOCA after updated Terms take effect means you accept the updated Terms.',
-      'Questions can be sent to support@toca.app. Replace this with the final legal contact before launch if needed.',
+      'Questions can be sent to support@toca-ftv.com.',
     ],
     icon: 'document-text-outline',
     title: 'Changes and contact',

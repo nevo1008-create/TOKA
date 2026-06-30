@@ -85,6 +85,7 @@ type CommunityScreenProps = {
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
@@ -105,6 +106,7 @@ export function CommunityScreen({
   onOpenMenu,
   onOpenNotifications,
   onRemoveFriend,
+  onReportPlayer,
   onSendFriendRequest,
   onViewPlayerProfile,
   players,
@@ -183,6 +185,10 @@ export function CommunityScreen({
   function openActions(player: CommunityPlayerCard, context: PlayerMenuVariant) {
     const playerId = player.sourcePlayerId ?? player.id;
     const sourcePlayer = players.find((candidate) => candidate.id === playerId);
+    const reportPlayer = sourcePlayer ?? getProfilePlayerFromCommunity(
+      { ...player, context: getCommunityContext(player, context), menuVariant: context },
+      players,
+    );
     const isFriend = sourcePlayer ? areFriends(currentPlayer, sourcePlayer) : false;
     const pendingSentRequest = getPendingSentFriendRequest(friendRequests, currentPlayer.id, playerId);
     const isRequested = context === 'requested' || Boolean(pendingSentRequest);
@@ -206,6 +212,7 @@ export function CommunityScreen({
         player.friendRequestId ? () => onAcceptFriendRequest(player.friendRequestId as string) : undefined,
         player.friendRequestId ? () => onDeclineFriendRequest(player.friendRequestId as string) : undefined,
         () => onRemoveFriend(playerId),
+        () => onReportPlayer(reportPlayer),
       ),
     );
   }
@@ -521,6 +528,7 @@ export function CommunityScreen({
                 profilePreviewPlayer.friendRequestId ? () => onAcceptFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
                 profilePreviewPlayer.friendRequestId ? () => onDeclineFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
                 profilePreviewPlayer.sourcePlayerId ? () => onRemoveFriend(profilePreviewPlayer.sourcePlayerId as string) : undefined,
+                () => onReportPlayer(getProfilePlayerFromCommunity(profilePreviewPlayer, players)),
               )
             : undefined
         }
@@ -919,18 +927,24 @@ function getPlayerActions(
   onAcceptRequest?: () => void,
   onDeclineRequest?: () => void,
   onRemoveFriend?: () => void,
+  onReportPlayer?: () => Promise<void> | void,
 ): PlayerAction[] {
   const profileLabel = isFriend ? 'Show full profile' : 'View full profile';
   const viewProfileAction = { icon: 'person-circle-outline' as const, label: profileLabel, onPress: onViewProfile };
   const inviteAction = { icon: 'paper-plane-outline' as const, label: 'Invite to game', onPress: onInviteToGame };
-  const reportAction = { destructive: true, icon: 'ban-outline' as const, label: 'Report & block' };
+  const reportAction = onReportPlayer ? {
+    destructive: true,
+    icon: 'flag-outline' as const,
+    label: 'Report player',
+    onPress: onReportPlayer,
+  } : null;
 
   if (isRequested || context === 'requested') {
     return [
       viewProfileAction,
       inviteAction,
       { icon: 'person-remove-outline' as const, label: 'Remove friend request', onPress: onRemoveRequest },
-      reportAction,
+      ...(reportAction ? [reportAction] : []),
     ];
   }
 
@@ -939,7 +953,7 @@ function getPlayerActions(
       viewProfileAction,
       inviteAction,
       { destructive: true, icon: 'person-remove-outline', label: 'Remove friend', onPress: onRemoveFriend },
-      reportAction,
+      ...(reportAction ? [reportAction] : []),
     ];
   }
 
@@ -948,7 +962,7 @@ function getPlayerActions(
       viewProfileAction,
       { icon: 'checkmark' as const, label: 'Accept', onPress: onAcceptRequest },
       { icon: 'close' as const, label: 'Decline', onPress: onDeclineRequest },
-      reportAction,
+      ...(reportAction ? [reportAction] : []),
     ];
   }
 
@@ -956,7 +970,7 @@ function getPlayerActions(
     viewProfileAction,
     { icon: 'person-add-outline', label: 'Add friend', onPress: onAddFriend },
     inviteAction,
-    reportAction,
+    ...(reportAction ? [reportAction] : []),
   ];
 }
 

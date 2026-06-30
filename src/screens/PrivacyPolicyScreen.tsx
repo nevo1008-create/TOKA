@@ -71,7 +71,7 @@ const policySections: Array<{
     body: [
       'You can update your profile details from Edit profile.',
       'You can request account deletion, report a problem, block players, or contact support from the side menu.',
-      'For privacy questions, contact support@toca.app. Replace this with the final legal contact before launch if needed.',
+      'For privacy questions, contact support@toca-ftv.com.',
     ],
     icon: 'person-circle-outline',
     title: 'Your choices and contact',

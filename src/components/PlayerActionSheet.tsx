@@ -8,6 +8,7 @@ import { AppText } from './AppText';
 type IconName = keyof typeof Ionicons.glyphMap;
 
 export type PlayerAction = {
+  closeOnPress?: boolean;
   confirmation?: {
     body: string;
     confirmLabel: string;
@@ -47,7 +48,9 @@ export function PlayerActionSheet({
   async function runAction(action: PlayerAction) {
     await action.onPress?.();
     setConfirmingAction(null);
-    onClose();
+    if (action.closeOnPress !== false) {
+      onClose();
+    }
   }
 
   function closeSheet() {
