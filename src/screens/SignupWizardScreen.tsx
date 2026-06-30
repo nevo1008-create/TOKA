@@ -74,7 +74,6 @@ export function SignupWizardScreen({ email, onBack, onComplete, onUploadProfileP
   const [preferredSide, setPreferredSide] = useState<PlayerSide>(player.side);
   const [hasBall, setHasBall] = useState(player.hasBall);
   const [hasCourtMarks, setHasCourtMarks] = useState(player.hasCourtMarks);
-  const [locationAccess, setLocationAccess] = useState(false);
   const [beachQuery, setBeachQuery] = useState('');
   const [preferredBeaches, setPreferredBeaches] = useState<string[]>([]);
   const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(player.pushNotificationsEnabled ?? false);
@@ -84,8 +83,6 @@ export function SignupWizardScreen({ email, onBack, onComplete, onUploadProfileP
   const canContinue =
     step === 0
       ? firstName.trim().length > 0 && lastName.trim().length > 0 && Boolean(selectedLocation)
-      : step === 2
-        ? locationAccess
       : step === 3
         ? termsAccepted
         : true;
@@ -340,46 +337,6 @@ export function SignupWizardScreen({ email, onBack, onComplete, onUploadProfileP
             subtitle="TOCA feels best when nearby rooms appear first."
             title="Location and beaches"
           >
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setLocationAccess((current) => !current);
-                if (!location.trim()) {
-                  const fallbackLocation = searchIsraelLocations('Tel Aviv', 1)[0];
-
-                  if (fallbackLocation) {
-                    setSelectedLocation(fallbackLocation);
-                    setLocation(fallbackLocation.displayName);
-                  }
-                }
-              }}
-              style={[styles.permissionCard, locationAccess && styles.permissionCardActive]}
-            >
-              <View style={styles.permissionIcon}>
-                <Ionicons color={colors.accentSea} name="navigate-outline" size={20} />
-              </View>
-              <View style={styles.permissionCopy}>
-                <View style={styles.permissionTitleRow}>
-                  <AppText variant="titleSmall" weight="700">
-                    Allow location access
-                  </AppText>
-                  <View style={styles.requiredPill}>
-                    <AppText tone="accent" variant="caption" weight="900">
-                      Required
-                    </AppText>
-                  </View>
-                </View>
-                <AppText tone="muted" variant="metadata" weight="500">
-                  TOCA needs your approval to use your location for nearby games.
-                </AppText>
-              </View>
-              <Ionicons
-                color={locationAccess ? colors.primaryDark : colors.subtle}
-                name={locationAccess ? 'checkmark-circle' : 'ellipse-outline'}
-                size={22}
-              />
-            </Pressable>
-
             <Field elevated label="Preferred beaches">
               <BeachAutocomplete
                 locationId={selectedLocation?.id}
@@ -1407,10 +1364,6 @@ const styles = StyleSheet.create({
     minHeight: 86,
     padding: spacing.md,
   },
-  permissionCardActive: {
-    backgroundColor: colors.surfaceAqua,
-    borderColor: 'rgba(27, 183, 168, 0.28)',
-  },
   permissionCopy: {
     flex: 1,
     gap: 3,
@@ -1423,12 +1376,6 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     width: 40,
-  },
-  permissionTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
   },
   photoActionButton: {
     alignItems: 'center',
