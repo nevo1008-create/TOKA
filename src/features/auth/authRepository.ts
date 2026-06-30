@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 
 import { supabase } from '../../lib/supabase';
+import { profilePhotosBucket } from './profilePhotoRepository';
 
 export type AuthResult = {
   needsEmailConfirmation: boolean;
@@ -8,6 +9,8 @@ export type AuthResult = {
 };
 
 const sessionRestoreTimeoutMs = 8000;
+const profilePhotoListPageSize = 100;
+const profilePhotoRemoveBatchSize = 1000;
 
 export async function getCurrentSession() {
   const { data, error } = await withTimeout(
@@ -202,24 +205,45 @@ export async function deleteCurrentUserAccount(feedback: string) {
 }
 
 async function deleteProfilePhotosForUser(authUserId: string) {
-  const { data, error } = await supabase.storage.from('profile-photos').list(authUserId);
+  const filePaths: string[] = [];
+  let offset = 0;
 
-  if (error) {
-    throw error;
+  while (true) {
+    const { data, error } = await supabase.storage.from(profilePhotosBucket).list(authUserId, {
+      limit: profilePhotoListPageSize,
+      offset,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const pageItems = data ?? [];
+    filePaths.push(
+      ...pageItems
+        .filter((item) => item.name && !item.name.endsWith('/'))
+        .map((item) => `${authUserId}/${item.name}`),
+    );
+
+    if (pageItems.length < profilePhotoListPageSize) {
+      break;
+    }
+
+    offset += profilePhotoListPageSize;
   }
-
-  const filePaths = (data ?? [])
-    .filter((item) => item.name && !item.name.endsWith('/'))
-    .map((item) => `${authUserId}/${item.name}`);
 
   if (filePaths.length === 0) {
     return;
   }
 
-  const { error: removeError } = await supabase.storage.from('profile-photos').remove(filePaths);
+  for (let index = 0; index < filePaths.length; index += profilePhotoRemoveBatchSize) {
+    const batch = filePaths.slice(index, index + profilePhotoRemoveBatchSize);
+    const { error: removeError } = await supabase.storage.from(profilePhotosBucket).remove(batch);
 
-  if (removeError) {
-    throw removeError;
+    if (removeError) {
+      throw removeError;
+    }
   }
 }
 
