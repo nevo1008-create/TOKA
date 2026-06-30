@@ -19,9 +19,9 @@ const policySections: Array<{
 }> = [
   {
     body: [
-      'Profile information such as name, initials, location or preferred area, gender, preferred foot, preferred side, equipment, avatar initials, rank, rating, TOCA Points, and reliability signals.',
-      'Game and community activity such as created or joined lobbies, waitlists, invites, friend relationships, player ratings, reports, support requests, and basic app interactions.',
-      'Technical data needed to keep the app secure and working, such as device type, app version, diagnostics, and crash or error information when available.',
+      'Account and profile information such as email, name, initials, preferred area or beaches, gender, preferred foot, preferred side, equipment, profile photo, avatar focus, rank, rating, TOCA Points, and reliability signals.',
+      'Game and community activity such as created or joined lobbies, waitlists, invites, friend relationships and requests, blocked players, player ratings, reports, support requests, notifications, and basic app interactions.',
+      'Report and support context such as report type, related player or lobby, optional message, diagnostics opt-in, client context, support email status, and contact preference.',
     ],
     icon: 'albums-outline',
     title: 'Information we collect',
@@ -30,7 +30,7 @@ const policySections: Array<{
   {
     body: [
       'To help players discover games, join rooms, create lobbies, invite friends, manage waitlists, and view trusted player profiles.',
-      'To support community safety, moderation, reporting, customer support, fraud prevention, and account security.',
+      'To support community safety, moderation, blocking, reporting, customer support, fraud prevention, and account security.',
       'To improve TOCA, understand app performance, fix bugs, and develop better footvolley community tools.',
     ],
     icon: 'sparkles-outline',
@@ -40,7 +40,7 @@ const policySections: Array<{
   {
     body: [
       'Some profile and game details are visible to other TOCA players when needed for discovery, joining, ratings, and community trust.',
-      'We may share limited data with service providers that help us operate hosting, analytics, support, security, notifications, or payments if those features are added.',
+      'We may share limited data with service providers that help us operate hosting, authentication, storage, support email, security, notifications, or diagnostics.',
       'We do not sell personal information. We may disclose information if required by law, safety needs, or to protect TOCA and its community.',
     ],
     icon: 'people-outline',
@@ -49,9 +49,9 @@ const policySections: Array<{
   },
   {
     body: [
-      'TOCA may request location or notification permissions only when the feature needs it, such as nearby game discovery or room updates.',
+      'TOCA stores your selected area or preferred beaches for game discovery. Native location access is not required for the V1 MVP.',
       'You can control device permissions in your phone settings. Some features may be limited if permissions are turned off.',
-      'If TOCA later adds third-party sign-in, analytics, or notifications, those practices must also be reflected in the store data safety details and this policy.',
+      'If TOCA later adds third-party sign-in, analytics, native push delivery, payments, or precise location, those practices must also be reflected in the store data safety details and this policy.',
     ],
     icon: 'shield-checkmark-outline',
     title: 'Permissions and third parties',
@@ -60,8 +60,8 @@ const policySections: Array<{
   {
     body: [
       'We keep account and game information for as long as needed to provide TOCA, support community safety, resolve disputes, and meet legal obligations.',
-      'You can request deletion of your account and associated personal data from inside the app through Delete account, or by contacting support.',
-      'Some information may be retained where required for security, fraud prevention, legal compliance, or legitimate community safety records.',
+      'You can delete your account from inside the app through Delete account. Deletion removes the auth account, player profile, profile photo files, hosted lobbies, memberships, messages, notifications, submitted reports, ratings, blocks, and related app data tied to the player where the V1 hard-delete flow applies.',
+      'Optional account deletion feedback is retained without player or auth identifiers. Some information may also be retained where required for security, fraud prevention, legal compliance, or legitimate community safety records.',
     ],
     icon: 'trash-outline',
     title: 'Retention and deletion',
@@ -114,12 +114,12 @@ export function PrivacyPolicyScreen({ onBack, onReportProblem, showReportCard = 
               Your beach community data should be clear
             </AppText>
             <AppText tone="muted" variant="uiBody" weight="600">
-              This draft explains what TOCA collects, why it is used, how it may be shared, and how players can request deletion or support.
+              This policy explains what TOCA collects, why it is used, how it may be shared, and how players can request deletion or support.
             </AppText>
             <View style={styles.updatedPill}>
               <Ionicons color={colors.accentGoldDark} name="calendar-outline" size={13} />
               <AppText tone="muted" variant="chip" weight="800">
-                Last updated: May 31, 2026
+                Last updated: June 30, 2026
               </AppText>
             </View>
           </View>
@@ -128,7 +128,7 @@ export function PrivacyPolicyScreen({ onBack, onReportProblem, showReportCard = 
         <View style={styles.noticeCard}>
           <Ionicons color={colors.accentGoldDark} name="information-circle-outline" size={19} />
           <AppText style={styles.noticeText} tone="muted" variant="metadata" weight="700">
-            Launch note: this is product-ready policy copy for the MVP, but it should be reviewed by legal counsel and matched to the final App Store and Google Play data disclosures before release.
+            Launch note: this MVP policy should be matched to the final App Store and Google Play data disclosures before release.
           </AppText>
         </View>
 

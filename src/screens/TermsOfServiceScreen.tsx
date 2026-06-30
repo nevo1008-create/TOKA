@@ -21,7 +21,7 @@ const termsSections: Array<{
     body: [
       'TOCA is a community app for discovering, creating, joining, and organizing footvolley lobbies.',
       'You are responsible for the accuracy of your profile, rank, location, lobby details, ratings, and messages.',
-      'The MVP uses mock or local data in some areas. Production behavior may change when backend services are connected.',
+      'The V1 MVP uses TOCA backend services for account, profile, lobby, report, block, notification, rating, and friend-request behavior.',
     ],
     icon: 'football-outline',
     title: 'Using TOCA',
@@ -31,7 +31,7 @@ const termsSections: Array<{
     body: [
       'You must keep account information accurate and protect your own account access.',
       'You may not impersonate another person, create misleading profiles, manipulate ratings, or abuse invite, waitlist, or report systems.',
-      'You can request account deletion from inside the app or by contacting support.',
+      'You can delete your account from inside the app. Account deletion removes account/profile access and V1 app data tied to your player account as described in the Privacy policy.',
     ],
     icon: 'person-circle-outline',
     title: 'Accounts',
@@ -41,7 +41,7 @@ const termsSections: Array<{
     body: [
       'Players must follow the Community Guidelines, respect hosts, and avoid harassment, hate, threats, spam, or unsafe conduct.',
       'Hosts may manage room rules, waitlists, protected lobbies, and exceptions. Host actions should be fair and community-minded.',
-      'TOCA may review reports and take action such as warnings, restrictions, removal from lobbies, or account suspension.',
+      'Players can block other players for immediate safety control. TOCA may review reports and take action such as warnings, restrictions, removal from lobbies, or account suspension.',
     ],
     icon: 'shield-checkmark-outline',
     title: 'Community conduct',
@@ -51,7 +51,7 @@ const termsSections: Array<{
     body: [
       'You keep ownership of content you provide, such as profile details, lobby notes, reports, ratings, and messages.',
       'You allow TOCA to use that content as needed to operate the app, show rooms and profiles, support safety, and improve the service.',
-      'Do not upload or share content you do not have the right to use, or content that violates player privacy or safety.',
+      'Reports may include related player or lobby context, optional details, diagnostics if enabled, and support email status. Do not upload or share content you do not have the right to use, or content that violates player privacy or safety.',
     ],
     icon: 'chatbubbles-outline',
     title: 'User content',
@@ -66,16 +66,6 @@ const termsSections: Array<{
     icon: 'alert-circle-outline',
     title: 'Service limits',
     tone: 'aqua',
-  },
-  {
-    body: [
-      'If TOCA later adds paid features, subscriptions, or digital purchases, payment terms and store rules will apply.',
-      'For iOS distribution, Apple payment and standard licensed application terms may apply where relevant.',
-      'For Android distribution, Google Play payment and store policies may apply where relevant.',
-    ],
-    icon: 'card-outline',
-    title: 'Payments and stores',
-    tone: 'gold',
   },
   {
     body: [
@@ -124,12 +114,12 @@ export function TermsOfServiceScreen({ onBack, onReportProblem, showReportCard =
               Clear rules for a trusted beach community
             </AppText>
             <AppText tone="muted" variant="uiBody" weight="600">
-              These draft Terms explain how TOCA should be used, what players are responsible for, and how community safety is handled.
+              These Terms explain how TOCA should be used, what players are responsible for, and how community safety is handled.
             </AppText>
             <View style={styles.updatedPill}>
               <Ionicons color={colors.accentGoldDark} name="calendar-outline" size={13} />
               <AppText tone="muted" variant="chip" weight="800">
-                Last updated: May 31, 2026
+                Last updated: June 30, 2026
               </AppText>
             </View>
           </View>
@@ -138,7 +128,7 @@ export function TermsOfServiceScreen({ onBack, onReportProblem, showReportCard =
         <View style={styles.noticeCard}>
           <Ionicons color={colors.accentGoldDark} name="information-circle-outline" size={19} />
           <AppText style={styles.noticeText} tone="muted" variant="metadata" weight="700">
-            Launch note: this is product-ready terms copy for the MVP, but it should be reviewed by legal counsel and matched to the final App Store and Google Play listing before release.
+            Launch note: these MVP Terms should be matched to the final App Store and Google Play listing before release.
           </AppText>
         </View>
 

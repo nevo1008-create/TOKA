@@ -371,12 +371,12 @@ Store forms must match what the app actually collects and does.
 
 | Stage | Status | What It Covers |
 | --- | --- | --- |
-| Decision | Needs verification | Decide whether current in-app policy is enough or public URLs are needed before submission. |
-| Implementation | Exists | Privacy Policy and Terms screens exist. |
-| Configuration | Not started | Store listing links/URLs not finalized. |
-| Verification | Not done | Need copy review against Apple/Google forms. |
-| Documentation | Not done | Need final data collection mapping. |
-| PR/Merge | Not needed unless copy changes | Create fix branch if copy gaps are found. |
+| Decision | Done | V1 uses in-app Privacy/Terms screens and public store URLs on clean TOCA domain paths. |
+| Implementation | Done | Privacy Policy and Terms screens exist; public static pages mirror the V1 copy at `/privacy` and `/terms`. |
+| Configuration | In progress | Vercel rewrites are configured; final deployed domain/DNS and store listing fields still need confirmation. |
+| Verification | Needs verification | In-app copy and link smoke passed; Apple/Google form answers still need final cross-check. |
+| Documentation | Done | In-app data collection mapping recorded here. |
+| PR/Merge | In progress | Merge copy alignment changes. |
 
 ### Acceptance Criteria
 
@@ -403,6 +403,52 @@ Store forms must match what the app actually collects and does.
 Done means:
 
 - There is no obvious mismatch between policy text, app behavior, and store answers.
+
+### In-App Copy Review - 2026-06-30
+
+Status: In-app Privacy Policy and Terms copy aligned to V1 app behavior.
+
+Decision:
+
+- V1 keeps Privacy Policy and Terms available inside signup and the side menu.
+- Public Privacy/Terms URLs should use `https://toca-ftv.com/privacy` and `https://toca-ftv.com/terms` after production deployment/DNS is confirmed.
+- Store metadata answers must match the in-app copy and final backend configuration.
+
+Data mapping covered by Privacy Policy:
+
+- Account data: email and account access.
+- Player profile data: name, initials, preferred area/beaches, gender, preferred foot, preferred side, equipment, profile photo, avatar focus, rank, rating, TOCA Points, reliability signals, and push notification preference.
+- Community data: lobbies, memberships, waitlists, invites, friend relationships and requests, blocked players, reports, support requests, notifications, ratings, and basic app interactions.
+- Report/support data: report type, report context, related player/lobby, optional message, diagnostics opt-in, client context, contact preference, support email status, and support email snapshot.
+- Account deletion: V1 hard deletion removes the auth account, player profile, profile photo files, hosted lobbies, memberships, messages, notifications, submitted reports, ratings, blocks, and related player app data where the hard-delete flow applies. Optional deletion feedback is retained without player/auth identifiers.
+
+Terms mapping covered:
+
+- Player behavior expectations and accurate profiles.
+- User-generated content responsibility for profile details, lobby notes, reports, ratings, messages, and uploads.
+- Community moderation through reports, blocking, warnings, restrictions, lobby removal, and account suspension.
+- Account deletion from inside the app.
+
+Link proof from code:
+
+- Signup legal rows open `PrivacyPolicyScreen` and `TermsOfServiceScreen`.
+- Side menu rows open `PrivacyPolicyScreen` and `TermsOfServiceScreen`.
+- Both legal screens include a support/report entry point when opened outside signup.
+
+Manual smoke proof:
+
+- Signup Terms link opened Terms and returned to signup.
+- Signup Privacy link opened Privacy and returned to signup.
+- Side menu Privacy link opened updated Privacy copy.
+- Side menu Terms link opened updated Terms copy.
+- Legal screens no longer show user-facing draft wording.
+- Terms no longer shows the removed payments section.
+- Both screens show `Last updated: June 30, 2026`.
+
+Remaining B04 risk:
+
+- Public legal URL implementation exists in repo, but deployed `https://toca-ftv.com/privacy` and `https://toca-ftv.com/terms` still need production DNS/deployment verification.
+- Apple privacy nutrition answers and Google Data Safety answers still need to be drafted and checked against the final store configuration.
 
 ## B05: Production Supabase Readiness
 
