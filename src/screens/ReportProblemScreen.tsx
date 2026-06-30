@@ -21,7 +21,9 @@ export type ReportProblemFormSubmit = {
   diagnosticsOptIn: boolean;
   message: string;
   relatedLobbyId?: string | null;
+  reportedPlayerClientId?: string | null;
   reportedPlayerId?: string | null;
+  reportedPlayerName?: string | null;
   reportContext: ReportContext;
   reportType: ReportType;
 };
@@ -89,7 +91,9 @@ export function ReportProblemScreen({
         diagnosticsOptIn: includeDiagnostics,
         message,
         relatedLobbyId,
+        reportedPlayerClientId: reportedPlayer?.id ?? null,
         reportedPlayerId: reportedPlayer?.id ?? null,
+        reportedPlayerName: reportedPlayer?.name ?? null,
         reportContext: context,
         reportType: category,
       });
