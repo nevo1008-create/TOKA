@@ -144,7 +144,7 @@ export function HelpSupportScreen({ onBack, onReportProblem }: HelpSupportScreen
                 Support request ready
               </AppText>
               <AppText tone="muted" variant="metadata" weight="600">
-                We will connect this to the support backend later. For urgent issues, use Report a problem.
+                For safety, player behavior, or app issues, use Report a problem so TOCA can review the details.
               </AppText>
             </View>
           </View>
@@ -205,7 +205,7 @@ export function HelpSupportScreen({ onBack, onReportProblem }: HelpSupportScreen
           <View style={styles.contactLine}>
             <Ionicons color={colors.primaryDark} name="mail-outline" size={15} />
             <AppText tone="muted" variant="metadata" weight="700">
-              support@toca.app
+              support@toca-ftv.com
             </AppText>
           </View>
 

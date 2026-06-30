@@ -53,7 +53,7 @@ type LobbyDetailsScreenProps = {
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
-  onReportPlayer: () => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onRequestWaitlistApproval: () => void;
   onRejectWaitlistRequest: (playerId: string) => void;
   onSendFriendRequest: (playerId: string) => void;
@@ -394,6 +394,16 @@ export function LobbyDetailsScreen({
         initials={profilePreviewPlayer?.initials ?? ''}
         level={profilePreviewPlayer?.level}
         meta={profilePreviewPlayer ? `${profilePreviewPlayer.tocaPoints} TOCA points` : undefined}
+        moreActions={
+          profilePreviewPlayer && profilePreviewPlayer.id !== currentPlayer.id
+            ? [{
+                destructive: true,
+                icon: 'flag-outline',
+                label: 'Report player',
+                onPress: () => onReportPlayer(profilePreviewPlayer),
+              }]
+            : undefined
+        }
         name={profilePreviewPlayer?.name ?? ''}
         onClose={() => setProfilePreviewSelection(null)}
         player={profilePreviewPlayer}
@@ -2030,8 +2040,8 @@ function getLobbyPlayerActions({
   onKickPlayer: (playerId: string) => Promise<void> | void;
   onBlockPlayer?: (player: Player) => Promise<void> | void;
   onRemoveFriend?: (player: Player) => void;
-  onReportPlayer?: () => void;
   onSendFriendRequest?: (player: Player) => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onMovePlayerToWaitlist: (player: Player) => Promise<void> | void;
   onTransferHost?: (player: Player) => Promise<void> | void;
   onViewProfile: () => void;
@@ -2090,7 +2100,7 @@ function getLobbyPlayerActions({
     ...(isFriend
       ? [{ destructive: true, icon: 'person-remove-outline' as const, label: 'Remove friend', onPress: () => onRemoveFriend?.(player) }]
       : [{ icon: 'person-add-outline' as const, label: 'Add friend', onPress: () => onSendFriendRequest?.(player) }]),
-    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: onReportPlayer },
+    { destructive: true, icon: 'flag-outline', label: 'Report player', onPress: () => onReportPlayer(player) },
     {
       confirmation: {
         body: `${player.name} will be hidden from your discovery surfaces and kept out of games you host.`,

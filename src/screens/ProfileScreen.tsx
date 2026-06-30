@@ -36,7 +36,7 @@ type ProfileScreenProps = {
   onOpenMenu?: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
-  onReportPlayer: () => void;
+  onReportPlayer?: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile?: (player: Player) => void;
   player: Player;
@@ -92,7 +92,7 @@ export function ProfileScreen({
         () => requestFriend(person.id),
         pendingRequest ? () => onCancelFriendRequest(pendingRequest.id) : undefined,
         () => onRemoveFriend(person.id),
-        onReportPlayer,
+        () => onReportPlayer?.(person),
         () => onBlockPlayer(person.id),
         person.name,
       ),
@@ -158,6 +158,10 @@ export function ProfileScreen({
             {onEditProfile ? (
               <Pressable accessibilityRole="button" onPress={onEditProfile} style={styles.editButton}>
                 <Ionicons color={colors.accentLime} name="pencil-outline" size={16} />
+              </Pressable>
+            ) : onReportPlayer && player.id !== currentPlayer.id ? (
+              <Pressable accessibilityLabel="Report player" accessibilityRole="button" onPress={() => onReportPlayer(player)} style={styles.editButton}>
+                <Ionicons color={colors.danger} name="flag-outline" size={16} />
               </Pressable>
             ) : null}
           </View>
@@ -301,7 +305,7 @@ export function ProfileScreen({
                     )
                   : undefined,
                 () => onRemoveFriend(profilePreviewPlayer.player.id),
-                onReportPlayer,
+                () => onReportPlayer?.(profilePreviewPlayer.player),
                 () => onBlockPlayer(profilePreviewPlayer.player.id),
                 profilePreviewPlayer.player.name,
               )

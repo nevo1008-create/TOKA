@@ -40,6 +40,7 @@ export type PlayerPreviewDetail = {
 };
 
 type PlayerPreviewAction = {
+  closeOnPress?: boolean;
   destructive?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -96,7 +97,9 @@ export function PlayerProfilePreview({
                   onPress={() => {
                     action.onPress?.();
                     setIsMenuOpen(false);
-                    onClose();
+                    if (action.closeOnPress !== false) {
+                      onClose();
+                    }
                   }}
                   style={styles.inlineMenuRow}
                 >

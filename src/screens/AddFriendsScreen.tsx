@@ -19,7 +19,7 @@ type AddFriendsScreenProps = {
   lobbies: Lobby[];
   onBlockPlayer: (playerId: string) => Promise<void> | void;
   onBack: () => void;
-  onReportPlayer: () => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
@@ -27,7 +27,7 @@ type AddFriendsScreenProps = {
 
 type AddFriendsTab = 'invite' | 'search';
 
-const inviteLink = 'https://toca.app/invite/nevo';
+const inviteLink = 'https://toca-ftv.com/invite/nevo';
 const inviteMessage =
   'Come join me on TOCA - find beach games, join rooms, and connect with local footvolley players.';
 
@@ -86,6 +86,12 @@ export function AddFriendsScreen({
         icon: 'person-circle-outline',
         label: 'View profile',
         onPress: () => setProfilePreviewPlayer(player),
+      },
+      {
+        destructive: true,
+        icon: 'flag-outline',
+        label: 'Report player',
+        onPress: () => onReportPlayer(player),
       },
       {
         destructive: true,
@@ -221,7 +227,7 @@ export function AddFriendsScreen({
             ? getPreviewActions(
                 profilePreviewPlayer,
                 () => setProfilePreviewPlayer(profilePreviewPlayer),
-                onReportPlayer,
+                () => onReportPlayer(profilePreviewPlayer),
                 onBlockPlayer,
               )
             : undefined
@@ -387,7 +393,7 @@ function getPrimaryAction(
 function getPreviewActions(
   player: Player,
   onViewProfile: () => void,
-  onReportPlayer?: () => void,
+  onReportPlayer: () => Promise<void> | void,
   onBlockPlayer?: (playerId: string) => Promise<void> | void,
 ): PlayerAction[] {
   return [

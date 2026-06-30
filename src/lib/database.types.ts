@@ -10,6 +10,10 @@ import type {
   PreferredFoot,
   RankRuleType,
   RankStatus,
+  ReportContext,
+  ReportEmailNotificationStatus,
+  ReportStatus,
+  ReportType,
   SkillRankVoteType,
   TocaPointEventType,
 } from '../types';
@@ -189,6 +193,27 @@ export type DbPlayerRating = {
   created_at: string;
 };
 
+export type DbPlayerReport = {
+  id: string;
+  reporter_player_id: string;
+  reported_player_id: string | null;
+  related_lobby_id: string | null;
+  report_type: ReportType;
+  report_context: ReportContext;
+  message: string;
+  diagnostics_opt_in: boolean;
+  contact_opt_in: boolean;
+  status: ReportStatus;
+  email_notification_attempted_at: string | null;
+  email_notification_error: string | null;
+  email_notification_status: ReportEmailNotificationStatus;
+  email_notification_sent_at: string | null;
+  support_email_snapshot: string;
+  client_context: Json;
+  created_at: string;
+  updated_at: string;
+};
+
 export type DbPlayerRankState = {
   player_id: string;
   skill_score: number;
@@ -309,6 +334,11 @@ export type Database = {
         Row: DbPlayerRating;
         Insert: Partial<DbPlayerRating> & Pick<DbPlayerRating, 'lobby_id' | 'rater_player_id' | 'rated_player_id' | 'rank_vote' | 'behavior_rating'>;
         Update: Partial<DbPlayerRating>;
+      };
+      player_reports: {
+        Row: DbPlayerReport;
+        Insert: Partial<DbPlayerReport> & Pick<DbPlayerReport, 'reporter_player_id' | 'report_type' | 'report_context' | 'message'>;
+        Update: Partial<DbPlayerReport>;
       };
       player_rank_state: {
         Row: DbPlayerRankState;
@@ -472,6 +502,19 @@ export type Database = {
           target_player_id: string;
         };
         Returns: DbPlayerRating;
+      };
+      submit_player_report: {
+        Args: {
+          can_contact?: boolean;
+          include_diagnostics?: boolean;
+          submitted_client_context?: Json;
+          submitted_message: string;
+          submitted_report_context: ReportContext;
+          submitted_report_type: ReportType;
+          target_related_lobby_id?: string | null;
+          target_reported_player_id?: string | null;
+        };
+        Returns: DbPlayerReport;
       };
       award_toca_points: {
         Args: {

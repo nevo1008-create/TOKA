@@ -86,7 +86,7 @@ type CommunityScreenProps = {
   onOpenMenu: () => void;
   onOpenNotifications: () => void;
   onRemoveFriend: (playerId: string) => void;
-  onReportPlayer: () => void;
+  onReportPlayer: (player: Player) => Promise<void> | void;
   onSendFriendRequest: (playerId: string) => void;
   onViewPlayerProfile: (player: Player) => void;
   players: Player[];
@@ -187,6 +187,10 @@ export function CommunityScreen({
   function openActions(player: CommunityPlayerCard, context: PlayerMenuVariant) {
     const playerId = player.sourcePlayerId ?? player.id;
     const sourcePlayer = players.find((candidate) => candidate.id === playerId);
+    const reportPlayer = sourcePlayer ?? getProfilePlayerFromCommunity(
+      { ...player, context: getCommunityContext(player, context), menuVariant: context },
+      players,
+    );
     const isFriend = sourcePlayer ? areFriends(currentPlayer, sourcePlayer) : false;
     const pendingSentRequest = getPendingSentFriendRequest(friendRequests, currentPlayer.id, playerId);
     const isRequested = context === 'requested' || Boolean(pendingSentRequest);
@@ -210,7 +214,7 @@ export function CommunityScreen({
         player.friendRequestId ? () => onAcceptFriendRequest(player.friendRequestId as string) : undefined,
         player.friendRequestId ? () => onDeclineFriendRequest(player.friendRequestId as string) : undefined,
         () => onRemoveFriend(playerId),
-        onReportPlayer,
+        () => onReportPlayer(reportPlayer),
         () => onBlockPlayer(playerId),
         player.name,
       ),
@@ -528,7 +532,7 @@ export function CommunityScreen({
                 profilePreviewPlayer.friendRequestId ? () => onAcceptFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
                 profilePreviewPlayer.friendRequestId ? () => onDeclineFriendRequest(profilePreviewPlayer.friendRequestId as string) : undefined,
                 profilePreviewPlayer.sourcePlayerId ? () => onRemoveFriend(profilePreviewPlayer.sourcePlayerId as string) : undefined,
-                onReportPlayer,
+                () => onReportPlayer(getProfilePlayerFromCommunity(profilePreviewPlayer, players)),
                 () => onBlockPlayer(profilePreviewPlayer.sourcePlayerId ?? profilePreviewPlayer.id),
                 profilePreviewPlayer.name,
               )
@@ -929,7 +933,7 @@ function getPlayerActions(
   onAcceptRequest?: () => void,
   onDeclineRequest?: () => void,
   onRemoveFriend?: () => void,
-  onReportPlayer?: () => void,
+  onReportPlayer?: () => Promise<void> | void,
   onBlockPlayer?: () => Promise<void> | void,
   playerName = 'this player',
 ): PlayerAction[] {
