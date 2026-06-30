@@ -66,7 +66,7 @@ These are the core stages for every blocker:
 | ID | Blocker | Status | Risk | Current Stage | Next Action |
 | --- | --- | --- | --- | --- | --- |
 | B01 | Reports and support email | Done | High | Regression only | Keep as release regression test |
-| B02 | Blocked players and moderation safety | Needs verification | High | Verification | Test block/unblock/report together |
+| B02 | Blocked players and moderation safety | Done | High | Regression only | Keep as release regression test |
 | B03 | Account deletion | Done | High | Regression only | Keep as release regression test |
 | B04 | Privacy policy and terms | Needs verification | High | Verification | Review against store answers |
 | B05 | Production Supabase readiness | Needs verification | High | Verification | Confirm migrations, secrets, RLS, query health |
@@ -151,7 +151,7 @@ Done means:
 
 ## B02: Blocked Players And Moderation Safety
 
-Status: `Needs verification`
+Status: `Done`
 
 Why it matters:
 
@@ -161,19 +161,19 @@ Reports create a support workflow. Blocking gives the user immediate control aft
 
 | Stage | Status | What It Covers |
 | --- | --- | --- |
-| Decision | Needs verification | Confirm exact V1 behavior after blocking. |
-| Implementation | Mostly done | Block action, blocked players screen, block repository, Supabase migrations, filtered surfaces. |
-| Configuration | Needs verification | Confirm block migrations are applied in Supabase. |
-| Verification | Not done | Needs two-account test. |
-| Documentation | Not done | Record exact block behavior after test. |
-| PR/Merge | Done for initial implementation | Merged into `v1-prep`; behavior still needs proof. |
+| Decision | Done | V1 hides blocked players from direct discovery, hides blocked-host lobbies, and keeps blocked players reportable. |
+| Implementation | Done | Block action, blocked players screen, block repository, Supabase migrations, filtered surfaces, and blocked-list report action. |
+| Configuration | Done | Block migrations and RPCs confirmed in production Supabase. |
+| Verification | Done | Two-account block/unblock/report test and blocked-host lobby test passed. |
+| Documentation | Done | Exact block behavior and proof recorded here. |
+| PR/Merge | In progress | Merge B02 verification and blocked-list report action. |
 
 ### Core Decisions
 
-1. Should blocked players disappear from all discovery surfaces?
-2. Should lobbies hosted by blocked players be hidden?
-3. Should lobbies where a blocked player participates be hidden?
-4. Should blocked players still be reportable from the blocked list?
+1. Blocked players disappear from direct discovery and interaction surfaces.
+2. Lobbies hosted by blocked players are hidden from the blocker.
+3. Lobbies where a blocked player participates can still be opened with a warning instead of crashing.
+4. Blocked players remain reportable from the blocked list.
 
 ### Acceptance Criteria
 
@@ -215,6 +215,34 @@ Done means:
 - The behavior matches the V1 decision.
 - No broken screen or stale state appears.
 - Any remaining edge case is documented and accepted.
+
+### Verification Evidence - 2026-06-30
+
+Production configuration proof:
+
+- `public.block_player(target_player_id uuid)` exists and is executable by `authenticated`.
+- `public.unblock_player(target_player_id uuid)` exists and is executable by `authenticated`.
+- `public.list_my_player_blocks()` exists and is executable by `authenticated`.
+- `public.can_current_user_read_lobby(target_lobby_id uuid)` exists and is executable by `authenticated`.
+- `public.is_blocked_from_lobby_host(target_lobby public.lobbies, target_player_id uuid)` exists for server-side lobby checks.
+- `public.player_blocks` exists with RLS enabled.
+- Related checked tables have RLS enabled: `players`, `lobbies`, `lobby_memberships`, `notifications`, and `player_reports`.
+
+Two-account proof:
+
+- User A: `american pie` (`42db8fe3-d249-4f63-8474-01f9ee7f0ef8`).
+- User B: `Nevonaya17 we` (`bace3b22-5f18-4c4e-bddb-ecf15bdc822c`).
+- User A blocked User B; `public.player_blocks` row `5add56e8-de95-47ca-b8aa-e7cbb6b0ea89` was created.
+- Blocked Players screen showed User B.
+- Blocked Players screen report action submitted player report `a7d32b75-e29d-4905-8fbc-ea48ffb0d992`; email notification status was `sent`.
+- User A unblocked User B; the block row was removed.
+
+Blocked-host lobby proof:
+
+- User B created open lobby `b02 -test` (`3c1255bb-577a-48e5-94c9-33453956f300`).
+- User A saw the lobby before blocking User B.
+- User A blocked User B; final block row `08d304a8-6173-42c0-a556-57b90847a75e` was confirmed.
+- User A no longer saw `b02 -test` after blocking the host.
 
 ## B03: Account Deletion
 

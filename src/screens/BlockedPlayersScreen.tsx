@@ -10,6 +10,7 @@ type BlockedPlayersScreenProps = {
   blockedPlayers: Player[];
   isUnblockingPlayerId?: string | null;
   onBack: () => void;
+  onReportPlayer: (player: Player) => void;
   onReportProblem: () => void;
   onUnblockPlayer: (playerId: string) => void;
 };
@@ -18,6 +19,7 @@ export function BlockedPlayersScreen({
   blockedPlayers,
   isUnblockingPlayerId = null,
   onBack,
+  onReportPlayer,
   onReportProblem,
   onUnblockPlayer,
 }: BlockedPlayersScreenProps) {
@@ -81,6 +83,12 @@ export function BlockedPlayersScreen({
                         {player.area} - {player.level}
                       </AppText>
                     </View>
+                    <Pressable accessibilityRole="button" onPress={() => onReportPlayer(player)} style={styles.reportButton}>
+                      <Ionicons color={colors.danger} name="flag-outline" size={15} />
+                      <AppText align="center" tone="danger" variant="button" weight="900">
+                        Report
+                      </AppText>
+                    </Pressable>
                     <Pressable
                       accessibilityRole="button"
                       disabled={isUnblocking}
@@ -213,6 +221,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 46,
     paddingHorizontal: spacing.lg,
+  },
+  reportButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(217, 74, 58, 0.10)',
+    borderColor: 'rgba(217, 74, 58, 0.22)',
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 84,
+    paddingHorizontal: spacing.sm,
   },
   screen: {
     backgroundColor: colors.background,
