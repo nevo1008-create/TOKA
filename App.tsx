@@ -2015,6 +2015,7 @@ export default function App() {
                 blockedPlayers={blockedPlayers}
                 isUnblockingPlayerId={pendingBlockActionId}
                 onBack={closeBlockedPlayers}
+                onReportPlayer={openReportPlayer}
                 onReportProblem={openReportProblem}
                 onUnblockPlayer={handleUnblockPlayer}
               />
