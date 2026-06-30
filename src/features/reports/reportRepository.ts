@@ -17,10 +17,6 @@ export async function submitPlayerReport(input: SubmitPlayerReportInput): Promis
   const reportedPlayerId = normalizeOptionalUuid(input.reportedPlayerId);
   const relatedLobbyId = normalizeOptionalUuid(input.relatedLobbyId);
 
-  if (input.reportType === 'player' && !reportedPlayerId) {
-    throw new Error('Could not identify the player being reported. Refresh the app and try again.');
-  }
-
   const { data, error } = await supabase.rpc('submit_player_report', {
     can_contact: input.contactOptIn,
     include_diagnostics: input.diagnosticsOptIn,

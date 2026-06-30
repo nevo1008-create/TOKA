@@ -1110,15 +1110,7 @@ export default function App() {
       reportTarget = resolveReportTargetPlayer(player, refreshedPlayers);
     }
 
-    if (!reportTarget) {
-      Alert.alert(
-        'Player still loading',
-        'TOCA could not load this player profile from the server yet. Please refresh and try again.',
-      );
-      return;
-    }
-
-    openReportProblem({ reportedPlayer: reportTarget });
+    openReportProblem({ reportedPlayer: reportTarget ?? player });
   }
 
   function closeReportProblem() {
@@ -1127,11 +1119,19 @@ export default function App() {
   }
 
   async function handleSubmitReport(report: ReportProblemFormSubmit) {
+    const clientContext = {
+      activeTab,
+      appSurface: report.reportedPlayerName ? 'player_profile' : 'report_problem',
+      ...(report.reportedPlayerName
+        ? {
+            reportedPlayerClientId: report.reportedPlayerClientId ?? null,
+            reportedPlayerName: report.reportedPlayerName,
+          }
+        : {}),
+    };
+
     await submitPlayerReport({
-      clientContext: {
-        activeTab,
-        appSurface: report.reportedPlayerId ? 'player_profile' : 'report_problem',
-      },
+      clientContext,
       contactOptIn: report.contactOptIn,
       diagnosticsOptIn: report.diagnosticsOptIn,
       message: report.message,
