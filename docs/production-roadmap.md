@@ -371,9 +371,9 @@ Store forms must match what the app actually collects and does.
 
 | Stage | Status | What It Covers |
 | --- | --- | --- |
-| Decision | Done | In-app MVP policy/terms are required now; public store URLs still need final hosting decision. |
-| Implementation | Done | Privacy Policy and Terms screens exist and copy is aligned to verified V1 behavior. |
-| Configuration | Not started | Store listing links/URLs not finalized. |
+| Decision | Done | V1 uses in-app Privacy/Terms screens and public store URLs on clean TOCA domain paths. |
+| Implementation | Done | Privacy Policy and Terms screens exist; public static pages mirror the V1 copy at `/privacy` and `/terms`. |
+| Configuration | In progress | Vercel rewrites are configured; final deployed domain/DNS and store listing fields still need confirmation. |
 | Verification | Needs verification | In-app copy and link smoke passed; Apple/Google form answers still need final cross-check. |
 | Documentation | Done | In-app data collection mapping recorded here. |
 | PR/Merge | In progress | Merge copy alignment changes. |
@@ -411,7 +411,7 @@ Status: In-app Privacy Policy and Terms copy aligned to V1 app behavior.
 Decision:
 
 - V1 keeps Privacy Policy and Terms available inside signup and the side menu.
-- Public Privacy/Terms URLs are still needed before store submission if Apple or Google requires URL fields.
+- Public Privacy/Terms URLs should use `https://toca-ftv.com/privacy` and `https://toca-ftv.com/terms` after production deployment/DNS is confirmed.
 - Store metadata answers must match the in-app copy and final backend configuration.
 
 Data mapping covered by Privacy Policy:
@@ -447,7 +447,7 @@ Manual smoke proof:
 
 Remaining B04 risk:
 
-- Public legal URLs are not finalized.
+- Public legal URL implementation exists in repo, but deployed `https://toca-ftv.com/privacy` and `https://toca-ftv.com/terms` still need production DNS/deployment verification.
 - Apple privacy nutrition answers and Google Data Safety answers still need to be drafted and checked against the final store configuration.
 
 ## B05: Production Supabase Readiness
